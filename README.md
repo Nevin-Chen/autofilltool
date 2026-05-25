@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.4.0 — Steps 1 + 2 + 3 + 6 of 8: skeleton + generic fill + resume upload + Google Sheets logging.**
+**v0.5.0 — Steps 1 + 2 + 3 + 4 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + Google Sheets logging.**
 
 What works:
 
@@ -27,6 +27,12 @@ What works:
 - **Generic adapter** that classifies fields via `autocomplete`, input
   `type`, label / aria / placeholder / name / id keywords, plus
   `<fieldset><legend>` for radio groups.
+- **Per-platform adapters** for Greenhouse (`#first_name`/`#last_name`/
+  `#email`/`#phone`/`#resume`), Lever (canonical `name="…"` and
+  `urls[LinkedIn|GitHub|Portfolio]`), and Ashby
+  (`[data-testid="FieldEntry"]` walks with structured `FieldLabel`
+  classification). Each overrides `fillResume` with the platform's exact
+  slot before falling back to the shared finder.
 - **Safe filler** primitives: native-setter writes (React notices),
   `input`/`change`/`blur` event dispatch, value-then-text option matching for
   `<select>`, click-only-if-state-differs for checkboxes & radios, denylist
@@ -49,14 +55,15 @@ What works:
   attaches the file via a `DataTransfer` so the host page sees it like a
   real picker selection. The pill summary now shows `Resume attached` or
   `Resume: no slot on this page`.
-- 57 vitest unit tests covering schema, migrations, filler, adapter, webhook
-  client, job-context, and the resume base64/File round-trip + file-input
-  attachment + slot detection.
+- 72 vitest unit tests covering schema, migrations, filler, generic adapter,
+  per-platform adapters (matches + detectFields + fillResume against
+  realistic fixture HTML for each ATS), webhook client, job-context, and
+  the resume base64/File round-trip + file-input attachment + slot
+  detection.
 
 What is intentionally **not** here yet:
 
-- Per-platform adapters: Greenhouse / Lever / Ashby (step 4) and Workday
-  (step 7).
+- Workday adapter (step 7) — needs iframe + virtualised-list handling.
 - AI suggestions and the provider clients (step 5).
 - Encrypted profile export/import (step 8).
 
@@ -239,7 +246,7 @@ Each step is shippable on its own.
 1. ✅ **Skeleton** — manifest, build, options, profile schema, storage.
 2. ✅ Generic adapter + safe filler + popup "Fill this page."
 3. ✅ Resume upload into file inputs.
-4. ⏳ Greenhouse → Lever → Ashby adapters.
+4. ✅ Greenhouse → Lever → Ashby adapters.
 5. ⏳ AI suggestion button + one provider.
 6. ✅ Sheets webhook + history.
 7. ⏳ Workday adapter.
