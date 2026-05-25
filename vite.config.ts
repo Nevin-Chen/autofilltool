@@ -26,6 +26,21 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     hmr: { port: 5173 },
+    // Vite 5 tightened the default CORS allowlist to local HTTP origins only,
+    // which blocks the extension's service worker from importing the dev-mode
+    // HMR client (`@vite/env`) over chrome-extension://. Allow it explicitly.
+    cors: {
+      origin: [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        /^chrome-extension:\/\//,
+      ],
+    },
+    // Belt-and-suspenders for older Vite middleware that ignores `cors.origin`
+    // for static asset responses; harmless in production builds (dev server only).
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    },
   },
   test: {
     environment: 'jsdom',
