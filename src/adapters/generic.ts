@@ -15,13 +15,54 @@
  */
 
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
+import { attachFile } from '@/content/filler';
 
 export const genericAdapter: PlatformAdapter = {
   id: 'generic',
   name: 'Generic form',
   matches: () => true, // always — it's the fallback
   detectFields,
+  fillResume: genericFillResume,
 };
+
+/**
+ * Find the most likely resume slot and attach the user's file. Returns true
+ * if it attached something, false if no plausible slot was found.
+ *
+ * Per-ATS adapters can override this when they know exactly where the slot
+ * lives (e.g., Greenhouse's #resume input).
+ */
+async function genericFillResume(file: File, root: Document): Promise<boolean> {
+  const candidate = findResumeInput(root);
+  if (!candidate) return false;
+  const action = attachFile(candidate, file, { forceOverwrite: false });
+  return action.status === 'attached';
+}
+
+const RESUME_HINTS = /\b(resume|résumé|cv|curriculum|attach.*resume|upload.*resume)\b/i;
+
+/**
+ * Resume detection: pick the first visible <input type="file"> whose label /
+ * name / id / aria-label looks resume-shaped. Conservative — if nothing
+ * matches we'd rather skip than attach the resume to (say) a portfolio slot.
+ */
+export function findResumeInput(root: Document): HTMLInputElement | null {
+  const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+  // First pass: explicit hints.
+  for (const input of inputs) {
+    if (input.disabled) continue;
+    const ctx = collectContext(input);
+    if (RESUME_HINTS.test(ctx.haystack)) return input;
+    if (RESUME_HINTS.test(input.getAttribute('accept') ?? '')) return input;
+  }
+  // Second pass: a single file input on the page is almost always the resume.
+  const enabled = inputs.filter((i) => !i.disabled);
+  if (enabled.length === 1) {
+    const onlyOne = enabled[0];
+    if (onlyOne) return onlyOne;
+  }
+  return null;
+}
 
 /* ---------------------------------------------------- public entry point */
 

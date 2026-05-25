@@ -17,6 +17,52 @@ import type { DetectedField } from '@/adapters/types';
 /** Buttons/inputs we will never click as part of fill or radio selection. */
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
 
+export type AttachOptions = {
+  forceOverwrite: boolean;
+};
+
+export type AttachAction = {
+  status: 'attached' | 'skipped' | 'error';
+  note?: string;
+};
+
+/**
+ * Attach a File to an <input type="file">. The trick: file inputs can't be
+ * set via .value (it would be a security hole) — you build a DataTransfer,
+ * assign its files property, then dispatch `change` so the host page's
+ * listeners run.
+ *
+ * Skips when the input already has a file, unless forceOverwrite is true.
+ */
+export function attachFile(
+  input: HTMLInputElement,
+  file: File,
+  opts: AttachOptions,
+): AttachAction {
+  if (input.type !== 'file') {
+    return { status: 'error', note: 'not a file input' };
+  }
+  if (input.disabled) {
+    return { status: 'skipped', note: 'input is disabled' };
+  }
+  if (!opts.forceOverwrite && input.files && input.files.length > 0) {
+    return { status: 'skipped', note: 'already has a file' };
+  }
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return { status: 'attached' };
+  } catch (err) {
+    return {
+      status: 'error',
+      note: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export type FillAction = {
   label: string;
   kind: string;
