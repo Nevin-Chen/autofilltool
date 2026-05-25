@@ -9,6 +9,7 @@ import {
 } from '@/profile/schema';
 import { getProfile, setProfile, getSettings, setSettings } from '@/profile/store';
 import { TrackingSection } from './TrackingSection';
+import { ResumeSection } from './ResumeSection';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -274,6 +275,9 @@ export function OptionsApp() {
           </label>
         </Section>
 
+        {/* ------------------------------------------------ Resume */}
+        <ResumeSection />
+
         {/* ------------------------------------------------ Tracking */}
         <TrackingSection
           url={settings.tracking.webhookUrl}
@@ -284,7 +288,6 @@ export function OptionsApp() {
             }))
           }
         />
-
 
         <div className="flex items-center gap-4">
           <button

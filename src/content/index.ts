@@ -10,7 +10,8 @@ import { isRequestMessage, type FillActionWire } from '@/types/messages';
 import { pickAdapter } from './detector';
 import { fillField, type FillAction } from './filler';
 import { valueForField } from './mapping';
-import { getProfile, getSettings } from '@/profile/store';
+import { getProfile, getSettings, getResume } from '@/profile/store';
+import { resumeRecordToFile } from '@/profile/resume';
 import { showPill } from './overlay';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -41,13 +42,48 @@ async function runFill(forceFromMsg?: boolean) {
   const adapter = pickAdapter(url, document);
   const fields = adapter.detectFields(document);
 
-  const [profile, settings] = await Promise.all([getProfile(), getSettings()]);
+  const [profile, settings, resume] = await Promise.all([
+    getProfile(),
+    getSettings(),
+    getResume(),
+  ]);
   const forceOverwrite = forceFromMsg ?? settings.forceOverwrite;
 
   const actions: FillAction[] = [];
   for (const field of fields) {
     const value = valueForField(profile, field.kind);
     actions.push(fillField(field, value, { forceOverwrite }));
+  }
+
+  // Resume attachment runs after text fields so any visibility-toggling
+  // listeners on text fields have already settled. The pill summarises the
+  // outcome as a separate "resume" line so the user knows whether it landed.
+  let resumeStatus: 'attached' | 'skipped' | 'notFound' | 'noResume' | 'noHook' =
+    'noResume';
+  if (resume) {
+    if (adapter.fillResume) {
+      try {
+        const file = resumeRecordToFile(resume);
+        const ok = await adapter.fillResume(file, document);
+        resumeStatus = ok ? 'attached' : 'notFound';
+        actions.push({
+          label: 'Resume',
+          kind: 'resume',
+          status: ok ? 'filled' : 'skipped',
+          note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+        });
+      } catch (err) {
+        resumeStatus = 'notFound';
+        actions.push({
+          label: 'Resume',
+          kind: 'resume',
+          status: 'error',
+          note: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      resumeStatus = 'noHook';
+    }
   }
 
   const filled = actions.filter((a) => a.status === 'filled').length;
@@ -69,12 +105,15 @@ async function runFill(forceFromMsg?: boolean) {
       failed,
       adapterId: adapter.id,
       adapterName: adapter.name,
+      resume: resumeStatus,
     });
   } catch (err) {
     log.warn('overlay pill failed', err);
   }
 
-  log.debug(`fill via ${adapter.id}: ${filled} filled / ${skipped} skipped / ${failed} failed`);
+  log.debug(
+    `fill via ${adapter.id}: ${filled} filled / ${skipped} skipped / ${failed} failed / resume=${resumeStatus}`,
+  );
 
   return {
     ok: true as const,

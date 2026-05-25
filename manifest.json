@@ -1,14 +1,10 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first autofill for online job applications. You stay in control of submission.",
   "minimum_chrome_version": "116",
-  "permissions": [
-    "storage",
-    "scripting",
-    "activeTab"
-  ],
+  "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
     "https://*.greenhouse.io/*",
     "https://boards.greenhouse.io/*",
@@ -56,21 +52,15 @@
         "https://jobs.ashbyhq.com/*",
         "https://*.myworkdayjobs.com/*"
       ],
-      "js": [
-        "src/content/index.ts"
-      ],
+      "js": ["src/content/index.ts"],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "icons/*"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

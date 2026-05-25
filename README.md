@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.3.0 — Steps 1 + 2 + 6 of 8: skeleton + generic fill + Google Sheets logging.**
+**v0.4.0 — Steps 1 + 2 + 3 + 6 of 8: skeleton + generic fill + resume upload + Google Sheets logging.**
 
 What works:
 
@@ -42,15 +42,21 @@ What works:
   Mark-submitted click appends a row in your sheet and stores the entry in
   local history regardless of webhook success.
 - **Recent submissions** list in the popup (last 5).
-- 44 vitest unit tests covering schema, migrations, filler, adapter, webhook
-  client (URL validation, retry, permission gating), and job-context
-  heuristics.
+- **Resume upload** in Options (`.pdf`, `.doc`, `.docx`, `.txt`, ≤ 5 MB),
+  stored locally as base64 and reconstructed into a real `File` at fill
+  time. The generic adapter finds the resume slot via label / name / aria /
+  accept hints (or falls back to the only file input on the page) and
+  attaches the file via a `DataTransfer` so the host page sees it like a
+  real picker selection. The pill summary now shows `Resume attached` or
+  `Resume: no slot on this page`.
+- 57 vitest unit tests covering schema, migrations, filler, adapter, webhook
+  client, job-context, and the resume base64/File round-trip + file-input
+  attachment + slot detection.
 
 What is intentionally **not** here yet:
 
 - Per-platform adapters: Greenhouse / Lever / Ashby (step 4) and Workday
   (step 7).
-- Resume upload into file inputs (step 3).
 - AI suggestions and the provider clients (step 5).
 - Encrypted profile export/import (step 8).
 
@@ -232,7 +238,7 @@ Each step is shippable on its own.
 
 1. ✅ **Skeleton** — manifest, build, options, profile schema, storage.
 2. ✅ Generic adapter + safe filler + popup "Fill this page."
-3. ⏳ Resume upload into file inputs.
+3. ✅ Resume upload into file inputs.
 4. ⏳ Greenhouse → Lever → Ashby adapters.
 5. ⏳ AI suggestion button + one provider.
 6. ✅ Sheets webhook + history.

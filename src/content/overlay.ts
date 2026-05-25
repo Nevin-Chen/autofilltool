@@ -25,6 +25,15 @@ export type PillInput = {
   failed: number;
   adapterId: AdapterId;
   adapterName: string;
+  /**
+   * Outcome of the resume attachment pass:
+   *   - attached  → file landed on a file input
+   *   - notFound  → resume in storage but no slot on this page
+   *   - noResume  → user hasn't uploaded one in Options
+   *   - noHook    → adapter has no fillResume implementation (won't happen in practice)
+   *   - skipped   → unused right now; reserved for "input already had a file"
+   */
+  resume: 'attached' | 'notFound' | 'noResume' | 'noHook' | 'skipped';
 };
 
 export function showPill(input: PillInput): void {
@@ -76,6 +85,7 @@ function renderSummary(
     pill('skip', `${input.skipped} skipped`),
     ...(input.failed > 0 ? [pill('fail', `${input.failed} failed`)] : []),
   ]);
+  const resumeLine = resumePill(input.resume);
   const hint = h('div', { class: 'hint' }, [
     'Review the form, then click Submit on the page. Use the button below to log the application.',
   ]);
@@ -87,7 +97,30 @@ function renderSummary(
     }),
   ]);
 
-  root.append(header, via, stats, hint, actions);
+  root.append(header, via, stats, ...(resumeLine ? [resumeLine] : []), hint, actions);
+}
+
+/**
+ * One-line "Resume: <state>" indicator. Returns null when there's nothing
+ * interesting to say (no resume uploaded → don't nag the user about it on
+ * every fill).
+ */
+function resumePill(state: PillInput['resume']): HTMLElement | null {
+  switch (state) {
+    case 'attached':
+      return h('div', { class: 'sub' }, [
+        h('span', { class: 'chip ok' }, ['Resume attached']),
+      ]);
+    case 'notFound':
+      return h('div', { class: 'sub' }, [
+        h('span', { class: 'chip skip' }, ['Resume: no slot on this page']),
+      ]);
+    case 'noResume':
+    case 'noHook':
+    case 'skipped':
+    default:
+      return null;
+  }
 }
 
 function renderForm(root: HTMLElement, input: PillInput, onClose: () => void): void {
