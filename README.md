@@ -53,6 +53,17 @@ Then in Chrome:
 The watch build will rebuild on save; click the extension's reload arrow on
 `chrome://extensions` to pick up changes.
 
+> **Dev-mode CORS note.** Vite 5 restricts its dev server CORS allowlist to
+> local HTTP origins, which blocks the extension's service worker from
+> fetching `@vite/env`. This repo's `vite.config.ts` allows
+> `chrome-extension://*` so HMR works out of the box. If you still see
+> `Service worker registration failed. Status code: 3`, make sure the
+> `npm run dev` server is running **before** you reload the extension, then
+> hit the reload arrow on `chrome://extensions`.
+>
+> Prefer a friction-free setup? `npm run build` produces a fully static
+> `dist/` you can load and reload without a dev server.
+
 ## Build for distribution
 
 ```bash
