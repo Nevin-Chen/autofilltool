@@ -1,21 +1,28 @@
 /**
- * MV3 service worker. The background is the only place that talks to the AI
- * provider or the user's tracking webhook (added in later steps). It also
- * forwards FILL_PAGE requests from the popup to the active tab's content
- * script — content scripts can't message each other, only the background can.
+ * MV3 service worker. The background is the only place that talks to the
+ * user's tracking webhook or (later) the AI provider — content scripts share
+ * the page's origin and would get CORS-blocked. It also forwards FILL_PAGE
+ * from the popup to the active tab's content script.
  *
- * Keep this file lean — the MV3 worker can be torn down at any time, so all
+ * Keep this file lean — MV3 workers can be torn down at any time, so all
  * state lives in chrome.storage.local.
  */
 
 import { respondAsync, sendToTab } from '@/lib/messaging';
 import { log } from '@/lib/logger';
-import { getProfile, getSettings } from '@/profile/store';
+import {
+  getProfile,
+  getSettings,
+  getHistory,
+  pushHistory,
+} from '@/profile/store';
 import {
   isRequestMessage,
   type RequestMessage,
   type ResponseFor,
 } from '@/types/messages';
+import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema';
+import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
 
 async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>> {
   switch (msg.type) {
@@ -33,9 +40,6 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     }
 
     case 'FILL_PAGE': {
-      // Make sure the content script is present. If the user opened the popup
-      // on a page outside the curated host_permissions list, the static
-      // content_scripts entry won't have loaded — inject programmatically.
       try {
         await ensureContentScript(msg.tabId);
       } catch (err) {
@@ -50,12 +54,62 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
       return sendToTab(msg.tabId, msg);
     }
 
-    case 'LOG_SUBMISSION':
-      // Wired up in step 6.
-      return {
-        ok: false,
-        error: 'LOG_SUBMISSION not implemented (arrives in step 6).',
+    case 'GET_HISTORY': {
+      const list = await getHistory();
+      const limit = msg.limit ?? 25;
+      return { ok: true, value: list.slice(0, limit) };
+    }
+
+    case 'TEST_WEBHOOK': {
+      const settings = await getSettings();
+      const url = settings.tracking.webhookUrl;
+      if (!url) return { ok: false, error: 'No webhook URL set in Options.' };
+      const result = await postTestPing(url);
+      if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true, value: { status: result.status } };
+    }
+
+    case 'LOG_SUBMISSION': {
+      // Fill in id + timestamp + run through the schema so anything malformed
+      // is rejected before it hits storage.
+      const candidate = {
+        id: msg.record.id ?? crypto.randomUUID(),
+        timestamp: msg.record.timestamp ?? new Date().toISOString(),
+        company: msg.record.company ?? '',
+        role: msg.record.role ?? '',
+        jobUrl: msg.record.jobUrl ?? '',
+        source: msg.record.source,
+        status: msg.record.status,
+        note: msg.record.note ?? '',
       };
+      const parsed = SubmissionRecordSchema.safeParse(candidate);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          error: `Invalid submission: ${parsed.error.issues[0]?.message ?? 'unknown'}`,
+        };
+      }
+      const record: SubmissionRecord = parsed.data;
+
+      await pushHistory(record);
+
+      const settings = await getSettings();
+      const url = settings.tracking.webhookUrl;
+      if (!url) {
+        return {
+          ok: true,
+          value: { stored: true, posted: false, record },
+        };
+      }
+      const post = await postSubmission(url, record);
+      if (!post.ok) {
+        return {
+          ok: true,
+          value: { stored: true, posted: false, webhookError: post.error, record },
+        };
+      }
+      return { ok: true, value: { stored: true, posted: true, record } };
+    }
 
     default: {
       const _: never = msg;

@@ -11,7 +11,7 @@ import { pickAdapter } from './detector';
 import { fillField, type FillAction } from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings } from '@/profile/store';
-import { showToast } from './overlay';
+import { showPill } from './overlay';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!isRequestMessage(msg)) return false;
@@ -61,11 +61,17 @@ async function runFill(forceFromMsg?: boolean) {
     return a.note ? { ...base, note: a.note } : base;
   });
 
-  // Fire-and-forget the in-page toast; never block the response on it.
+  // Fire-and-forget the in-page pill; never block the response on it.
   try {
-    showToast({ filled, skipped, failed, adapterName: adapter.name });
+    showPill({
+      filled,
+      skipped,
+      failed,
+      adapterId: adapter.id,
+      adapterName: adapter.name,
+    });
   } catch (err) {
-    log.warn('overlay toast failed', err);
+    log.warn('overlay pill failed', err);
   }
 
   log.debug(`fill via ${adapter.id}: ${filled} filled / ${skipped} skipped / ${failed} failed`);
