@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme Bio — Backend Engineer (Lever fixture)</title>
+  </head>
+  <body>
+    <div class="lever-job-listing-page">
+      <h1>Backend Engineer</h1>
+      <form action="https://jobs.lever.co/acme-bio/abcd-1234/apply" method="post">
+        <div class="application-field">
+          <label class="application-label">Resume/CV</label>
+          <input type="file" name="resume" accept=".pdf,.doc,.docx" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="name">Full name</label>
+          <input id="name" name="name" type="text" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="email">Email</label>
+          <input id="email" name="email" type="email" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="phone">Phone</label>
+          <input id="phone" name="phone" type="tel" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="org">Current company</label>
+          <input id="org" name="org" type="text" />
+        </div>
+
+        <div class="application-field">
+          <label class="application-label" for="linkedin-url">LinkedIn URL</label>
+          <input id="linkedin-url" name="urls[LinkedIn]" type="url" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="github-url">GitHub URL</label>
+          <input id="github-url" name="urls[GitHub]" type="url" />
+        </div>
+        <div class="application-field">
+          <label class="application-label" for="portfolio-url">Portfolio</label>
+          <input id="portfolio-url" name="urls[Portfolio]" type="url" />
+        </div>
+
+        <div class="application-question">
+          <label class="application-label" for="why">Why are you interested?</label>
+          <textarea id="why" name="cards[abc][why]" rows="6"></textarea>
+        </div>
+
+        <button type="submit">Submit application</button>
+      </form>
+    </div>
+  </body>
+</html>
