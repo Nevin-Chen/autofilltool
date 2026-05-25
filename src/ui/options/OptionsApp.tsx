@@ -8,6 +8,7 @@ import {
   type Settings,
 } from '@/profile/schema';
 import { getProfile, setProfile, getSettings, setSettings } from '@/profile/store';
+import { TrackingSection } from './TrackingSection';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -272,6 +273,17 @@ export function OptionsApp() {
             </span>
           </label>
         </Section>
+
+        {/* ------------------------------------------------ Tracking */}
+        <TrackingSection
+          url={settings.tracking.webhookUrl}
+          onChange={(webhookUrl) =>
+            setSettingsState((prev) => ({
+              ...prev,
+              tracking: { ...prev.tracking, webhookUrl },
+            }))
+          }
+        />
 
 
         <div className="flex items-center gap-4">
