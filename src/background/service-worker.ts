@@ -1,13 +1,14 @@
 /**
  * MV3 service worker. The background is the only place that talks to the AI
- * provider or the user's tracking webhook (added in later steps). For step 1
- * it just routes a small set of profile/settings/ping messages.
+ * provider or the user's tracking webhook (added in later steps). It also
+ * forwards FILL_PAGE requests from the popup to the active tab's content
+ * script — content scripts can't message each other, only the background can.
  *
  * Keep this file lean — the MV3 worker can be torn down at any time, so all
  * state lives in chrome.storage.local.
  */
 
-import { respondAsync } from '@/lib/messaging';
+import { respondAsync, sendToTab } from '@/lib/messaging';
 import { log } from '@/lib/logger';
 import { getProfile, getSettings } from '@/profile/store';
 import {
@@ -31,28 +32,64 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
       return { ok: true, value: settings };
     }
 
-    case 'FILL_PAGE':
-      // Wired up in step 2 — for now the background routes to the active
-      // tab's content script which will reply with "not implemented yet".
-      return {
-        ok: false,
-        error: 'FILL_PAGE not implemented in step 1 (skeleton).',
-      };
+    case 'FILL_PAGE': {
+      // Make sure the content script is present. If the user opened the popup
+      // on a page outside the curated host_permissions list, the static
+      // content_scripts entry won't have loaded — inject programmatically.
+      try {
+        await ensureContentScript(msg.tabId);
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? `Could not access this page: ${err.message}`
+              : 'Could not access this page.',
+        };
+      }
+      return sendToTab(msg.tabId, msg);
+    }
 
     case 'LOG_SUBMISSION':
       // Wired up in step 6.
       return {
         ok: false,
-        error: 'LOG_SUBMISSION not implemented in step 1 (skeleton).',
+        error: 'LOG_SUBMISSION not implemented (arrives in step 6).',
       };
 
     default: {
-      // Exhaustiveness check.
-      const _exhaustive: never = msg;
-      void _exhaustive;
+      const _: never = msg;
+      void _;
       return { ok: false, error: 'Unknown message type' };
     }
   }
+}
+
+/**
+ * Ping the tab's content script. If it doesn't answer, inject our entry
+ * point with chrome.scripting and try again. activeTab grants temporary
+ * permission for the focused tab even when its host isn't pre-permissioned.
+ *
+ * NOTE: the build pipeline (crxjs) rewrites the manifest's `content_scripts`
+ * entry to a hashed file path. We read that path from the live manifest so
+ * we don't hard-code a stale source filename.
+ */
+async function ensureContentScript(tabId: number): Promise<void> {
+  try {
+    const pong = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (pong && (pong as { ok?: boolean }).ok !== undefined) return;
+  } catch {
+    // Not loaded yet — fall through to injection.
+  }
+  const manifest = chrome.runtime.getManifest();
+  const contentJs = manifest.content_scripts?.[0]?.js?.[0];
+  if (!contentJs) {
+    throw new Error('content script bundle not declared in manifest');
+  }
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: [contentJs],
+  });
 }
 
 chrome.runtime.onMessage.addListener(

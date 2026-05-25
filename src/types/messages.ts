@@ -2,10 +2,6 @@
  * All cross-context messages flow through a single discriminated union so the
  * compiler can keep the request/response shapes in sync between content
  * scripts, the popup, the options page, and the service worker.
- *
- * NOTE: Step 1 only wires the envelope and a small set of stub messages.
- * Future steps (AI suggestions, webhook logging, per-adapter fills) will add
- * variants here — keep them well-typed.
  */
 
 import type { Profile, Settings, SubmissionRecord } from '@/profile/schema';
@@ -16,7 +12,7 @@ export type GetProfileMsg = { type: 'GET_PROFILE' };
 export type GetSettingsMsg = { type: 'GET_SETTINGS' };
 export type PingMsg = { type: 'PING' };
 
-/** Asks the active tab's content script to run a fill pass. Step 2 wires this. */
+/** Asks the active tab's content script to run a fill pass. */
 export type FillPageMsg = {
   type: 'FILL_PAGE';
   tabId: number;
@@ -45,10 +41,19 @@ export type Result<T> = Ok<T> | Err;
 export type GetProfileResponse = Result<Profile>;
 export type GetSettingsResponse = Result<Settings>;
 export type PingResponse = Result<{ pong: true; at: string }>;
+export type FillActionWire = {
+  label: string;
+  kind: string;
+  status: 'filled' | 'skipped' | 'unsupported' | 'error';
+  note?: string;
+};
 export type FillPageResponse = Result<{
+  adapterId: string;
   filled: number;
   skipped: number;
-  notes: string[];
+  failed: number;
+  total: number;
+  actions: FillActionWire[];
 }>;
 export type LogSubmissionResponse = Result<{ stored: true }>;
 
