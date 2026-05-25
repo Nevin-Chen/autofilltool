@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.1.0 — Step 1 of 8: skeleton.**
+**v0.2.0 — Steps 1 + 2 of 8: skeleton + generic fill.**
 
 What works:
 
@@ -21,16 +21,31 @@ What works:
 - `chrome.storage.local` wrapper with safe-parsing reads and a bounded
   history ring.
 - Typed message envelope between popup, content scripts, and the service
-  worker (round-trip is smoke-tested by a `PING` from the popup).
+  worker.
 - React + Tailwind options page with a working profile editor.
-- React + Tailwind popup with a placeholder "Fill this page" button.
+- React + Tailwind popup with a working **"Fill this page"** button.
+- **Generic adapter** that classifies fields via `autocomplete`, input
+  `type`, label / aria / placeholder / name / id keywords, plus
+  `<fieldset><legend>` for radio groups.
+- **Safe filler** primitives: native-setter writes (React notices),
+  `input`/`change`/`blur` event dispatch, value-then-text option matching for
+  `<select>`, click-only-if-state-differs for checkboxes & radios, denylist
+  that refuses to click anything labeled "Submit", "Apply now", etc.
+- **Skip-if-filled** by default; **"Force overwrite"** toggle in Options
+  changes that.
+- Shadow-DOM toast on every fill: `via <adapter>` plus filled / skipped /
+  failed counts. Click to dismiss; auto-dismisses after 6 s.
+- 29 vitest unit tests covering schema, migrations, filler, and adapter.
 
 What is intentionally **not** here yet:
 
-- The filler primitives and any platform adapters (step 2-3).
+- Per-platform adapters: Greenhouse / Lever / Ashby (step 4) and Workday
+  (step 7).
 - Resume upload into file inputs (step 3).
 - AI suggestions and the provider clients (step 5).
 - Sheets webhook + per-submission history (step 6).
+- Full floating-pill overlay with action log (lands alongside step 5/6 when
+  Suggest All / Mark Submitted need a home).
 - Encrypted profile export/import (step 8).
 
 ## Develop

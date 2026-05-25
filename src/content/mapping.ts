@@ -1,0 +1,92 @@
+/**
+ * Translates a Profile into the value the filler should write for each
+ * FieldKind. Returns `null` / `undefined` for kinds the user hasn't set —
+ * the filler skips empty values, which keeps optional/demographics fields
+ * blank unless the user has explicitly opted in.
+ */
+
+import type { Profile } from '@/profile/schema';
+import type { FieldKind } from '@/adapters/types';
+
+export function valueForField(profile: Profile, kind: FieldKind): string | boolean | null {
+  switch (kind) {
+    case 'firstName':
+      return profile.firstName || null;
+    case 'lastName':
+      return profile.lastName || null;
+    case 'fullName':
+      return joinFullName(profile);
+    case 'preferredName':
+      return profile.preferredName || null;
+    case 'email':
+      return profile.email || null;
+    case 'phone':
+      return profile.phone || null;
+
+    case 'addressLine1':
+      return profile.address.line1 || null;
+    case 'addressLine2':
+      return profile.address.line2 || null;
+    case 'city':
+      return profile.address.city || null;
+    case 'region':
+      return profile.address.region || null;
+    case 'postalCode':
+      return profile.address.postalCode || null;
+    case 'country':
+      return profile.address.country || null;
+
+    case 'linkedin':
+      return profile.links.linkedin || null;
+    case 'github':
+      return profile.links.github || null;
+    case 'portfolio':
+      return profile.links.portfolio || null;
+    case 'twitter':
+      return profile.links.twitter || null;
+    case 'otherLink':
+      return profile.links.other || null;
+
+    case 'authorizedToWorkInUS':
+      return profile.workAuth.authorizedToWorkInUS;
+    case 'requiresSponsorship':
+      return profile.workAuth.requiresSponsorship;
+    case 'willingToRelocate':
+      return profile.workAuth.willingToRelocate;
+    case 'desiredSalary':
+      return profile.workAuth.desiredSalary || null;
+
+    case 'gender':
+      return profile.demographics.gender;
+    case 'pronouns':
+      return profile.demographics.pronouns;
+    case 'ethnicity':
+      return profile.demographics.ethnicity;
+    case 'veteranStatus':
+      return profile.demographics.veteranStatus;
+    case 'disabilityStatus':
+      return profile.demographics.disabilityStatus;
+
+    case 'coverLetter':
+      return profile.defaultCoverLetter || null;
+
+    case 'openEnded':
+      // Open-ended questions never get a profile value — AI suggestions
+      // handle these in step 5.
+      return null;
+
+    default: {
+      // Exhaustiveness check.
+      const _: never = kind;
+      void _;
+      return null;
+    }
+  }
+}
+
+function joinFullName(profile: Profile): string | null {
+  const first = profile.firstName.trim();
+  const last = profile.lastName.trim();
+  const joined = [first, last].filter(Boolean).join(' ');
+  return joined || null;
+}
