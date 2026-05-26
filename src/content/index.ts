@@ -13,6 +13,8 @@ import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
 import { showPill } from './overlay';
+import { installSuggestButtons } from './suggest';
+import { extractJobContext } from './job-context';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!isRequestMessage(msg)) return false;
@@ -96,6 +98,17 @@ async function runFill(forceFromMsg?: boolean) {
     const base: FillActionWire = { label: a.label, kind: a.kind, status: a.status };
     return a.note ? { ...base, note: a.note } : base;
   });
+
+  // Inject ✨ Suggest buttons next to every open-ended textarea we detected.
+  // Idempotent — re-running Fill won't double-attach. Settings.ai.provider
+  // is checked in the background; even with no key the button shows a clear
+  // "Open Options" status when clicked.
+  try {
+    const ctx = extractJobContext(document, url);
+    installSuggestButtons(fields, ctx);
+  } catch (err) {
+    log.warn('suggest-button injection failed', err);
+  }
 
   // Fire-and-forget the in-page pill; never block the response on it.
   try {

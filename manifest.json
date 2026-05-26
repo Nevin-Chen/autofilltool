@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Local-first autofill for online job applications. You stay in control of submission.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "activeTab"],
@@ -17,7 +17,9 @@
   ],
   "optional_host_permissions": [
     "https://script.google.com/*",
-    "https://script.googleusercontent.com/*"
+    "https://script.googleusercontent.com/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.ts",

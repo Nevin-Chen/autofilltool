@@ -10,6 +10,7 @@ import {
 import { getProfile, setProfile, getSettings, setSettings } from '@/profile/store';
 import { TrackingSection } from './TrackingSection';
 import { ResumeSection } from './ResumeSection';
+import { AISection } from './AISection';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -277,6 +278,12 @@ export function OptionsApp() {
 
         {/* ------------------------------------------------ Resume */}
         <ResumeSection />
+
+        {/* ------------------------------------------------ AI */}
+        <AISection
+          settings={settings.ai}
+          onChange={(ai) => setSettingsState((prev) => ({ ...prev, ai }))}
+        />
 
         {/* ------------------------------------------------ Tracking */}
         <TrackingSection

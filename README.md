@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.5.0 — Steps 1 + 2 + 3 + 4 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + Google Sheets logging.**
+**v0.6.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions + Google Sheets logging.**
 
 What works:
 
@@ -55,16 +55,21 @@ What works:
   attaches the file via a `DataTransfer` so the host page sees it like a
   real picker selection. The pill summary now shows `Resume attached` or
   `Resume: no slot on this page`.
-- 72 vitest unit tests covering schema, migrations, filler, generic adapter,
-  per-platform adapters (matches + detectFields + fillResume against
-  realistic fixture HTML for each ATS), webhook client, job-context, and
-  the resume base64/File round-trip + file-input attachment + slot
-  detection.
+- **AI suggestions** — a ✨ Suggest button is injected next to every
+  detected open-ended textarea after Fill. Click streams a draft answer
+  straight into the textarea via the safe filler (so React notices). Pick
+  OpenAI or Anthropic in Options, paste your own API key, grant per-host
+  permission. The prompt includes the question, label, job context, profile
+  summary, and a résumé excerpt; the model is instructed not to invent
+  facts. Test button in Options does a one-shot round-trip to confirm the
+  key works.
+- 90 vitest unit tests covering schema, migrations, filler, generic adapter,
+  per-platform adapters, webhook client, job-context, resume round-trip,
+  the SSE parser, both AI provider streamers, and the prompt builder.
 
 What is intentionally **not** here yet:
 
 - Workday adapter (step 7) — needs iframe + virtualised-list handling.
-- AI suggestions and the provider clients (step 5).
 - Encrypted profile export/import (step 8).
 
 ## Develop
@@ -218,6 +223,49 @@ The payload shape is:
 - Apps Script web apps deployed with "Anyone" access are anonymous — they
   can't trace requests back to you beyond the script owner's account.
 
+## AI suggestions
+
+A ✨ Suggest button appears next to every detected open-ended `<textarea>`
+after you click Fill. Click it to stream a draft answer straight into the
+field. Click again while streaming to cancel.
+
+### Setup
+
+1. Options → **AI suggestions (optional)**.
+2. Pick OpenAI or Anthropic.
+3. Paste your own API key. Keys live in `chrome.storage.local`, never
+   `chrome.storage.sync`.
+4. Click **Grant permission** so the background worker can reach the
+   provider's API host (one prompt per provider).
+5. Click **Test** to confirm the key works end-to-end.
+
+### What gets sent to the provider
+
+Each Suggest click sends:
+
+- The question text and label from the page.
+- Company + role + job URL if the adapter could read them.
+- A short bullet summary of your profile (name, links, prior saved answers,
+  cover-letter blurb).
+- The résumé, if it's a `.txt` file — `.pdf` / `.docx` go as a
+  filename-only note for now (no parser bundled).
+- The system prompt explicitly forbids inventing companies, dates, titles,
+  or skills the profile doesn't mention.
+
+Nothing leaves the background worker except for the streaming request to
+the URL you authorised. Responses are not cached unless you tick
+**Cache responses locally** in Options.
+
+### Streaming under the hood
+
+Chrome's `runtime.sendMessage` doesn't support streaming, so the content
+script opens a long-lived `Port` named `ai-suggest`. The background routes
+through `src/ai/client.ts` → `src/ai/providers/{openai,anthropic}.ts`,
+parses SSE with `src/ai/sse.ts`, and posts one `{kind:"delta",text}`
+message per chunk. Each delta hits the textarea through the same native
+setter the safe filler uses, so frameworks like React register every
+keystroke.
+
 ## Permissions
 
 | Permission                           | Why                                                                            |
@@ -227,6 +275,8 @@ The payload shape is:
 | `activeTab`                          | Reach the currently focused tab when the user clicks the action button.       |
 | Host: ATS domains                    | Auto-detect Greenhouse / Lever / Ashby / Workday job forms. Curated list.     |
 | **Optional** host: `script.google.com` & `script.googleusercontent.com` | Requested on demand (Options → Grant permission) so the background worker can POST to your Apps Script webhook. Revocable. |
+| **Optional** host: `api.openai.com` | Requested on demand (Options → AI → Grant) so the background can stream from OpenAI's chat completions endpoint. Revocable. |
+| **Optional** host: `api.anthropic.com` | Same as above for Anthropic's `/v1/messages` streaming endpoint. Revocable. |
 
 No `tabs`, no `webRequest`, no broad host access beyond the curated ATS list.
 
@@ -247,7 +297,7 @@ Each step is shippable on its own.
 2. ✅ Generic adapter + safe filler + popup "Fill this page."
 3. ✅ Resume upload into file inputs.
 4. ✅ Greenhouse → Lever → Ashby adapters.
-5. ⏳ AI suggestion button + one provider.
+5. ✅ AI suggestion button + provider clients (OpenAI + Anthropic).
 6. ✅ Sheets webhook + history.
 7. ⏳ Workday adapter.
 8. ⏳ Encrypted profile export/import.
