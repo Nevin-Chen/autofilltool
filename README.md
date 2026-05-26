@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.6.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions + Google Sheets logging.**
+**v0.7.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini, free tier) + Google Sheets logging.**
 
 What works:
 
@@ -58,14 +58,15 @@ What works:
 - **AI suggestions** — a ✨ Suggest button is injected next to every
   detected open-ended textarea after Fill. Click streams a draft answer
   straight into the textarea via the safe filler (so React notices). Pick
-  OpenAI or Anthropic in Options, paste your own API key, grant per-host
-  permission. The prompt includes the question, label, job context, profile
-  summary, and a résumé excerpt; the model is instructed not to invent
-  facts. Test button in Options does a one-shot round-trip to confirm the
-  key works.
-- 90 vitest unit tests covering schema, migrations, filler, generic adapter,
+  OpenAI, Anthropic, or **Google Gemini (free tier — no card required)** in
+  Options, paste your own API key, grant per-host permission. The prompt
+  includes the question, label, job context, profile summary, and a résumé
+  excerpt; the model is instructed not to invent facts. Test button in
+  Options does a one-shot round-trip to confirm the key works.
+- 92 vitest unit tests covering schema, migrations, filler, generic adapter,
   per-platform adapters, webhook client, job-context, resume round-trip,
-  the SSE parser, both AI provider streamers, and the prompt builder.
+  the SSE parser, all three AI provider streamers (OpenAI / Anthropic /
+  Gemini), and the prompt builder.
 
 What is intentionally **not** here yet:
 
@@ -232,7 +233,17 @@ field. Click again while streaming to cancel.
 ### Setup
 
 1. Options → **AI suggestions (optional)**.
-2. Pick OpenAI or Anthropic.
+2. Pick a provider:
+   - **OpenAI** — pay-as-you-go API. Default model: `gpt-4o-mini`. Key
+     from [platform.openai.com](https://platform.openai.com/api-keys).
+   - **Anthropic** — pay-as-you-go API. Default model:
+     `claude-3-5-haiku-20241022`. Key from
+     [console.anthropic.com](https://console.anthropic.com/settings/keys).
+   - **Google Gemini** — has a genuine **free tier** (rate-limited, no
+     card required to start). Default model: `gemini-2.5-flash`. Key from
+     [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).
+     Uses Google's OpenAI-compatible endpoint, so the same streaming code
+     path serves all three providers.
 3. Paste your own API key. Keys live in `chrome.storage.local`, never
    `chrome.storage.sync`.
 4. Click **Grant permission** so the background worker can reach the
@@ -277,6 +288,7 @@ keystroke.
 | **Optional** host: `script.google.com` & `script.googleusercontent.com` | Requested on demand (Options → Grant permission) so the background worker can POST to your Apps Script webhook. Revocable. |
 | **Optional** host: `api.openai.com` | Requested on demand (Options → AI → Grant) so the background can stream from OpenAI's chat completions endpoint. Revocable. |
 | **Optional** host: `api.anthropic.com` | Same as above for Anthropic's `/v1/messages` streaming endpoint. Revocable. |
+| **Optional** host: `generativelanguage.googleapis.com` | Same as above for Google's Gemini OpenAI-compatible endpoint. Revocable. |
 
 No `tabs`, no `webRequest`, no broad host access beyond the curated ATS list.
 

@@ -11,6 +11,7 @@
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
+import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 
 export type SuggestRequest = {
   /** The question text the user is being asked to answer. */
@@ -63,6 +64,17 @@ export async function* dispatch(
     } else if (settings.provider === 'anthropic') {
       const model = settings.model || ANTHROPIC_DEFAULT_MODEL;
       for await (const text of streamAnthropic({
+        apiKey: settings.apiKey,
+        model,
+        system: prompt.system,
+        user: prompt.user,
+        maxTokens: estimateTokens(req.maxChars),
+      })) {
+        yield { kind: 'delta', text };
+      }
+    } else if (settings.provider === 'gemini') {
+      const model = settings.model || GEMINI_DEFAULT_MODEL;
+      for await (const text of streamGemini({
         apiKey: settings.apiKey,
         model,
         system: prompt.system,

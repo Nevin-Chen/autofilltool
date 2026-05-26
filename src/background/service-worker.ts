@@ -198,7 +198,9 @@ chrome.runtime.onConnect.addListener((port) => {
           ? 'https://api.openai.com/'
           : settings.ai.provider === 'anthropic'
             ? 'https://api.anthropic.com/'
-            : '';
+            : settings.ai.provider === 'gemini'
+              ? 'https://generativelanguage.googleapis.com/'
+              : '';
       if (providerHost) {
         const permitted = await hasOriginPermission(providerHost);
         if (!permitted) {

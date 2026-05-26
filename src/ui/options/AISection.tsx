@@ -21,11 +21,25 @@ import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 const PROVIDER_HOSTS: Record<Exclude<AiProvider, 'none'>, string> = {
   openai: 'https://api.openai.com/',
   anthropic: 'https://api.anthropic.com/',
+  gemini: 'https://generativelanguage.googleapis.com/',
 };
 
 const PROVIDER_DEFAULT_MODELS: Record<Exclude<AiProvider, 'none'>, string> = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-20241022',
+  gemini: 'gemini-2.5-flash',
+};
+
+const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none'>, string> = {
+  openai: 'sk-…',
+  anthropic: 'sk-ant-…',
+  gemini: 'AIza…',
+};
+
+const PROVIDER_KEY_URL: Record<Exclude<AiProvider, 'none'>, string> = {
+  openai: 'https://platform.openai.com/api-keys',
+  anthropic: 'https://console.anthropic.com/settings/keys',
+  gemini: 'https://aistudio.google.com/app/apikey',
 };
 
 type Status =
@@ -185,7 +199,35 @@ export function AISection({ settings, onChange }: AISectionProps) {
               />
               Anthropic
             </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="ai-provider"
+                checked={settings.provider === 'gemini'}
+                onChange={() => setProvider('gemini')}
+              />
+              Google Gemini{' '}
+              <span className="rounded-sm bg-emerald-100 px-1 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                free tier
+              </span>
+            </label>
           </div>
+          {settings.provider === 'gemini' && (
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Gemini's free tier on{' '}
+              <span className="font-mono">gemini-2.5-flash</span> is
+              rate-limited but doesn't require a card. Grab a key at{' '}
+              <a
+                href={PROVIDER_KEY_URL.gemini}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                aistudio.google.com/app/apikey
+              </a>
+              .
+            </p>
+          )}
         </div>
 
         {settings.provider !== 'none' && (
@@ -201,9 +243,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                   onChange({ ...settings, apiKey: e.target.value.trim() });
                   setStatus({ kind: 'idle' });
                 }}
-                placeholder={
-                  settings.provider === 'openai' ? 'sk-…' : 'sk-ant-…'
-                }
+                placeholder={PROVIDER_KEY_HINT[settings.provider]}
                 autoComplete="off"
                 spellCheck={false}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
