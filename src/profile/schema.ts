@@ -92,7 +92,7 @@ export const AdapterIdSchema = z.enum([
 ]);
 export type AdapterId = z.infer<typeof AdapterIdSchema>;
 
-export const AiProviderSchema = z.enum(['openai', 'anthropic', 'none']);
+export const AiProviderSchema = z.enum(['openai', 'anthropic', 'gemini', 'none']);
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 
 export const AiSettingsSchema = z.object({

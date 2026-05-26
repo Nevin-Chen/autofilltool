@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { streamOpenAI } from '@/ai/providers/openai';
 import { streamAnthropic } from '@/ai/providers/anthropic';
+import { streamGemini } from '@/ai/providers/gemini';
 
 function sseResponse(chunks: string[]): Response {
   const encoder = new TextEncoder();
@@ -157,5 +158,55 @@ describe('streamAnthropic', () => {
       }),
     );
     expect(out).toEqual([]);
+  });
+});
+
+describe('streamGemini', () => {
+  it('reuses the OpenAI-compatible shape against the Google endpoint', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hi' } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: ', friend' } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const out = await collect(
+      streamGemini({
+        apiKey: 'AIza-test',
+        model: 'gemini-2.5-flash',
+        system: 'sys',
+        user: 'hi',
+        maxTokens: 256,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    );
+    expect(out.join('')).toBe('Hi, friend');
+
+    const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toMatch(/generativelanguage\.googleapis\.com/);
+    const headers = call[1].headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer AIza-test');
+    const body = JSON.parse(call[1].body as string);
+    expect(body.model).toBe('gemini-2.5-flash');
+    expect(body.stream).toBe(true);
+    expect(body.messages[0]).toEqual({ role: 'system', content: 'sys' });
+  });
+
+  it('throws on non-OK HTTP', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('quota exceeded', { status: 429 }),
+    );
+    await expect(
+      collect(
+        streamGemini({
+          apiKey: 'AIza-bad',
+          model: 'gemini-2.5-flash',
+          system: '',
+          user: '',
+          maxTokens: 1,
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+        }),
+      ),
+    ).rejects.toThrow(/HTTP 429/);
   });
 });
