@@ -14,6 +14,7 @@ import {
   getProfile,
   getSettings,
   getHistory,
+  getResume,
   pushHistory,
 } from '@/profile/store';
 import {
@@ -23,6 +24,13 @@ import {
 } from '@/types/messages';
 import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema';
 import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
+import { dispatch as dispatchAi } from '@/ai/client';
+import {
+  AI_PORT_NAME,
+  isAiClientMsg,
+  type AiBgToClient,
+} from '@/types/ai-port';
+import { hasOriginPermission } from '@/lib/permissions';
 
 async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>> {
   switch (msg.type) {
@@ -154,6 +162,71 @@ chrome.runtime.onMessage.addListener(
     return handle(raw);
   }),
 );
+
+/* ------------------------------------------------------- AI streaming */
+
+/**
+ * Long-lived port for streaming AI suggestions back to the content script.
+ * One connection per Suggest click; the content script disconnects on
+ * cancel / page unload.
+ */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== AI_PORT_NAME) return;
+  let aborted = false;
+  port.onDisconnect.addListener(() => {
+    aborted = true;
+  });
+  port.onMessage.addListener((raw) => {
+    if (!isAiClientMsg(raw)) return;
+    if (raw.kind === 'cancel') {
+      aborted = true;
+      return;
+    }
+    void runSuggest(port, raw.req).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      safePost(port, { kind: 'error', message });
+    });
+
+    async function runSuggest(p: chrome.runtime.Port, req: typeof raw.req) {
+      const [settings, profile, resume] = await Promise.all([
+        getSettings(),
+        getProfile(),
+        getResume(),
+      ]);
+      const providerHost =
+        settings.ai.provider === 'openai'
+          ? 'https://api.openai.com/'
+          : settings.ai.provider === 'anthropic'
+            ? 'https://api.anthropic.com/'
+            : '';
+      if (providerHost) {
+        const permitted = await hasOriginPermission(providerHost);
+        if (!permitted) {
+          safePost(p, {
+            kind: 'error',
+            message:
+              'No host permission for the AI provider. Open Options → AI and click Grant.',
+          });
+          return;
+        }
+      }
+      for await (const ev of dispatchAi(req, settings.ai, profile, resume)) {
+        if (aborted) return;
+        safePost(p, ev);
+      }
+    }
+  });
+});
+
+function safePost(port: chrome.runtime.Port, msg: AiBgToClient): void {
+  try {
+    port.postMessage(msg);
+  } catch {
+    // Disconnected mid-stream — ignore; the receiver gave up.
+  }
+}
+
+/* ------------------------------------------------------- lifecycle */
 
 chrome.runtime.onInstalled.addListener((details) => {
   log.info('installed', details.reason);
