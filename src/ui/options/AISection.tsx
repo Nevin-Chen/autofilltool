@@ -17,8 +17,17 @@ import {
   revokeOriginPermission,
 } from '@/lib/permissions';
 import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
+import {
+  OLLAMA_DEFAULT_BASE,
+  OLLAMA_DEFAULT_MODEL,
+  resolveOriginForPermission,
+} from '@/ai/providers/ollama';
 
-const PROVIDER_HOSTS: Record<Exclude<AiProvider, 'none'>, string> = {
+/** Remote-API providers — Ollama is local so it isn't in this table. */
+const REMOTE_PROVIDER_HOSTS: Record<
+  Exclude<AiProvider, 'none' | 'ollama'>,
+  string
+> = {
   openai: 'https://api.openai.com/',
   anthropic: 'https://api.anthropic.com/',
   gemini: 'https://generativelanguage.googleapis.com/',
@@ -28,15 +37,16 @@ const PROVIDER_DEFAULT_MODELS: Record<Exclude<AiProvider, 'none'>, string> = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-20241022',
   gemini: 'gemini-2.5-flash',
+  ollama: OLLAMA_DEFAULT_MODEL,
 };
 
-const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none'>, string> = {
+const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
   openai: 'sk-…',
   anthropic: 'sk-ant-…',
   gemini: 'AIza…',
 };
 
-const PROVIDER_KEY_URL: Record<Exclude<AiProvider, 'none'>, string> = {
+const PROVIDER_KEY_URL: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
   openai: 'https://platform.openai.com/api-keys',
   anthropic: 'https://console.anthropic.com/settings/keys',
   gemini: 'https://aistudio.google.com/app/apikey',
@@ -60,8 +70,11 @@ export function AISection({ settings, onChange }: AISectionProps) {
 
   const providerHost = useMemo(() => {
     if (settings.provider === 'none') return null;
-    return PROVIDER_HOSTS[settings.provider];
-  }, [settings.provider]);
+    if (settings.provider === 'ollama') {
+      return resolveOriginForPermission(settings.endpoint || OLLAMA_DEFAULT_BASE);
+    }
+    return REMOTE_PROVIDER_HOSTS[settings.provider];
+  }, [settings.provider, settings.endpoint]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,8 +142,14 @@ export function AISection({ settings, onChange }: AISectionProps) {
   };
 
   const onTest = async () => {
-    if (settings.provider === 'none' || !settings.apiKey) {
-      setStatus({ kind: 'error', text: 'Pick a provider and add an API key first.' });
+    if (settings.provider === 'none') {
+      setStatus({ kind: 'error', text: 'Pick a provider first.' });
+      return;
+    }
+    // Ollama runs locally and doesn't need an API key; every other provider
+    // does.
+    if (settings.provider !== 'ollama' && !settings.apiKey) {
+      setStatus({ kind: 'error', text: 'Add an API key first.' });
       return;
     }
     setTesting(true);
@@ -206,15 +225,20 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 checked={settings.provider === 'gemini'}
                 onChange={() => setProvider('gemini')}
               />
-              Google Gemini{' '}
-              <span className="rounded-sm bg-emerald-100 px-1 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                free tier
-              </span>
+              Google Gemini
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="ai-provider"
+                checked={settings.provider === 'ollama'}
+                onChange={() => setProvider('ollama')}
+              />
+              Ollama (local)
             </label>
           </div>
           {settings.provider === 'gemini' && (
             <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-              Gemini's free tier on{' '}
               <span className="font-mono">gemini-2.5-flash</span> is
               rate-limited but doesn't require a card. Grab a key at{' '}
               <a
@@ -228,27 +252,71 @@ export function AISection({ settings, onChange }: AISectionProps) {
               .
             </p>
           )}
+          {settings.provider === 'ollama' && (
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Runs entirely on your machine — no key, no network. Install{' '}
+              <a
+                href="https://ollama.com"
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                Ollama
+              </a>{' '}
+              then pull a model:{' '}
+              <code className="font-mono">ollama pull {OLLAMA_DEFAULT_MODEL}</code>.
+              Default endpoint:{' '}
+              <span className="font-mono">{OLLAMA_DEFAULT_BASE}</span>.
+            </p>
+          )}
         </div>
 
         {settings.provider !== 'none' && (
           <>
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-700 dark:text-slate-200">
-                API key
-              </span>
-              <input
-                type="password"
-                value={settings.apiKey}
-                onChange={(e) => {
-                  onChange({ ...settings, apiKey: e.target.value.trim() });
-                  setStatus({ kind: 'idle' });
-                }}
-                placeholder={PROVIDER_KEY_HINT[settings.provider]}
-                autoComplete="off"
-                spellCheck={false}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
-            </label>
+            {settings.provider !== 'ollama' && (
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-700 dark:text-slate-200">
+                  API key
+                </span>
+                <input
+                  type="password"
+                  value={settings.apiKey}
+                  onChange={(e) => {
+                    onChange({ ...settings, apiKey: e.target.value.trim() });
+                    setStatus({ kind: 'idle' });
+                  }}
+                  placeholder={PROVIDER_KEY_HINT[settings.provider]}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </label>
+            )}
+
+            {settings.provider === 'ollama' && (
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-700 dark:text-slate-200">
+                  Endpoint
+                </span>
+                <input
+                  type="text"
+                  value={settings.endpoint}
+                  onChange={(e) => {
+                    onChange({ ...settings, endpoint: e.target.value.trim() });
+                    setStatus({ kind: 'idle' });
+                  }}
+                  placeholder={OLLAMA_DEFAULT_BASE}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                  Leave blank for the localhost default. Point at a LAN host
+                  (e.g. <span className="font-mono">http://192.168.1.10:11434</span>)
+                  if Ollama runs on another machine.
+                </span>
+              </label>
+            )}
 
             <label className="block text-sm">
               <span className="mb-1 block text-slate-700 dark:text-slate-200">
@@ -306,7 +374,11 @@ export function AISection({ settings, onChange }: AISectionProps) {
               <button
                 type="button"
                 onClick={onTest}
-                disabled={!granted || !settings.apiKey || testing}
+                disabled={
+                  !granted ||
+                  testing ||
+                  (settings.provider !== 'ollama' && !settings.apiKey)
+                }
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 {testing ? 'Testing…' : 'Test'}

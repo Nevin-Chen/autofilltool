@@ -12,6 +12,7 @@ import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
+import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
 
 export type SuggestRequest = {
   /** The question text the user is being asked to answer. */
@@ -39,7 +40,16 @@ export async function* dispatch(
   profile: Profile,
   resume: ResumeRecord | null,
 ): AsyncGenerator<StreamEvent, void, unknown> {
-  if (settings.provider === 'none' || !settings.apiKey) {
+  if (settings.provider === 'none') {
+    yield {
+      kind: 'error',
+      message: 'No AI provider configured. Open Options → AI to add a key.',
+    };
+    return;
+  }
+  // Ollama runs locally and ignores auth on the public endpoint; every other
+  // provider needs the user's API key.
+  if (settings.provider !== 'ollama' && !settings.apiKey) {
     yield {
       kind: 'error',
       message: 'No AI provider configured. Open Options → AI to add a key.',
@@ -80,6 +90,18 @@ export async function* dispatch(
         system: prompt.system,
         user: prompt.user,
         maxTokens: estimateTokens(req.maxChars),
+      })) {
+        yield { kind: 'delta', text };
+      }
+    } else if (settings.provider === 'ollama') {
+      const model = settings.model || OLLAMA_DEFAULT_MODEL;
+      for await (const text of streamOllama({
+        apiKey: settings.apiKey,
+        model,
+        system: prompt.system,
+        user: prompt.user,
+        maxTokens: estimateTokens(req.maxChars),
+        endpoint: settings.endpoint,
       })) {
         yield { kind: 'delta', text };
       }

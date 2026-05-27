@@ -41,7 +41,26 @@ describe('settings schema', () => {
     expect(s.enabledAdapters).toContain('generic');
     expect(s.enabledAdapters).toContain('greenhouse');
     expect(s.ai.provider).toBe('none');
+    expect(s.ai.endpoint).toBe('');
     expect(s.tracking.webhookUrl).toBe('');
+  });
+
+  it('accepts ollama as a provider with a custom endpoint', () => {
+    const r = SettingsSchema.safeParse({
+      ...defaultSettings(),
+      ai: {
+        provider: 'ollama',
+        apiKey: '',
+        model: 'llama3.2',
+        endpoint: 'http://localhost:11434',
+        cacheResponses: false,
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.ai.provider).toBe('ollama');
+      expect(r.data.ai.endpoint).toBe('http://localhost:11434');
+    }
   });
 
   it('rejects an http:// webhook url', () => {
