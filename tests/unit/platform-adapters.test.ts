@@ -34,6 +34,20 @@ describe('adapter matches()', () => {
     expect(greenhouseAdapter.matches(url, document)).toBe(true);
   });
 
+  it('greenhouse matches via #grnhse_iframe on a company page', () => {
+    document.body.innerHTML =
+      '<div id="grnhse_app"><iframe id="grnhse_iframe" src="https://job-boards.greenhouse.io/embed/job_app?for=acme"></iframe></div>';
+    const url = new URL('https://acme.com/careers/jobs/123');
+    expect(greenhouseAdapter.matches(url, document)).toBe(true);
+  });
+
+  it('greenhouse matches job-boards.greenhouse.io (new redesign host)', () => {
+    const url = new URL(
+      'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=123',
+    );
+    expect(greenhouseAdapter.matches(url, document)).toBe(true);
+  });
+
   it('lever matches jobs.lever.co', () => {
     const url = new URL('https://jobs.lever.co/acme-bio/abcd-1234/apply');
     expect(leverAdapter.matches(url, document)).toBe(true);
@@ -97,6 +111,47 @@ describe('greenhouseAdapter — fixture', () => {
     expect(ok).toBe(true);
     const resume = document.getElementById('resume') as HTMLInputElement;
     expect(resume.files?.[0]?.name).toBe('cv.pdf');
+  });
+});
+
+/* -------------- Greenhouse new redesign (job-boards.greenhouse.io) -------- */
+
+describe('greenhouseAdapter — new redesign fixture', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = loadFixture('greenhouse-embed-new.html');
+  });
+
+  it('classifies canonical fields by name even with no stable ids', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+    const expected: Array<[string, FieldKind]> = [
+      ['first_name', 'firstName'],
+      ['last_name', 'lastName'],
+      ['email', 'email'],
+      ['phone', 'phone'],
+    ];
+    for (const [name, kind] of expected) {
+      const f = find(fields, (el) => (el as HTMLInputElement).name === name);
+      expect(f, `missing field for name="${name}"`).toBeDefined();
+      expect(f?.kind).toBe(kind);
+      expect(f?.confidence).toBeGreaterThanOrEqual(0.95);
+    }
+  });
+
+  it('classifies the LinkedIn URL question via label hint', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+    const linkedin = fields.find((f) => f.kind === 'linkedin');
+    expect(linkedin).toBeDefined();
+    expect(linkedin?.label).toMatch(/LinkedIn/i);
+  });
+
+  it('fillResume targets the hidden file input by name', async () => {
+    const file = new File([new Uint8Array([9])], 'cv.pdf', { type: 'application/pdf' });
+    const ok = await greenhouseAdapter.fillResume!(file, document);
+    expect(ok).toBe(true);
+    const resume = document.querySelector<HTMLInputElement>(
+      'input[type="file"][name="resume"]',
+    );
+    expect(resume?.files?.[0]?.name).toBe('cv.pdf');
   });
 });
 

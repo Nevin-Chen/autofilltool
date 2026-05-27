@@ -3,13 +3,79 @@ import {
   isAtsFrameUrl,
   pickTargetFrames,
   mergeFillResponses,
+  probeAtsHint,
+  type AtsHint,
   type FrameInfo,
 } from '@/background/frames';
 import type { FillPageResponse } from '@/types/messages';
 
-function frame(frameId: number, url: string): FrameInfo {
-  return { frameId, url };
+function frame(frameId: number, url: string, atsHint: AtsHint = null): FrameInfo {
+  return { frameId, url, atsHint };
 }
+
+/** Build a fresh Document with the given HTML body for probe tests. */
+function docWith(html: string): Document {
+  const doc = document.implementation.createHTMLDocument('test');
+  doc.body.innerHTML = html;
+  return doc;
+}
+
+describe('probeAtsHint', () => {
+  it('detects Greenhouse via the embed wrapper div', () => {
+    expect(probeAtsHint(docWith('<div id="grnhse_app"></div>'))).toBe('greenhouse');
+  });
+
+  it('detects Greenhouse via the embed iframe id', () => {
+    expect(
+      probeAtsHint(docWith('<iframe id="grnhse_iframe" src=""></iframe>')),
+    ).toBe('greenhouse');
+  });
+
+  it('detects Greenhouse via the legacy form id', () => {
+    expect(probeAtsHint(docWith('<form id="application-form"></form>'))).toBe(
+      'greenhouse',
+    );
+  });
+
+  it('detects Greenhouse via the new-redesign name signature', () => {
+    expect(
+      probeAtsHint(
+        docWith(
+          '<input name="first_name"><input name="last_name"><input name="email">',
+        ),
+      ),
+    ).toBe('greenhouse');
+  });
+
+  it('does NOT match Greenhouse on a partial name signature alone', () => {
+    // A page with just `name="first_name"` (e.g. a marketing newsletter
+    // signup) shouldn't be misidentified as a Greenhouse form.
+    expect(probeAtsHint(docWith('<input name="first_name">'))).toBeNull();
+  });
+
+  it('detects Lever via data-qa', () => {
+    expect(probeAtsHint(docWith('<form data-qa="application-form"></form>'))).toBe(
+      'lever',
+    );
+  });
+
+  it('detects Ashby via the FieldEntry testid', () => {
+    expect(probeAtsHint(docWith('<div data-testid="FieldEntry"></div>'))).toBe(
+      'ashby',
+    );
+  });
+
+  it('detects Workday via data-automation-id', () => {
+    expect(
+      probeAtsHint(docWith('<input data-automation-id="firstName" />')),
+    ).toBe('workday');
+  });
+
+  it('returns null for arbitrary pages', () => {
+    expect(probeAtsHint(docWith('<p>Hello world</p>'))).toBeNull();
+    expect(probeAtsHint(docWith(''))).toBeNull();
+  });
+});
 
 describe('isAtsFrameUrl', () => {
   it('matches the canonical ATS hostnames', () => {
@@ -40,7 +106,21 @@ describe('isAtsFrameUrl', () => {
 });
 
 describe('pickTargetFrames', () => {
-  it('returns ATS frames only when one is present', () => {
+  it('returns DOM-probed ATS frames first when any are present', () => {
+    // The iframe URL doesn't match any ATS host, but its DOM probe does —
+    // e.g. an embed served from a custom domain or about:blank with
+    // content written in via JS. The probe wins.
+    const frames = [
+      frame(0, 'https://acme.com/careers/jobs/123'),
+      frame(7, 'about:blank', 'greenhouse'),
+      frame(9, 'https://www.googletagmanager.com/gtag/js?id=foo'),
+    ];
+    const picked = pickTargetFrames(frames);
+    expect(picked).toHaveLength(1);
+    expect(picked[0]!.frameId).toBe(7);
+  });
+
+  it('falls back to URL-based ATS targeting when no DOM hints are set', () => {
     const frames = [
       frame(0, 'https://acme.com/careers/jobs/123'),
       frame(7, 'https://boards.greenhouse.io/embed/job_app?for=acme'),
@@ -49,6 +129,19 @@ describe('pickTargetFrames', () => {
     const picked = pickTargetFrames(frames);
     expect(picked).toHaveLength(1);
     expect(picked[0]!.frameId).toBe(7);
+  });
+
+  it('prefers DOM probe over URL match when both exist', () => {
+    const frames = [
+      // URL-match: an ATS subdomain, but no real form (e.g. a job board
+      // listing iframe, not the application iframe).
+      frame(7, 'https://boards.greenhouse.io/companies/x'),
+      // DOM probe: the actual application form, on a custom domain.
+      frame(11, 'https://careers.acme.com/apply', 'greenhouse'),
+    ];
+    const picked = pickTargetFrames(frames);
+    expect(picked).toHaveLength(1);
+    expect(picked[0]!.frameId).toBe(11);
   });
 
   it('returns all ATS frames when multiple are present', () => {

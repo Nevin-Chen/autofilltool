@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Software Engineer (new Greenhouse redesign fixture)</title>
+  </head>
+  <body>
+    <!--
+      Fixture for the new job-boards.greenhouse.io redesign. Key differences
+      from the legacy fixture:
+        * No <form id="application-form"> wrapper.
+        * Inputs keep `name=` but `id=` is React-generated noise (we use
+          random ids here to prove name-based detection works).
+        * Resume widget is a custom uploader: visible Attach button + a
+          hidden <input type="file" name="resume" accept=".pdf,...">.
+        * Labels are <label> elements without `for=` — text-only sibling
+          arrangement, like React tends to produce.
+    -->
+    <h1>Software Engineer, Full Stack</h1>
+    <h2>Apply for this job</h2>
+
+    <div>
+      <label>First Name*</label>
+      <input id="x9k2" name="first_name" type="text" />
+    </div>
+    <div>
+      <label>Last Name*</label>
+      <input id="x9k3" name="last_name" type="text" />
+    </div>
+    <div>
+      <label>Email*</label>
+      <input id="x9k4" name="email" type="email" />
+    </div>
+    <div>
+      <label>Phone</label>
+      <input id="x9k5" name="phone" type="tel" />
+    </div>
+
+    <!--
+      Resume: a custom uploader. The visible button isn't a <input>; the
+      hidden file input next to it carries the accept hint that our
+      shared finder uses to recognise this as a résumé slot.
+    -->
+    <div>
+      <label>Resume/CV*</label>
+      <button type="button">Attach</button>
+      <input
+        id="x9k6"
+        name="resume"
+        type="file"
+        accept=".pdf,.doc,.docx,.txt,.rtf"
+        style="display: none"
+      />
+    </div>
+
+    <!-- A custom URL question with a LinkedIn label. -->
+    <div>
+      <label>LinkedIn Profile</label>
+      <input id="x9k7" name="question_linkedin" type="url" />
+    </div>
+  </body>
+</html>

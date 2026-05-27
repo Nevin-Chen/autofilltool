@@ -41,11 +41,24 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)myworkdayjobs\.com$/i,
 ];
 
+/**
+ * One ATS hint we can guess by looking at a frame's DOM. `null` means the
+ * frame didn't look like any platform we know how to drive.
+ */
+export type AtsHint = 'greenhouse' | 'lever' | 'ashby' | 'workday' | null;
+
 export type FrameInfo = {
   /** chrome.scripting frameId — 0 is the top frame. */
   frameId: number;
   /** location.href as the frame sees it. May be 'about:blank', etc. */
   url: string;
+  /**
+   * Platform guess from a DOM probe inside the frame. Belt-and-suspenders
+   * for URL-based targeting: ATS hosts occasionally change subdomains
+   * (boards.greenhouse.io → job-boards.greenhouse.io), or a frame may be
+   * `about:blank` while still containing an embedded form's HTML.
+   */
+  atsHint: AtsHint;
 };
 
 /** True iff the URL's hostname matches one of the recognised ATS hosts. */
@@ -60,24 +73,87 @@ export function isAtsFrameUrl(url: string): boolean {
 }
 
 /**
+ * DOM probe — runs in the page's isolated world via
+ * chrome.scripting.executeScript, so it must be self-contained (no
+ * imports). Detects which ATS platform's markup a frame contains.
+ *
+ * Exported for the background to inject and for unit tests to call on a
+ * jsdom Document.
+ *
+ * Returns `null` when nothing matches — the caller will then fall back to
+ * URL-based targeting.
+ *
+ * Why these selectors (Greenhouse, the one we know best):
+ *   - `form#application-form` — legacy boards.greenhouse.io form root.
+ *   - `#grnhse_app`           — wrapper div the embed JS creates on parent
+ *                               pages (`<div id="grnhse_app"><iframe
+ *                               id="grnhse_iframe" ...></iframe></div>`).
+ *   - `#grnhse_iframe`        — the iframe id itself, in case we're
+ *                               inspecting from the parent.
+ *   - `input[name="first_name"]` + `input[name="last_name"]` together —
+ *                               new-redesign signature; both must be
+ *                               present to avoid matching unrelated forms.
+ */
+export function probeAtsHint(doc: Document): AtsHint {
+  // Greenhouse — order matters; cheaper checks first.
+  if (
+    doc.getElementById('grnhse_app') ||
+    doc.getElementById('grnhse_iframe') ||
+    doc.querySelector('form#application-form') ||
+    (doc.querySelector('input[name="first_name"]') &&
+      doc.querySelector('input[name="last_name"]') &&
+      doc.querySelector('input[name="email"]'))
+  ) {
+    return 'greenhouse';
+  }
+  // Lever — `data-qa="application-form"` is the stable marker; URL inputs
+  // like `urls[LinkedIn]` confirm the legacy form structure.
+  if (
+    doc.querySelector('[data-qa="application-form"]') ||
+    doc.querySelector('input[name="resume"][type="file"]')
+  ) {
+    // Be careful: a `name="resume"` file input alone isn't enough — many
+    // ATSes use that. Only count it as Lever when paired with the qa hook.
+    if (doc.querySelector('[data-qa="application-form"]')) return 'lever';
+  }
+  // Ashby — every field is in `[data-testid="FieldEntry"]`.
+  if (doc.querySelector('[data-testid="FieldEntry"]')) {
+    return 'ashby';
+  }
+  // Workday — uses `data-automation-id` heavily; not implemented yet
+  // (step 7), but recognising the marker now means we'll route to it
+  // automatically when the adapter ships.
+  if (doc.querySelector('[data-automation-id]')) {
+    return 'workday';
+  }
+  return null;
+}
+
+/**
  * Choose which frames in the tab should receive FILL_PAGE.
  *
- * Rules:
- *  - If any frame is an ATS host → target every such frame and ONLY those.
- *    This avoids the case where a user clicks Fill on company.com which
- *    has a Greenhouse iframe AND a marketing newsletter signup at the
- *    top — without this rule, the generic adapter would fill the
- *    newsletter signup with the user's email and the Greenhouse adapter
- *    would fill the actual job form. Targeting ATS frames keeps the
- *    intent clean.
- *  - Otherwise → top frame only (a normal direct-on-ATS page, or a
- *    page where the user is just trying the generic adapter).
- *  - If somehow there is no frame info at all (defensive) → empty list.
+ * Priority order:
+ *  1. Frames whose DOM probe matched a platform (`atsHint != null`). The
+ *     probe is the most reliable signal — it doesn't care what subdomain
+ *     the iframe is on, and survives weirdness like `about:blank` frames
+ *     that have content written in via JS.
+ *  2. Frames whose URL is a known ATS host. Belt-and-suspenders for cases
+ *     where the probe was unable to run (e.g. cross-origin sandbox).
+ *  3. Top frame only — the user is just trying the generic adapter on a
+ *     regular page.
+ *
+ * Why the "ATS frames only when present" rule: if the user clicks Fill on
+ * a company page that has a Greenhouse iframe AND a marketing newsletter
+ * signup at the top, the generic adapter would fill the signup with the
+ * user's email while the Greenhouse adapter fills the actual job form.
+ * Targeting only the ATS frame keeps the intent clean.
  */
 export function pickTargetFrames(frames: ReadonlyArray<FrameInfo>): FrameInfo[] {
   if (frames.length === 0) return [];
-  const ats = frames.filter((f) => isAtsFrameUrl(f.url));
-  if (ats.length > 0) return ats.slice();
+  const probed = frames.filter((f) => f.atsHint !== null);
+  if (probed.length > 0) return probed.slice();
+  const byUrl = frames.filter((f) => isAtsFrameUrl(f.url));
+  if (byUrl.length > 0) return byUrl.slice();
   const top = frames.find((f) => f.frameId === 0);
   return top ? [top] : [];
 }
