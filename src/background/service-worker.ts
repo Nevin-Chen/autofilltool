@@ -194,16 +194,44 @@ async function ensureContentScriptInAllFrames(
     target: { tabId, allFrames: true },
     files: [contentJs],
   });
+  // Probe each frame for both location.href AND a DOM ATS hint. The probe
+  // is self-contained because chrome.scripting runs it in an isolated
+  // world without our module imports.
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
-    func: () => location.href,
+    func: () => {
+      const doc = document;
+      let atsHint: 'greenhouse' | 'lever' | 'ashby' | 'workday' | null = null;
+      if (
+        doc.getElementById('grnhse_app') ||
+        doc.getElementById('grnhse_iframe') ||
+        doc.querySelector('form#application-form') ||
+        (doc.querySelector('input[name="first_name"]') &&
+          doc.querySelector('input[name="last_name"]') &&
+          doc.querySelector('input[name="email"]'))
+      ) {
+        atsHint = 'greenhouse';
+      } else if (doc.querySelector('[data-qa="application-form"]')) {
+        atsHint = 'lever';
+      } else if (doc.querySelector('[data-testid="FieldEntry"]')) {
+        atsHint = 'ashby';
+      } else if (doc.querySelector('[data-automation-id]')) {
+        atsHint = 'workday';
+      }
+      return { url: location.href, atsHint };
+    },
   });
   const out: FrameInfo[] = [];
   for (const r of results) {
-    if (typeof r.result === 'string') {
-      out.push({ frameId: r.frameId, url: r.result });
+    const v = r.result;
+    if (v && typeof v === 'object' && typeof v.url === 'string') {
+      out.push({ frameId: r.frameId, url: v.url, atsHint: v.atsHint });
     }
   }
+  log.debug(
+    'ensureContentScriptInAllFrames →',
+    out.map((f) => `frame${f.frameId}=${f.atsHint ?? 'none'}(${f.url})`).join(', '),
+  );
   return out;
 }
 

@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.9.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby, including iframe-embedded forms on company career pages) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
+**v0.9.1 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
 
 What works:
 
@@ -73,11 +73,12 @@ What works:
   The prompt includes the question, label, job context, profile summary,
   and a résumé excerpt; the model is instructed not to invent facts. Test
   button in Options does a one-shot round-trip to confirm the setup works.
-- 124 vitest unit tests covering schema, migrations, filler, generic adapter,
-  per-platform adapters, webhook client, job-context, resume round-trip,
-  the SSE parser, all four AI provider streamers (OpenAI / Anthropic /
-  Gemini / Ollama), the prompt builder, and the multi-frame targeting +
-  response merger.
+- 140 vitest unit tests covering schema, migrations, filler, generic adapter,
+  per-platform adapters (including the new Greenhouse redesign fixture),
+  webhook client, job-context, resume round-trip, the SSE parser, all four
+  AI provider streamers (OpenAI / Anthropic / Gemini / Ollama), the prompt
+  builder, multi-frame targeting + response merger, and the DOM-probe ATS
+  hint detector.
 
 What is intentionally **not** here yet:
 
