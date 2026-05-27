@@ -2,7 +2,15 @@
  * Content-script entry point. Loaded into pages matched by manifest's
  * content_scripts (the curated ATS list) and also injected on demand via
  * chrome.scripting from the popup when the user wants to fill an arbitrary
- * page.
+ * page — including iframes embedded into a company's career page.
+ *
+ * Re-injection guard: when the user clicks Fill from the popup, the
+ * background re-injects this bundle with `allFrames: true`. On a tab whose
+ * top frame already loaded the script via the manifest matches, that
+ * re-injection would otherwise register the runtime.onMessage listener a
+ * second time and we'd respond to every message twice. A window-level
+ * boolean short-circuits the rest of the module on the second pass; the
+ * first listener registration is the one that stays live.
  */
 
 import { log } from '@/lib/logger';
@@ -16,28 +24,46 @@ import { showPill } from './overlay';
 import { installSuggestButtons } from './suggest';
 import { extractJobContext } from './job-context';
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!isRequestMessage(msg)) return false;
-
-  if (msg.type === 'PING') {
-    // Used by the background to detect whether we're already injected.
-    sendResponse({ ok: true, value: { pong: true, at: new Date().toISOString() } });
-    return true;
+declare global {
+  interface Window {
+    __autofilltool_loaded__?: boolean;
   }
+}
 
-  if (msg.type === 'FILL_PAGE') {
-    void runFill(msg.options?.forceOverwrite).then(
-      (result) => sendResponse(result),
-      (err: unknown) => {
-        const error = err instanceof Error ? err.message : String(err);
-        sendResponse({ ok: false, error });
-      },
-    );
-    return true; // we'll respond async
-  }
+// Skip module-level side effects (listener registration) on re-injection.
+// The first load wins — its listener stays live and receives FILL_PAGE.
+if (window.__autofilltool_loaded__) {
+  log.debug('content script re-injected; skipping second init on', location.href);
+} else {
+  window.__autofilltool_loaded__ = true;
+  initialize();
+  log.debug('content script loaded on', location.href);
+}
 
-  return false;
-});
+function initialize(): void {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (!isRequestMessage(msg)) return false;
+
+    if (msg.type === 'PING') {
+      // Used by the background to detect whether we're already injected.
+      sendResponse({ ok: true, value: { pong: true, at: new Date().toISOString() } });
+      return true;
+    }
+
+    if (msg.type === 'FILL_PAGE') {
+      void runFill(msg.options?.forceOverwrite).then(
+        (result) => sendResponse(result),
+        (err: unknown) => {
+          const error = err instanceof Error ? err.message : String(err);
+          sendResponse({ ok: false, error });
+        },
+      );
+      return true; // we'll respond async
+    }
+
+    return false;
+  });
+}
 
 async function runFill(forceFromMsg?: boolean) {
   const url = new URL(location.href);
@@ -140,5 +166,3 @@ async function runFill(forceFromMsg?: boolean) {
     },
   };
 }
-
-log.debug('content script loaded on', location.href);

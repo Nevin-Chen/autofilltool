@@ -8,7 +8,12 @@
  * state lives in chrome.storage.local.
  */
 
-import { respondAsync, sendToTab } from '@/lib/messaging';
+import { respondAsync } from '@/lib/messaging';
+import {
+  pickTargetFrames,
+  mergeFillResponses,
+  type FrameInfo,
+} from './frames';
 import { log } from '@/lib/logger';
 import {
   getProfile,
@@ -52,8 +57,9 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     }
 
     case 'FILL_PAGE': {
+      let frames: FrameInfo[];
       try {
-        await ensureContentScript(msg.tabId);
+        frames = await ensureContentScriptInAllFrames(msg.tabId);
       } catch (err) {
         return {
           ok: false,
@@ -63,7 +69,31 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
               : 'Could not access this page.',
         };
       }
-      return sendToTab(msg.tabId, msg);
+      // Pick the frames that actually host an ATS form (or fall back to the
+      // top frame). See src/background/frames.ts for the rationale.
+      const targets = pickTargetFrames(frames);
+      if (targets.length === 0) {
+        return { ok: false, error: 'No reachable frames on this tab.' };
+      }
+      // Broadcast FILL_PAGE in parallel, collect each frame's response.
+      // chrome.tabs.sendMessage throws when a target frame has no listener
+      // (e.g. a sandboxed iframe we couldn't inject into); we capture that
+      // as a per-frame error and let the merger decide what to surface.
+      const responses = await Promise.all(
+        targets.map(async (f) => {
+          try {
+            return (await chrome.tabs.sendMessage(msg.tabId, msg, {
+              frameId: f.frameId,
+            })) as ResponseFor<typeof msg>;
+          } catch (err) {
+            return {
+              ok: false as const,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        }),
+      );
+      return mergeFillResponses(responses);
     }
 
     case 'GET_HISTORY': {
@@ -132,30 +162,49 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
 }
 
 /**
- * Ping the tab's content script. If it doesn't answer, inject our entry
- * point with chrome.scripting and try again. activeTab grants temporary
- * permission for the focused tab even when its host isn't pre-permissioned.
+ * Inject the content script bundle into every frame of `tabId`, then
+ * report which frames are reachable. The content script has a window-level
+ * guard (`__autofilltool_loaded__`) so re-injection on already-loaded
+ * frames is a no-op for listener registration — that's what lets us call
+ * this unconditionally without PING-first.
  *
- * NOTE: the build pipeline (crxjs) rewrites the manifest's `content_scripts`
- * entry to a hashed file path. We read that path from the live manifest so
- * we don't hard-code a stale source filename.
+ * Why every frame: companies embed ATS application forms inside iframes
+ * on their own career-page domains. The form HTML lives inside the iframe
+ * on `boards.greenhouse.io` (or similar); the parent page is on
+ * `company.com`. `chrome.tabs.sendMessage(tabId, msg)` only reaches the
+ * top frame unless we pass `frameId` explicitly, so the caller needs the
+ * full frame list to broadcast.
+ *
+ * activeTab grants the per-tab permission needed to inject across origins
+ * for the focused tab.
+ *
+ * NOTE: the build pipeline (crxjs) rewrites the manifest's
+ * `content_scripts` entry to a hashed file path. We read that path from
+ * the live manifest so we don't hard-code a stale source filename.
  */
-async function ensureContentScript(tabId: number): Promise<void> {
-  try {
-    const pong = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (pong && (pong as { ok?: boolean }).ok !== undefined) return;
-  } catch {
-    // Not loaded yet — fall through to injection.
-  }
+async function ensureContentScriptInAllFrames(
+  tabId: number,
+): Promise<FrameInfo[]> {
   const manifest = chrome.runtime.getManifest();
   const contentJs = manifest.content_scripts?.[0]?.js?.[0];
   if (!contentJs) {
     throw new Error('content script bundle not declared in manifest');
   }
   await chrome.scripting.executeScript({
-    target: { tabId },
+    target: { tabId, allFrames: true },
     files: [contentJs],
   });
+  const results = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: () => location.href,
+  });
+  const out: FrameInfo[] = [];
+  for (const r of results) {
+    if (typeof r.result === 'string') {
+      out.push({ frameId: r.frameId, url: r.result });
+    }
+  }
+  return out;
 }
 
 chrome.runtime.onMessage.addListener(

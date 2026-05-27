@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.8.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
+**v0.9.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby, including iframe-embedded forms on company career pages) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
 
 What works:
 
@@ -33,6 +33,15 @@ What works:
   (`[data-testid="FieldEntry"]` walks with structured `FieldLabel`
   classification). Each overrides `fillResume` with the platform's exact
   slot before falling back to the shared finder.
+- **Embedded ATS iframes** — when a company embeds a Greenhouse / Lever /
+  Ashby application form into its own career page (`<iframe src=
+  "https://boards.greenhouse.io/embed/…">`), Fill from the popup now
+  injects into every frame on the tab (via `chrome.scripting` +
+  `allFrames`) and broadcasts FILL_PAGE only to the frames whose URL is a
+  known ATS host. Means the actual job form gets the platform adapter
+  while the parent page's newsletter signup, analytics iframes, etc. are
+  left alone. activeTab still gates the cross-origin injection — no new
+  permissions.
 - **Safe filler** primitives: native-setter writes (React notices),
   `input`/`change`/`blur` event dispatch, value-then-text option matching for
   `<select>`, click-only-if-state-differs for checkboxes & radios, denylist
@@ -64,10 +73,11 @@ What works:
   The prompt includes the question, label, job context, profile summary,
   and a résumé excerpt; the model is instructed not to invent facts. Test
   button in Options does a one-shot round-trip to confirm the setup works.
-- 107 vitest unit tests covering schema, migrations, filler, generic adapter,
+- 124 vitest unit tests covering schema, migrations, filler, generic adapter,
   per-platform adapters, webhook client, job-context, resume round-trip,
   the SSE parser, all four AI provider streamers (OpenAI / Anthropic /
-  Gemini / Ollama), and the prompt builder.
+  Gemini / Ollama), the prompt builder, and the multi-frame targeting +
+  response merger.
 
 What is intentionally **not** here yet:
 
