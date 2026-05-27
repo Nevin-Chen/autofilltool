@@ -92,13 +92,31 @@ export const AdapterIdSchema = z.enum([
 ]);
 export type AdapterId = z.infer<typeof AdapterIdSchema>;
 
-export const AiProviderSchema = z.enum(['openai', 'anthropic', 'gemini', 'none']);
+export const AiProviderSchema = z.enum([
+  'openai',
+  'anthropic',
+  'gemini',
+  'ollama',
+  'none',
+]);
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 
+/**
+ * Custom endpoint base URL — currently only used by the Ollama provider.
+ * Allows the user to point at a remote Ollama host (e.g. another machine on
+ * their LAN) rather than the localhost default. Validated permissively:
+ * any non-empty string parseable as a URL is allowed; the actual fetch
+ * appends `/v1/chat/completions` if missing.
+ *
+ * Kept here (not as a per-provider field) because zod's default settings
+ * envelope is flat and adding it as a separate AiSettings field is the
+ * least intrusive shape change — no migration needed (defaults to '').
+ */
 export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),
   apiKey: z.string().default(''), // stored in chrome.storage.local only, never synced
   model: z.string().default(''),
+  endpoint: z.string().default(''), // Ollama only; blank → http://localhost:11434
   cacheResponses: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;

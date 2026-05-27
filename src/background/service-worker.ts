@@ -26,6 +26,10 @@ import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema'
 import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
 import { dispatch as dispatchAi } from '@/ai/client';
 import {
+  OLLAMA_DEFAULT_BASE,
+  resolveOriginForPermission,
+} from '@/ai/providers/ollama';
+import {
   AI_PORT_NAME,
   isAiClientMsg,
   type AiBgToClient,
@@ -200,7 +204,13 @@ chrome.runtime.onConnect.addListener((port) => {
             ? 'https://api.anthropic.com/'
             : settings.ai.provider === 'gemini'
               ? 'https://generativelanguage.googleapis.com/'
-              : '';
+              : settings.ai.provider === 'ollama'
+                ? // Empty endpoint → localhost default. The provider module
+                  // resolves this identically when actually fetching.
+                  resolveOriginForPermission(
+                    settings.ai.endpoint || OLLAMA_DEFAULT_BASE,
+                  ) ?? ''
+                : '';
       if (providerHost) {
         const permitted = await hasOriginPermission(providerHost);
         if (!permitted) {

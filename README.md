@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.7.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini, free tier) + Google Sheets logging.**
+**v0.8.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
 
 What works:
 
@@ -58,15 +58,16 @@ What works:
 - **AI suggestions** — a ✨ Suggest button is injected next to every
   detected open-ended textarea after Fill. Click streams a draft answer
   straight into the textarea via the safe filler (so React notices). Pick
-  OpenAI, Anthropic, or **Google Gemini (free tier — no card required)** in
-  Options, paste your own API key, grant per-host permission. The prompt
-  includes the question, label, job context, profile summary, and a résumé
-  excerpt; the model is instructed not to invent facts. Test button in
-  Options does a one-shot round-trip to confirm the key works.
-- 92 vitest unit tests covering schema, migrations, filler, generic adapter,
+  OpenAI, Anthropic, **Google Gemini (free tier)**, or
+  **Ollama (fully local, no key, open-weight models)** in Options, paste
+  your own API key (or just install Ollama), grant per-host permission.
+  The prompt includes the question, label, job context, profile summary,
+  and a résumé excerpt; the model is instructed not to invent facts. Test
+  button in Options does a one-shot round-trip to confirm the setup works.
+- 107 vitest unit tests covering schema, migrations, filler, generic adapter,
   per-platform adapters, webhook client, job-context, resume round-trip,
-  the SSE parser, all three AI provider streamers (OpenAI / Anthropic /
-  Gemini), and the prompt builder.
+  the SSE parser, all four AI provider streamers (OpenAI / Anthropic /
+  Gemini / Ollama), and the prompt builder.
 
 What is intentionally **not** here yet:
 
@@ -239,16 +240,25 @@ field. Click again while streaming to cancel.
    - **Anthropic** — pay-as-you-go API. Default model:
      `claude-3-5-haiku-20241022`. Key from
      [console.anthropic.com](https://console.anthropic.com/settings/keys).
-   - **Google Gemini** — has a genuine **free tier** (rate-limited, no
+   - **Google Gemini** — has a genuine (rate-limited, no
      card required to start). Default model: `gemini-2.5-flash`. Key from
      [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).
      Uses Google's OpenAI-compatible endpoint, so the same streaming code
      path serves all three providers.
-3. Paste your own API key. Keys live in `chrome.storage.local`, never
-   `chrome.storage.sync`.
+   - **Ollama (local)** — runs entirely on your machine, no key, no
+     network. Install [Ollama](https://ollama.com), then
+     `ollama pull llama3.2` (the default — Meta's 3B model, well-aligned,
+     runs on most laptops). Heavier alternatives like `llama3.1:8b`,
+     `qwen2.5:7b`, or `gemma2:2b` all work — just type the model name in
+     Options. The Ollama daemon listens on `http://localhost:11434` by
+     default; point at a LAN host if you run Ollama on a different
+     machine. Same OpenAI-compatible code path.
+3. Paste your own API key (skip for Ollama). Keys live in
+   `chrome.storage.local`, never `chrome.storage.sync`.
 4. Click **Grant permission** so the background worker can reach the
-   provider's API host (one prompt per provider).
-5. Click **Test** to confirm the key works end-to-end.
+   provider's API host (one prompt per provider, including localhost for
+   Ollama).
+5. Click **Test** to confirm the setup works end-to-end.
 
 ### What gets sent to the provider
 
@@ -271,11 +281,12 @@ the URL you authorised. Responses are not cached unless you tick
 
 Chrome's `runtime.sendMessage` doesn't support streaming, so the content
 script opens a long-lived `Port` named `ai-suggest`. The background routes
-through `src/ai/client.ts` → `src/ai/providers/{openai,anthropic}.ts`,
+through `src/ai/client.ts` → `src/ai/providers/{openai,anthropic,gemini,ollama}.ts`,
 parses SSE with `src/ai/sse.ts`, and posts one `{kind:"delta",text}`
 message per chunk. Each delta hits the textarea through the same native
 setter the safe filler uses, so frameworks like React register every
-keystroke.
+keystroke. OpenAI, Gemini, and Ollama all share `openai-compat.ts` — only
+the URL and auth header differ.
 
 ## Permissions
 
@@ -289,6 +300,7 @@ keystroke.
 | **Optional** host: `api.openai.com` | Requested on demand (Options → AI → Grant) so the background can stream from OpenAI's chat completions endpoint. Revocable. |
 | **Optional** host: `api.anthropic.com` | Same as above for Anthropic's `/v1/messages` streaming endpoint. Revocable. |
 | **Optional** host: `generativelanguage.googleapis.com` | Same as above for Google's Gemini OpenAI-compatible endpoint. Revocable. |
+| **Optional** host: `http://localhost/*`, `http://127.0.0.1/*` | Requested on demand (Options → AI → Grant) so the background can stream from a local Ollama daemon. Only granted when the user selects Ollama as the provider. Revocable. |
 
 No `tabs`, no `webRequest`, no broad host access beyond the curated ATS list.
 
