@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.9.1 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby) + AI suggestions (OpenAI + Anthropic + Gemini + Ollama) + Google Sheets logging.**
+**v0.10.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload (with PDF/DOCX text extraction for AI context) + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby) + AI suggestions grounded in profile + parsed résumé + scraped job description (OpenAI / Anthropic / Gemini / Ollama) + Google Sheets logging.**
 
 What works:
 
@@ -70,15 +70,24 @@ What works:
   OpenAI, Anthropic, **Google Gemini (free tier)**, or
   **Ollama (fully local, no key, open-weight models)** in Options, paste
   your own API key (or just install Ollama), grant per-host permission.
-  The prompt includes the question, label, job context, profile summary,
-  and a résumé excerpt; the model is instructed not to invent facts. Test
-  button in Options does a one-shot round-trip to confirm the setup works.
-- 140 vitest unit tests covering schema, migrations, filler, generic adapter,
+  The prompt is grounded in three context blocks the agent needs to
+  answer well: the **question text** from the textarea, the **job
+  description** scraped from the posting (per-ATS adapter selectors with
+  Mozilla Readability as the generic fallback), and the **user's résumé
+  text** (PDF parsed with pdfjs-dist, DOCX with mammoth, plain text
+  inline). The model is instructed to mirror the posting's vocabulary
+  where the user's actual experience supports it, and not to invent
+  facts. Test button in Options does a one-shot round-trip to confirm
+  the setup works.
+- 158 vitest unit tests covering schema, migrations, filler, generic adapter,
   per-platform adapters (including the new Greenhouse redesign fixture),
   webhook client, job-context, resume round-trip, the SSE parser, all four
   AI provider streamers (OpenAI / Anthropic / Gemini / Ollama), the prompt
-  builder, multi-frame targeting + response merger, and the DOM-probe ATS
-  hint detector.
+  builder including the new job-description block, résumé text extraction
+  for plain text + real PDF fixture (round-trip "Hello world!") + DOCX
+  placeholder fallback, multi-frame targeting + response merger, the
+  DOM-probe ATS hint detector, and per-adapter `getJobDescription`
+  selectors plus the Readability fallback.
 
 What is intentionally **not** here yet:
 

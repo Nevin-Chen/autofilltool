@@ -24,6 +24,8 @@ import {
   findResumeInput,
   normalize,
   textOf,
+  clipJobDescription,
+  pickJobDescriptionByCss,
 } from './_shared';
 
 export const ashbyAdapter: PlatformAdapter = {
@@ -36,7 +38,24 @@ export const ashbyAdapter: PlatformAdapter = {
   },
   detectFields,
   fillResume,
+  getJobDescription,
 };
+
+/**
+ * Ashby keeps the description in `[data-testid="JobPostingDescription"]`
+ * on the listing page; the apply route nests the same block above the
+ * form. Falls back to `main` then body.
+ */
+function getJobDescription(doc: Document): string {
+  const byCss = pickJobDescriptionByCss(doc, [
+    '[data-testid="JobPostingDescription"]',
+    '[data-testid="JobPostingPage"]',
+    'main',
+  ]);
+  if (byCss) return byCss;
+  if (doc.body) return clipJobDescription(doc.body.textContent ?? '');
+  return '';
+}
 
 function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];

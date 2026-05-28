@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Local-first autofill for online job applications. You stay in control of submission.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "activeTab"],
@@ -65,6 +65,10 @@
   "web_accessible_resources": [
     {
       "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["pdf.worker.mjs"],
       "matches": ["<all_urls>"]
     }
   ]

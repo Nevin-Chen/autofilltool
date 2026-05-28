@@ -4,7 +4,9 @@ import { resolve } from 'node:path';
 import { greenhouseAdapter } from '@/adapters/greenhouse';
 import { leverAdapter } from '@/adapters/lever';
 import { ashbyAdapter } from '@/adapters/ashby';
+import { genericAdapter } from '@/adapters/generic';
 import { pickAdapter } from '@/content/detector';
+import { JOB_DESCRIPTION_CHAR_BUDGET } from '@/adapters/_shared';
 import type { FieldKind, DetectedField } from '@/adapters/types';
 
 function loadFixture(name: string): string {
@@ -226,5 +228,90 @@ describe('ashbyAdapter — fixture', () => {
     expect(ok).toBe(true);
     const input = document.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input?.files?.[0]?.name).toBe('cv.pdf');
+  });
+});
+
+/* ----------------------------------------- getJobDescription per adapter */
+
+describe('getJobDescription', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head><title>t</title></head><body></body>';
+  });
+
+  it('greenhouse pulls the #content section when present', () => {
+    document.body.innerHTML = `
+      <header>nav junk</header>
+      <div id="content">
+        <h1>Senior Engineer at Acme</h1>
+        <p>You'll lead the platform team and ship infra.</p>
+        <p>Requirements: 5+ years backend.</p>
+      </div>
+      <form id="application-form"><input name="first_name"/></form>
+    `;
+    const text = greenhouseAdapter.getJobDescription(document);
+    expect(text).toMatch(/lead the platform team/);
+    expect(text).toMatch(/Requirements: 5\+ years backend/);
+    expect(text).not.toMatch(/nav junk/);
+  });
+
+  it('greenhouse falls back to body text when no #content', () => {
+    document.body.innerHTML = '<p>Just some plain page body text about the role.</p>';
+    const text = greenhouseAdapter.getJobDescription(document);
+    expect(text).toMatch(/plain page body text/);
+  });
+
+  it('lever pulls .posting-page .content', () => {
+    document.body.innerHTML = `
+      <div class="posting-page">
+        <div class="content">
+          <h2>About this role</h2>
+          <p>You'll join a small team building dev tools.</p>
+        </div>
+      </div>
+    `;
+    const text = leverAdapter.getJobDescription(document);
+    expect(text).toMatch(/About this role/);
+    expect(text).toMatch(/dev tools/);
+  });
+
+  it('ashby pulls [data-testid="JobPostingDescription"]', () => {
+    document.body.innerHTML = `
+      <div data-testid="JobPostingDescription">
+        <p>Ashby is hiring an engineer to work on the recruiting platform.</p>
+      </div>
+    `;
+    const text = ashbyAdapter.getJobDescription(document);
+    expect(text).toMatch(/recruiting platform/);
+  });
+
+  it('generic uses Readability when the page looks article-ish', () => {
+    // Readability requires a meaningful amount of prose + structure to fire.
+    const body = Array(20)
+      .fill(
+        '<p>This is a long-form article paragraph describing the role with enough text to satisfy Readability heuristics. The candidate will lead initiatives and ship features.</p>',
+      )
+      .join('\n');
+    document.body.innerHTML = `<article>${body}</article>`;
+    const text = genericAdapter.getJobDescription(document);
+    expect(text.length).toBeGreaterThan(100);
+    expect(text).toMatch(/lead initiatives/);
+  });
+
+  it('generic falls back to <main> when Readability bails', () => {
+    document.body.innerHTML = '<main><p>Short page body.</p></main>';
+    const text = genericAdapter.getJobDescription(document);
+    expect(text).toMatch(/Short page body/);
+  });
+
+  it('clips to the JD char budget', () => {
+    const big = 'A'.repeat(JOB_DESCRIPTION_CHAR_BUDGET * 3);
+    document.body.innerHTML = `<div id="content">${big}</div>`;
+    const text = greenhouseAdapter.getJobDescription(document);
+    expect(text.length).toBeLessThanOrEqual(JOB_DESCRIPTION_CHAR_BUDGET);
+    expect(text).toMatch(/A+…$/);
+  });
+
+  it('returns "" gracefully on an empty document', () => {
+    expect(genericAdapter.getJobDescription(document)).toBe('');
   });
 });

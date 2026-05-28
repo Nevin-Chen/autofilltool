@@ -13,6 +13,9 @@ import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
+import { extractResumeText } from './resume-text';
+
+export { extractResumeText }; // re-export so existing test imports keep working
 
 export type SuggestRequest = {
   /** The question text the user is being asked to answer. */
@@ -21,6 +24,14 @@ export type SuggestRequest = {
   label?: string;
   /** Loose page context the adapter or content script extracted. */
   job?: { company?: string; role?: string; jobUrl?: string };
+  /**
+   * The human-readable job description text from the page, pulled by the
+   * platform adapter's `getJobDescription` (Readability fallback for the
+   * generic adapter). Cap is ~3000 chars; the prompt builder re-clips
+   * defensively. Optional because the content script may not have managed
+   * to grab anything (CSP, empty iframe, etc.).
+   */
+  jobDescription?: string;
   /** Any character ceiling visible on the page (e.g. textarea maxLength). */
   maxChars?: number;
 };
@@ -57,7 +68,7 @@ export async function* dispatch(
     return;
   }
 
-  const prompt = buildPrompt(req, profile, resume);
+  const prompt = await buildPrompt(req, profile, resume);
 
   try {
     if (settings.provider === 'openai') {
@@ -122,20 +133,30 @@ export async function* dispatch(
 
 export type BuiltPrompt = { system: string; user: string };
 
-const RESUME_CHAR_BUDGET = 6000; // generous, but bounded; cheap models care
+/**
+ * Defensive ceiling on the job-description portion of the user prompt.
+ * Adapters already clip to ~3000 chars in `clipJobDescription`; this is
+ * belt-and-suspenders in case a future caller forgets to clip.
+ */
+const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
 
 /**
  * Build the prompt sent to the provider. Exposed for tests + reuse.
  *
+ * Async because résumé text extraction may need to parse a PDF/DOCX (the
+ * parsers ship in `src/ai/resume-text.ts`).
+ *
  * System: writing-assistant role + constraints (first person, length, no
- * hallucinated facts).
- * User: question + label + job context + profile summary + resume excerpt.
+ * hallucinated facts, must use the job description as the "what they're
+ * looking for" anchor).
+ * User: question + label + job context + JOB DESCRIPTION + profile summary
+ *       + resume excerpt.
  */
-export function buildPrompt(
+export async function buildPrompt(
   req: SuggestRequest,
   profile: Profile,
   resume: ResumeRecord | null,
-): BuiltPrompt {
+): Promise<BuiltPrompt> {
   const lengthHint = req.maxChars
     ? ` Keep the response under ${req.maxChars} characters.`
     : ' Keep the response to 2-4 short paragraphs.';
@@ -143,14 +164,18 @@ export function buildPrompt(
   const system = [
     'You are helping the user draft an answer to a job application question.',
     'Write in the first person, in the user\'s authentic voice — direct, specific, no hype.',
-    'Ground every claim in details from the profile or résumé below. Do not invent companies, dates, titles, or skills.',
+    'Ground every claim in details from the profile, résumé, or job description below. Do not invent companies, dates, titles, or skills.',
+    'When the job description mentions specific responsibilities, qualifications, or values, mirror that vocabulary in your answer — but only when the user\'s actual experience supports it.',
     'If the profile lacks enough detail to answer well, write a short honest placeholder rather than fabricating.',
     `Match the question's tone.${lengthHint}`,
     'Return only the answer text — no preamble, no quotes, no markdown headings.',
   ].join(' ');
 
   const profileSummary = summarizeProfile(profile);
-  const resumeText = resume ? extractResumeText(resume) : '';
+  const resumeText = resume ? await extractResumeText(resume) : '';
+  const jobDescription = req.jobDescription
+    ? truncate(req.jobDescription.trim(), JOB_DESCRIPTION_PROMPT_BUDGET)
+    : '';
   const job =
     req.job && (req.job.company || req.job.role)
       ? `Applying for ${req.job.role ?? 'a role'}${req.job.company ? ` at ${req.job.company}` : ''}.`
@@ -161,10 +186,11 @@ export function buildPrompt(
     req.label ? `Question label: ${req.label}` : '',
     `Question: ${req.question}`,
     '',
-    'Profile:',
-    profileSummary || '(empty)',
-    '',
   ];
+  if (jobDescription) {
+    userParts.push('Job description (from the posting):', jobDescription, '');
+  }
+  userParts.push('Profile:', profileSummary || '(empty)', '');
   if (resumeText) {
     userParts.push('Résumé (text excerpt):', resumeText, '');
   }
@@ -199,27 +225,8 @@ export function summarizeProfile(profile: Profile): string {
   return lines.join('\n');
 }
 
-/**
- * Best-effort plaintext from the stored résumé. PDFs / DOCXs are stored as
- * base64 bytes — without a parser we'd send binary noise. So: only inline
- * the bytes when the MIME is `text/plain`. For other types we hand the
- * model the filename + a note; the user's typed profile summary carries the
- * rest. (A future step could add pdf.js / mammoth here.)
- */
-export function extractResumeText(resume: ResumeRecord): string {
-  if (resume.mimeType === 'text/plain') {
-    try {
-      const binary = atob(resume.bytesBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      return truncate(text.trim(), RESUME_CHAR_BUDGET);
-    } catch {
-      // fall through
-    }
-  }
-  return `(${resume.filename}, ${resume.mimeType || 'binary'}, ${resume.size} bytes — text extraction not implemented for this type)`;
-}
+// `extractResumeText` lives in `./resume-text.ts` and is re-exported above
+// for the existing tests.
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;

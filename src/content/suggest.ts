@@ -149,6 +149,7 @@ function attachButtonFor(
         ...(ctx.company || ctx.role
           ? { job: { company: ctx.company, role: ctx.role, jobUrl: ctx.jobUrl } }
           : {}),
+        ...(ctx.jobDescription ? { jobDescription: ctx.jobDescription } : {}),
         ...(maxChars ? { maxChars } : {}),
       },
     });

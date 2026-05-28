@@ -129,8 +129,17 @@ async function runFill(forceFromMsg?: boolean) {
   // Idempotent — re-running Fill won't double-attach. Settings.ai.provider
   // is checked in the background; even with no key the button shows a clear
   // "Open Options" status when clicked.
+  //
+  // jobDescription is pulled from the adapter so the AI prompt has the
+  // actual posting text as context. Wrapped in its own try because a
+  // crashed Readability run shouldn't kill the rest of suggest setup.
   try {
     const ctx = extractJobContext(document, url);
+    try {
+      ctx.jobDescription = adapter.getJobDescription(document) || '';
+    } catch (err) {
+      log.warn('getJobDescription failed', err);
+    }
     installSuggestButtons(fields, ctx);
   } catch (err) {
     log.warn('suggest-button injection failed', err);

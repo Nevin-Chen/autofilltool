@@ -31,6 +31,8 @@ import {
   isFillable,
   attachResumeViaSlot,
   findResumeInput,
+  clipJobDescription,
+  pickJobDescriptionByCss,
 } from './_shared';
 
 /**
@@ -74,7 +76,37 @@ export const greenhouseAdapter: PlatformAdapter = {
   },
   detectFields,
   fillResume,
+  getJobDescription,
 };
+
+/**
+ * Greenhouse job pages put the readable description in well-known
+ * containers depending on the layout:
+ *   - Legacy boards.greenhouse.io: `#content` (body), or `#header`'s
+ *     siblings containing `.section-wrapper` with the post content.
+ *   - New job-boards.greenhouse.io: the prose lives directly under a
+ *     `<main>` that ALSO contains the application form. We strip the
+ *     form by taking the first sibling of <main> that has prose, but
+ *     simpler — just take the page text and trust `clipJobDescription`
+ *     to bound it. The form labels are short and noisy text wins.
+ *
+ * Fallback walks main → article → body. Always returns clipped text or ''.
+ */
+function getJobDescription(doc: Document): string {
+  // 1) Legacy classic Greenhouse: there's a `#content` block that holds the
+  //    post body before the application-form block.
+  const byCss = pickJobDescriptionByCss(doc, [
+    '#content .section-wrapper.page-centered',
+    '#content',
+    'main',
+    'article',
+  ]);
+  if (byCss) return byCss;
+  // 2) Last-ditch: clip the body. This is a noisy heuristic, but in an
+  //    embedded iframe the body IS essentially the description.
+  if (doc.body) return clipJobDescription(doc.body.textContent ?? '');
+  return '';
+}
 
 function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];

@@ -347,6 +347,54 @@ export function cssEscape(s: string): string {
   return s.replace(/(["\\#.:;,?!+*~'`()\[\]{}<>=|/])/g, '\\$1');
 }
 
+/* ------------------------------------------------------- job description */
+
+/**
+ * Per-adapter cap for `getJobDescription` output. The prompt builder
+ * budgets the description separately from the résumé, so 3000 chars is
+ * enough room for several screens of body text without crowding the rest
+ * of the prompt.
+ */
+export const JOB_DESCRIPTION_CHAR_BUDGET = 3000;
+
+/**
+ * Normalise whitespace and clip to the JD budget. Adapters call this on
+ * the text content of the chosen container so the prompt sees clean prose
+ * (no double spaces, no run-on whitespace from inline tags) but keeps
+ * paragraph breaks intact.
+ */
+export function clipJobDescription(raw: string): string {
+  const collapsed = raw
+    // Per-line: collapse runs of inline whitespace; trim ends.
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim())
+    .join('\n')
+    // Collapse 3+ consecutive newlines into a single blank line.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (collapsed.length <= JOB_DESCRIPTION_CHAR_BUDGET) return collapsed;
+  return collapsed.slice(0, JOB_DESCRIPTION_CHAR_BUDGET - 1).trimEnd() + '…';
+}
+
+/**
+ * Try each selector in order; for the first one that matches a node with
+ * non-empty textContent, return the clipped text. Used by ATS adapters
+ * that know one of a handful of stable container selectors holds the JD.
+ */
+export function pickJobDescriptionByCss(
+  doc: Document,
+  selectors: ReadonlyArray<string>,
+): string {
+  for (const sel of selectors) {
+    const el = doc.querySelector(sel);
+    if (!el) continue;
+    const text = (el.textContent ?? '').trim();
+    if (text.length === 0) continue;
+    return clipJobDescription(text);
+  }
+  return '';
+}
+
 /* ------------------------------------------------------- resume slot */
 
 export const RESUME_HINTS = /\b(resume|résumé|cv|curriculum|attach.*resume|upload.*resume)\b/i;

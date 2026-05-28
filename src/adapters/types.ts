@@ -79,4 +79,20 @@ export interface PlatformAdapter {
    * generic implementation if omitted.
    */
   fillResume?(file: File, root: Document): Promise<boolean>;
+  /**
+   * Best-effort extraction of the human-readable job description (the
+   * "About this role" / "What you'll do" body text — NOT the form fields).
+   * Used as prompt context for the AI Suggest feature so the model can
+   * write answers that actually match what the company asked for.
+   *
+   * Adapters should:
+   *   - Return the readable description text only, with whitespace
+   *     normalised. No HTML tags, no nav/footer, no script blobs.
+   *   - Cap output at ~3000 chars to keep prompt budgets sane. The prompt
+   *     builder will truncate again defensively.
+   *   - Return '' when nothing useful is found — never throw.
+   *
+   * The generic adapter uses `@mozilla/readability` as a last resort.
+   */
+  getJobDescription(doc: Document): string;
 }

@@ -24,6 +24,8 @@ import {
   isFillable,
   attachResumeViaSlot,
   findResumeInput,
+  clipJobDescription,
+  pickJobDescriptionByCss,
 } from './_shared';
 
 /** Exact-name matches for the canonical Lever fields. */
@@ -48,7 +50,28 @@ export const leverAdapter: PlatformAdapter = {
   },
   detectFields,
   fillResume,
+  getJobDescription,
 };
+
+/**
+ * Lever's job description sits in `.posting-page .content` on the listing
+ * view; the `/apply` page strips most of it but usually keeps the headline
+ * and `.posting-headline`/`.section-wrapper` blocks containing
+ * `.description` / `.requirements`. We grab those if present, otherwise
+ * fall back to `main` / body.
+ */
+function getJobDescription(doc: Document): string {
+  const byCss = pickJobDescriptionByCss(doc, [
+    '.posting-page .content',
+    '.posting',
+    '.section-wrapper.page-full-width',
+    '.section.page-centered',
+    'main',
+  ]);
+  if (byCss) return byCss;
+  if (doc.body) return clipJobDescription(doc.body.textContent ?? '');
+  return '';
+}
 
 function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];

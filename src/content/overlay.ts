@@ -185,7 +185,7 @@ function safeExtract(): JobContext {
   try {
     return extractJobContext(document, new URL(location.href));
   } catch {
-    return { company: '', role: '', jobUrl: location.href };
+    return { company: '', role: '', jobUrl: location.href, jobDescription: '' };
   }
 }
 

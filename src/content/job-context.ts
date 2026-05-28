@@ -15,6 +15,18 @@ export type JobContext = {
   company: string;
   role: string;
   jobUrl: string;
+  /**
+   * Best-effort job posting body text (the "About this role" / "What
+   * you'll do" / "Requirements" prose), used as prompt context for AI
+   * Suggest so the model can mirror what the company is actually asking
+   * for. Pulled from the adapter's `getJobDescription` by the caller —
+   * `extractJobContext` itself stays adapter-agnostic and leaves this
+   * field empty by default.
+   *
+   * Cap is enforced by the adapter (~3000 chars) and re-clipped
+   * defensively in the prompt builder.
+   */
+  jobDescription: string;
 };
 
 export function extractJobContext(doc: Document, url: URL): JobContext {
@@ -22,6 +34,7 @@ export function extractJobContext(doc: Document, url: URL): JobContext {
     company: extractCompany(doc, url),
     role: extractRole(doc),
     jobUrl: stripTrackingParams(url).toString(),
+    jobDescription: '',
   };
 }
 
