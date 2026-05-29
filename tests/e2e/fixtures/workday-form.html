@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme — Apply (Workday "My Information" fixture)</title>
+  </head>
+  <body>
+    <!--
+      Fixture for a Workday application form ("My Information" step).
+
+      Workday's apply flow is a multi-step wizard hosted at
+      `<company>.myworkdayjobs.com`. The DOM is shaped around stable
+      `data-automation-id` attributes on every interactive element —
+      Workday's own QA hooks, but ALSO the most reliable signal for
+      autofill since the CSS class names are React-hashed.
+
+      Notable shapes mirrored below:
+        * Text inputs are native <input> with both `data-automation-id`
+          AND `name`.
+        * Selects (Country here) are NOT native <select>. They're
+          `<button role="combobox">` triggers; clicking one opens a
+          listbox popup elsewhere in the DOM with role="option" entries.
+          The adapter needs the async dropdown filler.
+        * File upload: visible "Select files" button next to a hidden
+          file input with `data-automation-id="file-upload-input-ref"`.
+        * Job description block uses `[data-automation-id]` too.
+    -->
+
+    <h1>Apply: Software Engineer</h1>
+    <section data-automation-id="jobPostingDescription">
+      <h2>About the role</h2>
+      <p>You'll join the platform team and lead service migrations.</p>
+      <p>Requirements: 5+ years backend, familiarity with Java/Spring.</p>
+    </section>
+
+    <h2>My Information</h2>
+    <form>
+      <div>
+        <label for="wd_firstName">First name</label>
+        <input
+          id="wd_firstName"
+          data-automation-id="firstName"
+          name="firstName"
+          type="text"
+        />
+      </div>
+      <div>
+        <label for="wd_lastName">Last name</label>
+        <input
+          id="wd_lastName"
+          data-automation-id="lastName"
+          name="lastName"
+          type="text"
+        />
+      </div>
+      <div>
+        <label for="wd_email">Email address</label>
+        <input
+          id="wd_email"
+          data-automation-id="email"
+          name="email"
+          type="email"
+        />
+      </div>
+      <div>
+        <label for="wd_phone">Phone</label>
+        <input
+          id="wd_phone"
+          data-automation-id="phone-input"
+          name="phoneNumber"
+          type="tel"
+        />
+      </div>
+
+      <h3>Address</h3>
+      <div>
+        <label for="wd_addr1">Address line 1</label>
+        <input
+          id="wd_addr1"
+          data-automation-id="addressLine1"
+          name="addressLine1"
+          type="text"
+        />
+      </div>
+      <div>
+        <label for="wd_city">City</label>
+        <input
+          id="wd_city"
+          data-automation-id="city"
+          name="city"
+          type="text"
+        />
+      </div>
+      <div>
+        <label for="wd_zip">Postal code</label>
+        <input
+          id="wd_zip"
+          data-automation-id="postalCode"
+          name="postalCode"
+          type="text"
+        />
+      </div>
+
+      <!--
+        Country: virtualised dropdown trigger. Workday renders the listbox
+        in a portal outside the form. The popup below is what the adapter
+        will see after clicking the trigger; it appears here pre-rendered
+        in the fixture so the test can assert option-click behaviour
+        without needing real popup-mounting timing.
+      -->
+      <div>
+        <span id="wd_country_label">Country</span>
+        <button
+          type="button"
+          role="combobox"
+          data-automation-id="countryDropdown"
+          aria-haspopup="listbox"
+          aria-labelledby="wd_country_label"
+        >
+          Select One
+        </button>
+      </div>
+
+      <!-- File upload section. -->
+      <div>
+        <button type="button" data-automation-id="select-files">
+          Select files
+        </button>
+        <input
+          data-automation-id="file-upload-input-ref"
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.rtf"
+          style="display: none"
+        />
+      </div>
+    </form>
+
+    <!--
+      The listbox popup Workday portal-renders into <body>. role="option"
+      entries match by their text content. In production this only
+      appears after the trigger is clicked; here it's already present so
+      the unit test for fillVirtualizedDropdown can run synchronously.
+    -->
+    <ul
+      role="listbox"
+      data-automation-id="countryDropdown-listbox"
+      aria-labelledby="wd_country_label"
+    >
+      <li role="option">United States of America</li>
+      <li role="option">Canada</li>
+      <li role="option">United Kingdom</li>
+    </ul>
+  </body>
+</html>
