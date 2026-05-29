@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { greenhouseAdapter } from '@/adapters/greenhouse';
 import { leverAdapter } from '@/adapters/lever';
 import { ashbyAdapter } from '@/adapters/ashby';
+import { workdayAdapter } from '@/adapters/workday';
 import { genericAdapter } from '@/adapters/generic';
 import { pickAdapter } from '@/content/detector';
 import { JOB_DESCRIPTION_CHAR_BUDGET } from '@/adapters/_shared';
@@ -58,6 +59,17 @@ describe('adapter matches()', () => {
   it('ashby matches jobs.ashbyhq.com', () => {
     const url = new URL('https://jobs.ashbyhq.com/globex/posting/xyz');
     expect(ashbyAdapter.matches(url, document)).toBe(true);
+  });
+
+  it('workday matches *.myworkdayjobs.com', () => {
+    const url = new URL('https://acme.wd5.myworkdayjobs.com/External/job/123');
+    expect(workdayAdapter.matches(url, document)).toBe(true);
+  });
+
+  it('workday matches via data-automation-id on custom domains', () => {
+    document.body.innerHTML = '<input data-automation-id="firstName" />';
+    const url = new URL('https://careers.acme.com/apply');
+    expect(workdayAdapter.matches(url, document)).toBe(true);
   });
 
   it('detector picks the right adapter per host', () => {
@@ -228,6 +240,65 @@ describe('ashbyAdapter — fixture', () => {
     expect(ok).toBe(true);
     const input = document.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input?.files?.[0]?.name).toBe('cv.pdf');
+  });
+});
+
+/* -------------------------------------------------------- Workday */
+
+describe('workdayAdapter — fixture', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = loadFixture('workday-form.html');
+  });
+
+  it('classifies data-automation-id inputs to canonical kinds', () => {
+    const fields = workdayAdapter.detectFields(document);
+    const expected: Array<[string, FieldKind]> = [
+      ['firstName', 'firstName'],
+      ['lastName', 'lastName'],
+      ['email', 'email'],
+      ['phone-input', 'phone'],
+      ['addressLine1', 'addressLine1'],
+      ['city', 'city'],
+      ['postalCode', 'postalCode'],
+    ];
+    for (const [automationId, kind] of expected) {
+      const f = find(
+        fields,
+        (el) => el.getAttribute('data-automation-id') === automationId,
+      );
+      expect(f, `missing field for ${automationId}`).toBeDefined();
+      expect(f?.kind).toBe(kind);
+      expect(f?.confidence).toBeGreaterThanOrEqual(0.85);
+      // Text inputs must NOT be marked as virtualised dropdowns.
+      expect(f?.widget).not.toBe('virtualizedDropdown');
+    }
+  });
+
+  it('marks the Country combobox as a virtualizedDropdown widget', () => {
+    const fields = workdayAdapter.detectFields(document);
+    const country = find(
+      fields,
+      (el) => el.getAttribute('data-automation-id') === 'countryDropdown',
+    );
+    expect(country).toBeDefined();
+    expect(country?.kind).toBe('country');
+    expect(country?.widget).toBe('virtualizedDropdown');
+  });
+
+  it('fillResume targets the file-upload-input-ref', async () => {
+    const file = new File([new Uint8Array([1, 2])], 'cv.pdf', { type: 'application/pdf' });
+    const ok = await workdayAdapter.fillResume!(file, document);
+    expect(ok).toBe(true);
+    const input = document.querySelector<HTMLInputElement>(
+      'input[data-automation-id="file-upload-input-ref"]',
+    );
+    expect(input?.files?.[0]?.name).toBe('cv.pdf');
+  });
+
+  it('getJobDescription pulls the jobPostingDescription block', () => {
+    const text = workdayAdapter.getJobDescription(document);
+    expect(text).toMatch(/lead service migrations/);
+    expect(text).toMatch(/5\+ years backend/);
   });
 });
 

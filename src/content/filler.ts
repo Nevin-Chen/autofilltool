@@ -281,3 +281,166 @@ function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
   return s.replace(/(["\\#.:;,?!+*~'`()\[\]{}<>=|/])/g, '\\$1');
 }
+
+/* ------------------------------------------------------- virtualised dropdowns */
+
+/**
+ * Workday and similar ATSes don't use native `<select>` — instead they
+ * render a `<button role="combobox">` trigger that opens a portal-mounted
+ * `<ul role="listbox">` with `<li role="option">` children when clicked.
+ * The select happens by clicking the matching option, which the React
+ * controller picks up via its own listener.
+ *
+ * Flow:
+ *   1. Click the trigger.
+ *   2. Wait for a `[role="listbox"]` to appear anywhere in the document.
+ *      Use a MutationObserver — the popup is usually portal-rendered as a
+ *      sibling of `<body>`, not under the trigger.
+ *   3. Find an option whose text content contains the desired value
+ *      (case-insensitive substring). If none, abandon and click the
+ *      trigger again to close the popup.
+ *   4. Click the matching option. Fire a change event on the trigger for
+ *      good measure — some Workday widgets listen on that.
+ *
+ * The wait is bounded: a default 1500ms is enough for React to mount the
+ * popup but short enough that a failed open doesn't stall the whole fill.
+ */
+export type VirtualizedDropdownOptions = {
+  /** Maximum ms to wait for the listbox popup to appear. Default 1500. */
+  timeoutMs?: number;
+  /**
+   * Document the search should look in. Defaults to the trigger's
+   * ownerDocument; tests can pass a custom root.
+   */
+  root?: Document;
+};
+
+export async function fillVirtualizedDropdown(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: VirtualizedDropdownOptions = {},
+): Promise<FillAction> {
+  const { el, kind, label } = field;
+  const trigger = el;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { label, kind, status: 'skipped', note: 'no value in profile' };
+  }
+  const want = String(rawValue).trim();
+  if (!want) {
+    return { label, kind, status: 'skipped', note: 'no value in profile' };
+  }
+  if (!(trigger instanceof HTMLElement)) {
+    return { label, kind, status: 'unsupported', note: 'trigger is not an HTMLElement' };
+  }
+
+  const root: Document = opts.root ?? trigger.ownerDocument;
+  const timeout = opts.timeoutMs ?? 1500;
+
+  try {
+    trigger.click();
+  } catch (err) {
+    return {
+      label,
+      kind,
+      status: 'error',
+      note: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // If a listbox is already in the DOM (some Workday widgets keep it
+  // mounted and just toggle visibility), `waitForListbox` returns
+  // synchronously.
+  const listbox = await waitForListbox(root, timeout);
+  if (!listbox) {
+    return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
+  }
+
+  const option = pickListboxOption(listbox, want);
+  if (!option) {
+    // Close the popup by clicking the trigger again so the page is left
+    // in the same state the user found it in.
+    try {
+      trigger.click();
+    } catch {
+      /* ignore */
+    }
+    return {
+      label,
+      kind,
+      status: 'skipped',
+      note: `no option matched "${truncate(want, 60)}"`,
+    };
+  }
+
+  option.click();
+  trigger.dispatchEvent(new Event('change', { bubbles: true }));
+  return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
+}
+
+/**
+ * Find a `[role="option"]` whose text contains `want` (case-insensitive).
+ * Prefers an exact match over a substring match so "United States" beats
+ * "United States of America" when the profile says "United States".
+ */
+export function pickListboxOption(
+  listbox: Element,
+  want: string,
+): HTMLElement | null {
+  const wantLower = want.toLowerCase().trim();
+  if (!wantLower) return null;
+  const options = Array.from(
+    listbox.querySelectorAll<HTMLElement>('[role="option"]'),
+  ).filter((el) => !isDisabled(el));
+  let exact: HTMLElement | null = null;
+  let substr: HTMLElement | null = null;
+  for (const opt of options) {
+    const text = textOfNode(opt).toLowerCase();
+    if (text === wantLower) {
+      exact = opt;
+      break;
+    }
+    if (!substr && text.includes(wantLower)) substr = opt;
+  }
+  return exact ?? substr;
+}
+
+/**
+ * Resolve to the first `[role="listbox"]` to appear in the document
+ * (including any that's already mounted at call time). Resolves to null
+ * after `timeoutMs` with nothing found.
+ */
+function waitForListbox(root: Document, timeoutMs: number): Promise<Element | null> {
+  const existing = root.querySelector('[role="listbox"]');
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: Element | null) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const observer = new MutationObserver(() => {
+      const found = root.querySelector('[role="listbox"]');
+      if (found) finish(found);
+    });
+    observer.observe(root.documentElement, { childList: true, subtree: true });
+    const timer = setTimeout(() => finish(null), timeoutMs);
+  });
+}
+
+function isDisabled(el: HTMLElement): boolean {
+  return (
+    el.getAttribute('aria-disabled') === 'true' ||
+    el.hasAttribute('disabled')
+  );
+}
+
+function textOfNode(el: Element): string {
+  return (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}

@@ -1,5 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { fillField, pickSelectOption, looksLikeSubmit } from '@/content/filler';
+import {
+  fillField,
+  fillVirtualizedDropdown,
+  pickListboxOption,
+  pickSelectOption,
+  looksLikeSubmit,
+} from '@/content/filler';
 import type { DetectedField } from '@/adapters/types';
 
 function mkField(el: HTMLElement, partial: Partial<DetectedField> = {}): DetectedField {
@@ -220,5 +226,144 @@ describe('pickSelectOption', () => {
     const sel = document.createElement('select');
     sel.innerHTML = `<option value="x">X</option>`;
     expect(pickSelectOption(sel, 'Z')).toBeNull();
+  });
+});
+
+/* -------------------------------------------- virtualised dropdowns (Workday) */
+
+describe('pickListboxOption', () => {
+  it('prefers an exact text match over a substring match', () => {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `
+      <li role="option">United States of America</li>
+      <li role="option">United States</li>
+      <li role="option">Canada</li>
+    `;
+    const hit = pickListboxOption(ul, 'United States');
+    expect(hit?.textContent).toBe('United States');
+  });
+
+  it('substring matches when no exact hit', () => {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `
+      <li role="option">United States of America</li>
+      <li role="option">Canada</li>
+    `;
+    const hit = pickListboxOption(ul, 'United States');
+    expect(hit?.textContent).toBe('United States of America');
+  });
+
+  it('is case-insensitive', () => {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `<li role="option">CANADA</li>`;
+    const hit = pickListboxOption(ul, 'canada');
+    expect(hit?.textContent).toBe('CANADA');
+  });
+
+  it('skips aria-disabled options', () => {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `
+      <li role="option" aria-disabled="true">United States</li>
+      <li role="option">United States of America</li>
+    `;
+    const hit = pickListboxOption(ul, 'United States');
+    expect(hit?.textContent).toBe('United States of America');
+  });
+
+  it('returns null when nothing matches', () => {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `<li role="option">Canada</li>`;
+    expect(pickListboxOption(ul, 'France')).toBeNull();
+  });
+});
+
+describe('fillVirtualizedDropdown', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function mkComboboxField(): { field: DetectedField; trigger: HTMLButtonElement } {
+    const trigger = document.createElement('button');
+    trigger.setAttribute('role', 'combobox');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.textContent = 'Select One';
+    document.body.appendChild(trigger);
+    const field: DetectedField = {
+      el: trigger,
+      kind: 'country',
+      label: 'Country',
+      confidence: 0.99,
+      widget: 'virtualizedDropdown',
+    };
+    return { field, trigger };
+  }
+
+  it('clicks the trigger, finds the option, clicks it, dispatches change', async () => {
+    const { field, trigger } = mkComboboxField();
+    let triggerClicks = 0;
+    trigger.addEventListener('click', () => triggerClicks++);
+
+    // Listbox is already in the DOM (simulating Workday's portal popup
+    // pre-mounted). The trigger click flow still runs end-to-end.
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `
+      <li role="option">Canada</li>
+      <li role="option">United States</li>
+    `;
+    document.body.appendChild(ul);
+
+    const optionClicks: string[] = [];
+    ul.addEventListener('click', (e) => {
+      if (e.target instanceof HTMLElement) {
+        optionClicks.push(e.target.textContent ?? '');
+      }
+    });
+    let changeFired = false;
+    trigger.addEventListener('change', () => (changeFired = true));
+
+    const action = await fillVirtualizedDropdown(field, 'United States');
+    expect(action.status).toBe('filled');
+    expect(triggerClicks).toBe(1);
+    expect(optionClicks).toContain('United States');
+    expect(changeFired).toBe(true);
+  });
+
+  it('returns skipped when no value is provided', async () => {
+    const { field } = mkComboboxField();
+    const action = await fillVirtualizedDropdown(field, '');
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/no value/i);
+  });
+
+  it('returns skipped when no option matches', async () => {
+    const { field, trigger } = mkComboboxField();
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    ul.innerHTML = `<li role="option">Canada</li>`;
+    document.body.appendChild(ul);
+
+    let triggerClicks = 0;
+    trigger.addEventListener('click', () => triggerClicks++);
+
+    const action = await fillVirtualizedDropdown(field, 'France');
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/no option matched/i);
+    // Should click trigger twice — once to open, once to close.
+    expect(triggerClicks).toBe(2);
+  });
+
+  it('returns skipped when the listbox never appears (timeout)', async () => {
+    const { field } = mkComboboxField();
+    const action = await fillVirtualizedDropdown(field, 'United States', {
+      timeoutMs: 10,
+    });
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/dropdown popup did not appear/i);
   });
 });

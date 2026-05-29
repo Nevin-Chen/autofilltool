@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.10.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 of 8: skeleton + generic fill + resume upload (with PDF/DOCX text extraction for AI context) + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby) + AI suggestions grounded in profile + parsed résumé + scraped job description (OpenAI / Anthropic / Gemini / Ollama) + Google Sheets logging.**
+**v0.11.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 + 7 of 8: skeleton + generic fill + resume upload (with PDF/DOCX text extraction for AI context) + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby / **Workday** with virtualised-dropdown support) + AI suggestions grounded in profile + parsed résumé + scraped job description (OpenAI / Anthropic / Gemini / Ollama) + Google Sheets logging.**
 
 What works:
 
@@ -29,10 +29,12 @@ What works:
   `<fieldset><legend>` for radio groups.
 - **Per-platform adapters** for Greenhouse (`#first_name`/`#last_name`/
   `#email`/`#phone`/`#resume`), Lever (canonical `name="…"` and
-  `urls[LinkedIn|GitHub|Portfolio]`), and Ashby
+  `urls[LinkedIn|GitHub|Portfolio]`), Ashby
   (`[data-testid="FieldEntry"]` walks with structured `FieldLabel`
-  classification). Each overrides `fillResume` with the platform's exact
-  slot before falling back to the shared finder.
+  classification), and **Workday** (`data-automation-id` selectors plus
+  virtualised-dropdown click-popup-click for country/state pickers).
+  Each overrides `fillResume` with the platform's exact slot before
+  falling back to the shared finder.
 - **Embedded ATS iframes** — when a company embeds a Greenhouse / Lever /
   Ashby application form into its own career page (`<iframe src=
   "https://boards.greenhouse.io/embed/…">`), Fill from the popup now
@@ -79,11 +81,12 @@ What works:
   where the user's actual experience supports it, and not to invent
   facts. Test button in Options does a one-shot round-trip to confirm
   the setup works.
-- 158 vitest unit tests covering schema, migrations, filler, generic adapter,
-  per-platform adapters (including the new Greenhouse redesign fixture),
+- 173 vitest unit tests covering schema, migrations, filler (including the
+  new virtualised-dropdown async helper), generic adapter, per-platform
+  adapters (Greenhouse classic + new redesign, Lever, Ashby, Workday),
   webhook client, job-context, resume round-trip, the SSE parser, all four
   AI provider streamers (OpenAI / Anthropic / Gemini / Ollama), the prompt
-  builder including the new job-description block, résumé text extraction
+  builder including the job-description block, résumé text extraction
   for plain text + real PDF fixture (round-trip "Hello world!") + DOCX
   placeholder fallback, multi-frame targeting + response merger, the
   DOM-probe ATS hint detector, and per-adapter `getJobDescription`
@@ -91,7 +94,6 @@ What works:
 
 What is intentionally **not** here yet:
 
-- Workday adapter (step 7) — needs iframe + virtualised-list handling.
 - Encrypted profile export/import (step 8).
 
 ## Develop

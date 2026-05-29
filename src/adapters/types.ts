@@ -62,6 +62,20 @@ export type DetectedField = {
    * two adapters/heuristics return overlapping kinds for the same element.
    */
   confidence: number;
+  /**
+   * How the field is rendered. Defaults to 'native' (a real <input>,
+   * <textarea>, or <select> handled by the sync `fillField` path).
+   *
+   * `'virtualizedDropdown'` signals a React-style combobox: a
+   * `<button role="combobox">` trigger that opens a portal-mounted
+   * `<ul role="listbox">` with `[role="option"]` entries. The runFill
+   * loop awaits `fillVirtualizedDropdown` for these because the popup
+   * appears asynchronously after the click.
+   *
+   * Per-platform adapters set this on Workday country/state pickers and
+   * similar widgets; the generic adapter leaves it unset.
+   */
+  widget?: 'native' | 'virtualizedDropdown';
 };
 
 export interface PlatformAdapter {

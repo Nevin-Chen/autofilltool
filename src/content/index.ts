@@ -16,7 +16,7 @@
 import { log } from '@/lib/logger';
 import { isRequestMessage, type FillActionWire } from '@/types/messages';
 import { pickAdapter } from './detector';
-import { fillField, type FillAction } from './filler';
+import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -80,7 +80,14 @@ async function runFill(forceFromMsg?: boolean) {
   const actions: FillAction[] = [];
   for (const field of fields) {
     const value = valueForField(profile, field.kind);
-    actions.push(fillField(field, value, { forceOverwrite }));
+    // Virtualised dropdowns (Workday-style React comboboxes) need the
+    // async click-popup-click flow; everything else uses the sync path.
+    if (field.widget === 'virtualizedDropdown') {
+      // eslint-disable-next-line no-await-in-loop -- dropdowns are sequential by design
+      actions.push(await fillVirtualizedDropdown(field, value));
+    } else {
+      actions.push(fillField(field, value, { forceOverwrite }));
+    }
   }
 
   // Resume attachment runs after text fields so any visibility-toggling
