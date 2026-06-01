@@ -1,21 +1,15 @@
 /**
- * Persistent in-page pill. Lives in a closed Shadow DOM so the host page's
- * CSS can't reach it. Two states:
- *
- *   1. Summary — counts, "Mark submitted" button, close button.
- *   2. Submit form — editable company/role pre-filled from the page,
- *      "Send" → posts LOG_SUBMISSION → toast result → close.
- *
- * The pill is mounted by the content script after a fill and stays put until
- * the user dismisses it (clicking the × or hitting "Send"). It does not
- * auto-dismiss — the user often needs minutes to finish the form before
- * they're ready to mark it submitted.
+ * Persistent in-page pill in a closed Shadow DOM (host CSS can't reach it).
+ * Two states: a summary (counts + "Mark submitted") and a submit form
+ * (editable company/role → LOG_SUBMISSION → toast → close). Mounted after a
+ * fill; never auto-dismisses — the user finishes the form on their own time.
  */
 
 import type { AdapterId } from '@/profile/schema';
 import type { JobContext } from './job-context';
 import { extractJobContext } from './job-context';
 import { sendToBackground } from '@/lib/messaging';
+import type { LoggedRecord } from './submit-watch';
 
 const HOST_ID = 'autofilltool-pill-host';
 
@@ -26,19 +20,15 @@ export type PillInput = {
   adapterId: AdapterId;
   adapterName: string;
   /**
-   * Outcome of the resume attachment pass:
-   *   - attached  → file landed on a file input
-   *   - notFound  → resume in storage but no slot on this page
-   *   - noResume  → user hasn't uploaded one in Options
-   *   - noHook    → adapter has no fillResume implementation (won't happen in practice)
-   *   - skipped   → unused right now; reserved for "input already had a file"
+   * Resume-attach outcome: attached (landed on a file input), notFound (stored
+   * but no slot here), noResume (none uploaded), noHook (adapter has no
+   * fillResume), skipped (reserved for "input already had a file").
    */
   resume: 'attached' | 'notFound' | 'noResume' | 'noHook' | 'skipped';
 };
 
 export function showPill(input: PillInput): void {
-  // If a previous pill is still on the page, replace it.
-  document.getElementById(HOST_ID)?.remove();
+  document.getElementById(HOST_ID)?.remove(); // replace any existing pill
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -61,6 +51,43 @@ export function showPill(input: PillInput): void {
   renderSummary(container, input, () => renderForm(container, input, close), close);
 
   (document.body ?? document.documentElement).appendChild(host);
+}
+
+/**
+ * Small auto-dismissing toast shown when submit-watch auto-logs an application.
+ * Replaces any open pill so the user isn't asked to "Mark submitted" twice.
+ */
+export function showLoggedToast(record: LoggedRecord): void {
+  document.getElementById(HOST_ID)?.remove();
+
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  Object.assign(host.style, {
+    position: 'fixed',
+    right: '16px',
+    bottom: '16px',
+    zIndex: '2147483647',
+    all: 'initial',
+  } as CSSStyleDeclaration);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+  shadow.appendChild(buildStyle());
+  const container = document.createElement('div');
+  container.className = 'card';
+  shadow.appendChild(container);
+
+  const where = record.posted ? 'Logged to your sheet' : 'Logged locally';
+  const label = [record.role, record.company].filter(Boolean).join(' · ');
+  container.append(
+    h('div', { class: 'row between' }, [
+      h('div', { class: 'title' }, ['Application logged ✓']),
+      btn({ class: 'icon', text: '×', title: 'Dismiss', onClick: () => host.remove() }),
+    ]),
+    h('div', { class: 'sub' }, [where + (label ? ` — ${label}` : '')]),
+  );
+
+  (document.body ?? document.documentElement).appendChild(host);
+  setTimeout(() => host.remove(), 6000);
 }
 
 /* ----------------------------------------------------------- rendering */
@@ -100,11 +127,7 @@ function renderSummary(
   root.append(header, via, stats, ...(resumeLine ? [resumeLine] : []), hint, actions);
 }
 
-/**
- * One-line "Resume: <state>" indicator. Returns null when there's nothing
- * interesting to say (no resume uploaded → don't nag the user about it on
- * every fill).
- */
+/** One-line resume indicator; null when there's nothing useful to say (no nagging). */
 function resumePill(state: PillInput['resume']): HTMLElement | null {
   switch (state) {
     case 'attached':

@@ -1,14 +1,7 @@
 /**
- * Best-effort extraction of {company, role, jobUrl} from a job posting page.
- * Used to pre-fill the "Mark submitted" form so the user usually only has to
- * confirm rather than type.
- *
- * Conservative: never throws, never returns garbage. Fields stay empty if no
- * reliable signal is found — the user can fill them in.
- *
- * Per-ATS adapters can later override `extractJobContext` if they have a
- * cleaner read on the structured data (e.g., Greenhouse exposes
- * `application_form.job_post.job.name`).
+ * Best-effort {company, role, jobUrl} from a posting page, to pre-fill the
+ * "Mark submitted" form. Conservative: never throws; fields stay empty when no
+ * reliable signal is found.
  */
 
 export type JobContext = {
@@ -16,15 +9,8 @@ export type JobContext = {
   role: string;
   jobUrl: string;
   /**
-   * Best-effort job posting body text (the "About this role" / "What
-   * you'll do" / "Requirements" prose), used as prompt context for AI
-   * Suggest so the model can mirror what the company is actually asking
-   * for. Pulled from the adapter's `getJobDescription` by the caller —
-   * `extractJobContext` itself stays adapter-agnostic and leaves this
-   * field empty by default.
-   *
-   * Cap is enforced by the adapter (~3000 chars) and re-clipped
-   * defensively in the prompt builder.
+   * Posting body text as AI Suggest context, filled by the caller from the
+   * adapter's `getJobDescription`. `extractJobContext` leaves it empty.
    */
   jobDescription: string;
 };
@@ -67,8 +53,7 @@ function extractRole(doc: Document): string {
     if (t) return cleanTitle(t);
   }
 
-  // 4. <title> last (often noisy with the company appended). Split on common
-  //    "Role — Company" separators when present.
+  // 4. <title> last (noisy); split on "Role — Company" separators if present.
   const title = doc.title;
   const split = title.match(/^(.+?)\s*[|\-–—]\s*.+$/);
   return cleanTitle(split?.[1] ?? title);
@@ -84,29 +69,26 @@ function extractCompany(doc: Document, url: URL): string {
   const og = metaContent(doc, 'meta[property="og:site_name"]');
   if (og) return og.trim();
 
-  // ATS-specific heuristics from the host.
-  // Greenhouse boards: boards.greenhouse.io/<company>/jobs/...
+  // ATS host heuristics — company is the first path segment (Greenhouse/Lever/
+  // Ashby) or the subdomain (Workday).
   if (url.hostname.endsWith('greenhouse.io')) {
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
-  // Lever: jobs.lever.co/<company>/...
   if (url.hostname.endsWith('lever.co')) {
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
-  // Ashby: jobs.ashbyhq.com/<company>/...
   if (url.hostname.endsWith('ashbyhq.com')) {
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
-  // Workday: <company>.wd5.myworkdayjobs.com/<...>
   if (url.hostname.endsWith('myworkdayjobs.com')) {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
 
-  // Fallback: try the document title's "Role — Company" / "Role | Company" pattern.
+  // Fallback: document title's "Role — Company" pattern.
   const t = doc.title;
   const m = t.match(/^(.+?)\s*[|\-–—]\s*(.+)$/);
   if (m?.[2]) return cleanTitle(m[2]);
@@ -179,7 +161,7 @@ function textOf(el: Element | null): string {
 }
 
 function cleanTitle(raw: string): string {
-  // Strip common "Apply for X" / "Careers - X" prefixes and trailing site names.
+  // Strip "Apply for X" / "Careers - X" prefixes.
   return raw
     .replace(/^\s*(apply for|apply to|application for|careers?\s*[-:])\s+/i, '')
     .trim();

@@ -1,11 +1,7 @@
 /**
- * All cross-context messages flow through a single discriminated union so the
- * compiler can keep the request/response shapes in sync between content
- * scripts, the popup, the options page, and the service worker.
- *
- * NOTE: Step 1 only wires the envelope and a small set of stub messages.
- * Future steps (AI suggestions, webhook logging, per-adapter fills) will add
- * variants here — keep them well-typed.
+ * All cross-context messages flow through one discriminated union so the
+ * compiler keeps request/response shapes in sync across content scripts, the
+ * popup, the options page, and the service worker.
  */
 
 import type { Profile, Settings, SubmissionRecord } from '@/profile/schema';
@@ -24,14 +20,9 @@ export type FillPageMsg = {
 };
 
 /**
- * Records a "I submitted this application" click. The background appends to
- * chrome.storage history and, if a webhook is configured, POSTs to it. The
- * caller (overlay or popup) just submits the record; everything else is
- * handled in the worker.
- *
- * Only `source` and `status` are required. Everything else has a sane default
- * the worker fills in (id, timestamp) or is allowed to be empty (company,
- * role, jobUrl, note).
+ * Records a "submitted this application" click. The worker appends to history
+ * and POSTs to the webhook if configured. Only `source`/`status` are required;
+ * the worker fills id/timestamp and the rest may be empty.
  */
 export type LogSubmissionMsg = {
   type: 'LOG_SUBMISSION';

@@ -1,31 +1,12 @@
 /**
- * Ollama — local-first, open-weight model runner.
+ * Ollama — the only fully-offline provider. It exposes an OpenAI-compatible
+ * `/v1/chat/completions` endpoint (default http://localhost:11434), so it
+ * reuses streamChatCompletions. Default model `llama3.2`; user-overridable.
  *
- * Ollama (https://ollama.com) ships an OpenAI-compatible
- * `/v1/chat/completions` endpoint at `http://localhost:11434` by default.
- * It accepts the standard `messages: [{role,content}]` body, `stream: true`,
- * and emits `data: {...}` SSE lines terminated by `data: [DONE]`, with
- * `choices[0].delta.content` carrying the text. That means the bulk of the
- * implementation is the existing `streamChatCompletions` helper.
- *
- * Why this provider matters: it's the only fully-offline option in the AI
- * lineup. No key leaves the machine, no provider terms of service, no rate
- * limits beyond the user's hardware. The model the user runs is whatever
- * they pulled with `ollama pull <name>` — we default to `llama3.2` (Meta,
- * 3B, well-aligned, runs on most laptops). Users can override the model in
- * Options.
- *
- * Auth: Ollama ignores the Authorization header on its public endpoint. We
- * still send `Bearer ollama` if the user didn't set an API key, because the
- * shared OpenAI-compat helper sets the header unconditionally and some
- * reverse-proxy setups in front of Ollama (e.g. an API gateway on a LAN)
- * require *something* there. Users running a real auth proxy can paste
- * that proxy's token in the API key field and it flows through unchanged.
- *
- * Endpoint: defaults to localhost, but accepts an override so users can
- * point at a remote Ollama box on their LAN. We normalise: if the override
- * already ends in `/chat/completions`, use as-is; otherwise we append
- * `/v1/chat/completions` to the origin or base path.
+ * Auth: Ollama ignores the Authorization header, but the shared helper always
+ * sets one, so we send `Bearer ollama` when no key is given (also satisfies
+ * any LAN auth proxy in front of Ollama, whose token the user can paste in).
+ * Endpoint accepts a remote-host override; see resolveEndpoint for normalising.
  */
 
 import { streamChatCompletions } from './openai-compat';
@@ -61,13 +42,9 @@ export function streamOllama(params: OllamaStreamParams) {
 }
 
 /**
- * Turn the user-supplied base URL into a full /chat/completions URL.
- * - Blank → `${OLLAMA_DEFAULT_BASE}/v1/chat/completions`.
- * - Already ends in `/chat/completions` → keep verbatim (advanced users).
- * - Anything else → append `/v1/chat/completions` to the origin (strip any
- *   trailing slash first so we don't double up).
- *
- * Exported for testing.
+ * Base URL → full /chat/completions URL. Blank → localhost default; already
+ * ends in `/chat/completions` → verbatim; else append CHAT_PATH (no double
+ * slash). Exported for testing.
  */
 export function resolveEndpoint(raw: string): string {
   const trimmed = raw.trim();
@@ -78,10 +55,8 @@ export function resolveEndpoint(raw: string): string {
 }
 
 /**
- * The origin we need host permission for, given the user's configured
- * endpoint (or the default). Returned with a trailing slash so it can be
- * fed straight to `requestOriginPermission`. Returns `null` if the input
- * is unparseable.
+ * Origin (trailing slash, for requestOriginPermission) needed for the
+ * configured endpoint, or the default. `null` if unparseable.
  */
 export function resolveOriginForPermission(raw: string): string | null {
   const trimmed = (raw || OLLAMA_DEFAULT_BASE).trim();

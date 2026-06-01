@@ -1,39 +1,17 @@
 /**
  * Multi-frame fill plumbing — pure helpers, no chrome.* calls.
  *
- * Companies embed ATS application forms into their own career pages in two
- * shapes:
- *
- *  1. iframe — `<iframe src="https://boards.greenhouse.io/embed/…">`. The
- *     form HTML lives on the ATS host inside the frame; the parent page is
- *     on the company's own domain.
- *  2. JS-rendered — Greenhouse's `embed.js` ultimately also injects an
- *     iframe in practice; the visible behaviour is the same.
- *
- * Our content script can't reach into a cross-origin iframe from the
- * parent, so the only way to fill an embedded form is to inject the
- * content script *into the iframe* and message it directly. Chrome's
- * `chrome.tabs.sendMessage(tabId, msg)` only hits the top frame unless we
- * pass an explicit `frameId`, so the background has to enumerate frames
- * and broadcast.
- *
- * `pickTargetFrames` decides which frames should receive FILL_PAGE: if any
- * subframe is an ATS host, fill only those (avoids accidentally filling
- * the company's newsletter signup on the parent page); otherwise fall back
- * to the top frame only.
- *
- * `mergeFillResponses` combines the per-frame results into the single
- * FillPageResponse the popup expects.
+ * Companies embed ATS forms as cross-origin iframes, which the parent's
+ * content script can't reach. So the background injects the content script
+ * into each frame and messages it by explicit frameId. pickTargetFrames
+ * chooses which frames get FILL_PAGE (ATS frames only when present, so we
+ * don't fill the parent page's newsletter signup); mergeFillResponses folds
+ * the per-frame results into the single FillPageResponse the popup expects.
  */
 
 import type { FillPageResponse, FillActionWire } from '@/types/messages';
 
-/**
- * Hosts whose pages we recognise as ATS application forms. Used both for
- * frame targeting and for picking the "best" adapter when responses come
- * from multiple frames. Anything matching this list is preferred over a
- * generic-adapter fill on the parent frame.
- */
+/** ATS hosts — drives frame targeting and the "best adapter" tiebreak. */
 const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)greenhouse\.io$/i,
   /(^|\.)lever\.co$/i,
@@ -41,10 +19,7 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)myworkdayjobs\.com$/i,
 ];
 
-/**
- * One ATS hint we can guess by looking at a frame's DOM. `null` means the
- * frame didn't look like any platform we know how to drive.
- */
+/** Platform guessed from a frame's DOM; `null` = nothing we can drive. */
 export type AtsHint = 'greenhouse' | 'lever' | 'ashby' | 'workday' | null;
 
 export type FrameInfo = {
@@ -53,10 +28,8 @@ export type FrameInfo = {
   /** location.href as the frame sees it. May be 'about:blank', etc. */
   url: string;
   /**
-   * Platform guess from a DOM probe inside the frame. Belt-and-suspenders
-   * for URL-based targeting: ATS hosts occasionally change subdomains
-   * (boards.greenhouse.io → job-boards.greenhouse.io), or a frame may be
-   * `about:blank` while still containing an embedded form's HTML.
+   * DOM-probe platform guess. Backs up URL targeting: ATS hosts change
+   * subdomains, and frames can be about:blank with JS-written form HTML.
    */
   atsHint: AtsHint;
 };
@@ -73,26 +46,10 @@ export function isAtsFrameUrl(url: string): boolean {
 }
 
 /**
- * DOM probe — runs in the page's isolated world via
- * chrome.scripting.executeScript, so it must be self-contained (no
- * imports). Detects which ATS platform's markup a frame contains.
- *
- * Exported for the background to inject and for unit tests to call on a
- * jsdom Document.
- *
- * Returns `null` when nothing matches — the caller will then fall back to
- * URL-based targeting.
- *
- * Why these selectors (Greenhouse, the one we know best):
- *   - `form#application-form` — legacy boards.greenhouse.io form root.
- *   - `#grnhse_app`           — wrapper div the embed JS creates on parent
- *                               pages (`<div id="grnhse_app"><iframe
- *                               id="grnhse_iframe" ...></iframe></div>`).
- *   - `#grnhse_iframe`        — the iframe id itself, in case we're
- *                               inspecting from the parent.
- *   - `input[name="first_name"]` + `input[name="last_name"]` together —
- *                               new-redesign signature; both must be
- *                               present to avoid matching unrelated forms.
+ * Detect which ATS platform's markup a frame contains. Runs in the page's
+ * isolated world via executeScript, so it must be self-contained (no
+ * imports); also called by unit tests on a jsdom Document. Returns `null`
+ * when nothing matches, so the caller falls back to URL-based targeting.
  */
 export function probeAtsHint(doc: Document): AtsHint {
   // Greenhouse — order matters; cheaper checks first.
@@ -106,23 +63,19 @@ export function probeAtsHint(doc: Document): AtsHint {
   ) {
     return 'greenhouse';
   }
-  // Lever — `data-qa="application-form"` is the stable marker; URL inputs
-  // like `urls[LinkedIn]` confirm the legacy form structure.
+  // Lever — `data-qa="application-form"` is the stable marker. A bare
+  // `name="resume"` file input isn't enough (many ATSes use it).
   if (
     doc.querySelector('[data-qa="application-form"]') ||
     doc.querySelector('input[name="resume"][type="file"]')
   ) {
-    // Be careful: a `name="resume"` file input alone isn't enough — many
-    // ATSes use that. Only count it as Lever when paired with the qa hook.
     if (doc.querySelector('[data-qa="application-form"]')) return 'lever';
   }
   // Ashby — every field is in `[data-testid="FieldEntry"]`.
   if (doc.querySelector('[data-testid="FieldEntry"]')) {
     return 'ashby';
   }
-  // Workday — uses `data-automation-id` heavily; not implemented yet
-  // (step 7), but recognising the marker now means we'll route to it
-  // automatically when the adapter ships.
+  // Workday — `data-automation-id` everywhere.
   if (doc.querySelector('[data-automation-id]')) {
     return 'workday';
   }
@@ -130,23 +83,11 @@ export function probeAtsHint(doc: Document): AtsHint {
 }
 
 /**
- * Choose which frames in the tab should receive FILL_PAGE.
- *
- * Priority order:
- *  1. Frames whose DOM probe matched a platform (`atsHint != null`). The
- *     probe is the most reliable signal — it doesn't care what subdomain
- *     the iframe is on, and survives weirdness like `about:blank` frames
- *     that have content written in via JS.
- *  2. Frames whose URL is a known ATS host. Belt-and-suspenders for cases
- *     where the probe was unable to run (e.g. cross-origin sandbox).
- *  3. Top frame only — the user is just trying the generic adapter on a
- *     regular page.
- *
- * Why the "ATS frames only when present" rule: if the user clicks Fill on
- * a company page that has a Greenhouse iframe AND a marketing newsletter
- * signup at the top, the generic adapter would fill the signup with the
- * user's email while the Greenhouse adapter fills the actual job form.
- * Targeting only the ATS frame keeps the intent clean.
+ * Choose which frames get FILL_PAGE, in priority order: probed ATS frames
+ * first (most reliable — subdomain- and about:blank-proof), then frames on
+ * a known ATS host, else the top frame only. Targeting ATS frames only when
+ * present stops the generic adapter from filling a parent-page newsletter
+ * signup alongside the real job form.
  */
 export function pickTargetFrames(frames: ReadonlyArray<FrameInfo>): FrameInfo[] {
   if (frames.length === 0) return [];
@@ -159,20 +100,11 @@ export function pickTargetFrames(frames: ReadonlyArray<FrameInfo>): FrameInfo[] 
 }
 
 /**
- * Combine per-frame FillPageResponse values into a single response shaped
- * the way the popup already consumes. Sums counts, concatenates actions,
- * and picks the adapter id from the frame that contributed the most filled
- * fields (ties broken by "not generic" first, then by adapter id ordering
- * in the input).
- *
- * If every frame errored, returns the first error (with a hint about how
- * many frames were tried, since "Could not establish connection" on a
- * single hidden iframe is a common false positive).
- *
- * If no frames responded at all, returns a synthetic ok-with-zero rather
- * than an error: the user clicked Fill, the script ran somewhere, nothing
- * matched. The pill on the page will say `0 filled` and that's the right
- * UX.
+ * Fold per-frame responses into one. Sums counts, concatenates actions, and
+ * takes adapterId from the frame that filled the most (non-generic
+ * tiebreak). All frames errored → return the most meaningful error (skipping
+ * the "Could not establish connection" noise from empty hidden iframes). No
+ * responses at all → synthetic ok-with-zero, so the pill just shows 0 filled.
  */
 export function mergeFillResponses(
   responses: ReadonlyArray<FillPageResponse>,
@@ -198,9 +130,7 @@ export function mergeFillResponses(
         },
       };
     }
-    // All frames failed. The most actionable error is the one that didn't
-    // come from a missing listener — "Could not establish connection" is
-    // the standard Chrome message when a frame had no content script.
+    // Prefer an error that isn't Chrome's "no content script in this frame" noise.
     const meaningful = errs.find(
       (e) => !/Could not establish connection|Receiving end does not exist/i.test(e.error),
     );
@@ -208,8 +138,7 @@ export function mergeFillResponses(
     return chosen;
   }
 
-  // Pick the "winner" frame for adapterId — most filled, then non-generic
-  // tiebreak, then first wins.
+  // Winner for adapterId: most filled, non-generic tiebreak, then first.
   const winner = [...oks].sort((a, b) => {
     if (a.value.filled !== b.value.filled) return b.value.filled - a.value.filled;
     const aGeneric = a.value.adapterId === 'generic' ? 1 : 0;

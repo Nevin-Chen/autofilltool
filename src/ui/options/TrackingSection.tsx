@@ -25,9 +25,16 @@ type Status =
 export type TrackingSectionProps = {
   url: string;
   onChange: (url: string) => void;
+  autoLogOnSubmit: boolean;
+  onAutoLogChange: (value: boolean) => void;
 };
 
-export function TrackingSection({ url, onChange }: TrackingSectionProps) {
+export function TrackingSection({
+  url,
+  onChange,
+  autoLogOnSubmit,
+  onAutoLogChange,
+}: TrackingSectionProps) {
   const [granted, setGranted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [testing, setTesting] = useState(false);
@@ -187,6 +194,23 @@ export function TrackingSection({ url, onChange }: TrackingSectionProps) {
             {status.text}
           </div>
         )}
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={autoLogOnSubmit}
+            onChange={(e) => onAutoLogChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span className="text-slate-700 dark:text-slate-200">
+            Log automatically when I submit
+            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+              Records the application the moment your own submission is confirmed
+              on the page — no “Mark submitted” click. The extension only watches
+              your submit; it never clicks Submit for you.
+            </span>
+          </span>
+        </label>
 
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Need an Apps Script endpoint? See the README for a copy-pasteable

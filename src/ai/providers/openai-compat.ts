@@ -1,19 +1,8 @@
 /**
- * Shared streamer for OpenAI-compatible `/chat/completions` endpoints.
- *
- * Several providers expose the same wire shape: a JSON body with
- * `{ model, messages, stream, max_tokens }`, Bearer auth, and an SSE
- * response of `data: {json}` lines terminated by `data: [DONE]`. The lines
- * carry `choices[0].delta.content` substrings.
- *
- * OpenAI is the original. Google Gemini exposes the same shape at
- * `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`.
- * Adding a new compatible provider is a one-file wrapper that calls this
- * with the right base URL.
- *
- * NOTE on "compatibility": real OpenAI is the reference. Other vendors are
- * compatible "enough" for the bits we use (system+user messages,
- * stream:true, delta.content). They diverge on edge fields we don't touch.
+ * Shared streamer for OpenAI-compatible `/chat/completions` endpoints: JSON
+ * body `{ model, messages, stream, max_tokens }`, Bearer auth, SSE of
+ * `data: {json}` lines (`choices[0].delta.content`) ending in `[DONE]`. Gemini
+ * and Ollama reuse this; a new provider is a one-file wrapper with a base URL.
  */
 
 import { parseSSE } from '../sse';
