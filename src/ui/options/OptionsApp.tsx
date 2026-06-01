@@ -294,6 +294,13 @@ export function OptionsApp() {
               tracking: { ...prev.tracking, webhookUrl },
             }))
           }
+          autoLogOnSubmit={settings.tracking.autoLogOnSubmit}
+          onAutoLogChange={(autoLogOnSubmit) =>
+            setSettingsState((prev) => ({
+              ...prev,
+              tracking: { ...prev.tracking, autoLogOnSubmit },
+            }))
+          }
         />
 
         <div className="flex items-center gap-4">

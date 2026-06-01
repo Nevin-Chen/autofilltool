@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-/**
- * Bump this whenever the on-disk shape of Profile/Settings/ResumeRecord changes
- * in a way that needs a runtime migration. Migrations live in ./migrations.ts.
- */
+/** Bump on any on-disk shape change needing a runtime migration (./migrations.ts). */
 export const CURRENT_SCHEMA_VERSION = 1 as const;
 
 /* ------------------------------------------------------------------ Profile */
@@ -101,17 +98,7 @@ export const AiProviderSchema = z.enum([
 ]);
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 
-/**
- * Custom endpoint base URL — currently only used by the Ollama provider.
- * Allows the user to point at a remote Ollama host (e.g. another machine on
- * their LAN) rather than the localhost default. Validated permissively:
- * any non-empty string parseable as a URL is allowed; the actual fetch
- * appends `/v1/chat/completions` if missing.
- *
- * Kept here (not as a per-provider field) because zod's default settings
- * envelope is flat and adding it as a separate AiSettings field is the
- * least intrusive shape change — no migration needed (defaults to '').
- */
+/** `endpoint` is Ollama-only: a remote host base URL; the fetch appends the chat path. */
 export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),
   apiKey: z.string().default(''), // stored in chrome.storage.local only, never synced
@@ -128,6 +115,8 @@ export const TrackingSettingsSchema = z.object({
     .startsWith('https://', { message: 'Webhook must use https://' })
     .or(z.literal(''))
     .default(''),
+  // Opt-in: auto-log when the user's own submit succeeds, skipping the pill.
+  autoLogOnSubmit: z.boolean().default(false),
 });
 export type TrackingSettings = z.infer<typeof TrackingSettingsSchema>;
 
@@ -185,11 +174,7 @@ export type SubmissionRecord = z.infer<typeof SubmissionRecordSchema>;
 
 /* --------------------------------------------------- Envelope on disk */
 
-/**
- * Each top-level chrome.storage.local key holds an "envelope" with a schema
- * version. Reads run through ./store.ts which validates with safeParse and
- * runs migrations if the version is older than CURRENT_SCHEMA_VERSION.
- */
+/** Each storage key holds a versioned envelope; ./store.ts validates + migrates on read. */
 export const ProfileEnvelopeSchema = z.object({
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),
   data: ProfileSchema,

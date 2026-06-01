@@ -27,12 +27,9 @@ export type AttachAction = {
 };
 
 /**
- * Attach a File to an <input type="file">. The trick: file inputs can't be
- * set via .value (it would be a security hole) — you build a DataTransfer,
- * assign its files property, then dispatch `change` so the host page's
- * listeners run.
- *
- * Skips when the input already has a file, unless forceOverwrite is true.
+ * Attach a File to an <input type="file">. `.value` can't be set on file
+ * inputs, so build a DataTransfer, assign its files, then dispatch `change`.
+ * Skips when the input already has a file unless forceOverwrite is true.
  */
 export function attachFile(
   input: HTMLInputElement,
@@ -74,10 +71,7 @@ export type FillOptions = {
   forceOverwrite: boolean;
 };
 
-/**
- * Try to set a single field. Returns the action record so callers can build
- * an action log.
- */
+/** Set a single field; returns an action record for the caller's log. */
 export function fillField(
   field: DetectedField,
   rawValue: string | boolean | null | undefined,
@@ -195,8 +189,7 @@ function fillCheckbox(
   if (looksLikeSubmit(el)) {
     return { ...meta, status: 'error', note: 'refused: looks like a submit control' };
   }
-  // Use click() rather than mutating .checked so frameworks notice and any
-  // associated logic (e.g., revealing follow-up fields) runs.
+  // click() not .checked, so frameworks notice and run follow-up logic.
   el.click();
   return { ...meta, status: 'filled' };
 }
@@ -285,33 +278,17 @@ function cssEscape(s: string): string {
 /* ------------------------------------------------------- virtualised dropdowns */
 
 /**
- * Workday and similar ATSes don't use native `<select>` — instead they
- * render a `<button role="combobox">` trigger that opens a portal-mounted
- * `<ul role="listbox">` with `<li role="option">` children when clicked.
- * The select happens by clicking the matching option, which the React
- * controller picks up via its own listener.
- *
- * Flow:
- *   1. Click the trigger.
- *   2. Wait for a `[role="listbox"]` to appear anywhere in the document.
- *      Use a MutationObserver — the popup is usually portal-rendered as a
- *      sibling of `<body>`, not under the trigger.
- *   3. Find an option whose text content contains the desired value
- *      (case-insensitive substring). If none, abandon and click the
- *      trigger again to close the popup.
- *   4. Click the matching option. Fire a change event on the trigger for
- *      good measure — some Workday widgets listen on that.
- *
- * The wait is bounded: a default 1500ms is enough for React to mount the
- * popup but short enough that a failed open doesn't stall the whole fill.
+ * Fill a Workday-style virtualised dropdown (a `role="combobox"` trigger
+ * that opens a portal-mounted `role="listbox"` on click, not a native
+ * `<select>`). Flow: click trigger → wait for the listbox (MutationObserver,
+ * since it's portal-rendered as a body sibling) → click the option matching
+ * the value → fire `change` on the trigger. The wait is bounded (default
+ * 1500ms): long enough for React to mount, short enough not to stall a fill.
  */
 export type VirtualizedDropdownOptions = {
   /** Maximum ms to wait for the listbox popup to appear. Default 1500. */
   timeoutMs?: number;
-  /**
-   * Document the search should look in. Defaults to the trigger's
-   * ownerDocument; tests can pass a custom root.
-   */
+  /** Search root; defaults to the trigger's ownerDocument. */
   root?: Document;
 };
 
@@ -347,9 +324,6 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  // If a listbox is already in the DOM (some Workday widgets keep it
-  // mounted and just toggle visibility), `waitForListbox` returns
-  // synchronously.
   const listbox = await waitForListbox(root, timeout);
   if (!listbox) {
     return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
@@ -357,8 +331,7 @@ export async function fillVirtualizedDropdown(
 
   const option = pickListboxOption(listbox, want);
   if (!option) {
-    // Close the popup by clicking the trigger again so the page is left
-    // in the same state the user found it in.
+    // Re-click the trigger to close the popup, leaving the page as found.
     try {
       trigger.click();
     } catch {

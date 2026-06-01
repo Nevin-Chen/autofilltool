@@ -1,49 +1,22 @@
 /**
- * Résumé → plain text extractor.
+ * Résumé → plain text for the AI Suggest prompt. Résumés are stored as
+ * base64 bytes (src/profile/resume.ts); the model needs readable text to
+ * ground answers in beyond the typed profile fields.
  *
- * Stored résumés are kept as base64-encoded bytes in chrome.storage.local
- * (see src/profile/resume.ts). When the AI Suggest feature builds a prompt
- * it needs that résumé as readable text — without that context the model
- * has nothing but the typed profile fields to ground answers in, which
- * produces the generic-feeling output reported by users.
- *
- * Supported MIME types:
- *   - `text/plain`            → decode base64 → UTF-8.
- *   - `application/pdf`       → pdfjs-dist (legacy build, no worker).
- *   - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
- *                             → mammoth.extractRawText.
- *   - `application/msword`    → mammoth (best-effort; mammoth's .doc
- *                               support is limited but better than nothing).
- *
- * For everything else we return a single-line placeholder so the prompt
- * builder can still print *something* — the model is then told the type
- * up front instead of seeing a binary blob.
- *
- * Why a dedicated module: these parsers (especially pdfjs-dist) are large
- * dependencies. Isolating them here keeps the rest of the codebase
- * dependency-light AND lets the test harness mock the dynamic imports
- * without dragging the parsers into every unrelated test's environment.
- *
- * Why ALL imports here are dynamic (`await import(...)`): MV3 service
- * workers cold-start on every wake. A static import on a 1MB pdf parser
- * adds latency to every message, even ones that don't need it. Dynamic
- * imports only load the parser when a résumé is actually being processed.
+ * Handles text/plain (base64→UTF-8), PDF (pdfjs-dist), and DOC/DOCX
+ * (mammoth); anything else gets a one-line placeholder. Parsers are heavy,
+ * so they live here and are imported dynamically — MV3 workers cold-start
+ * on every wake, and we only want to pay for pdfjs when a résumé is actually
+ * parsed. Isolating them also lets tests mock the dynamic imports. Never
+ * throws: extraction failure falls back to the placeholder.
  */
 
 import type { ResumeRecord } from '@/profile/schema';
 
-/**
- * Cap on extracted text length. Roughly two-and-a-bit screens of prose —
- * enough for the model to pick up name, title, recent roles, key projects,
- * and skills, without crowding out the rest of the prompt budget.
- */
+/** Extracted-text cap — ~2 screens, enough for name/roles/skills. */
 export const RESUME_CHAR_BUDGET = 6000;
 
-/**
- * Maximum PDF pages we'll parse. Real résumés are 1–2 pages; capping
- * defends against a user uploading a long PDF (paper, slide deck) by
- * mistake, which would otherwise stall the prompt build.
- */
+/** PDF page cap — résumés are 1–2 pages; guards against a stray long PDF. */
 const PDF_MAX_PAGES = 20;
 
 const MIME_PDF = 'application/pdf';
@@ -51,13 +24,6 @@ const MIME_DOCX =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const MIME_DOC = 'application/msword';
 
-/**
- * Async because PDF and DOCX parsers are async. Callers (currently
- * `buildPrompt` in client.ts) must await this.
- *
- * Never throws — on any extraction failure we return the same kind of
- * placeholder the legacy code did, so the prompt still builds cleanly.
- */
 export async function extractResumeText(resume: ResumeRecord): Promise<string> {
   const mime = (resume.mimeType || '').toLowerCase();
   try {
@@ -74,9 +40,7 @@ export async function extractResumeText(resume: ResumeRecord): Promise<string> {
       return truncate(text, RESUME_CHAR_BUDGET);
     }
   } catch (err) {
-    // Soft fail: don't break the whole Suggest flow because the parser
-    // tripped on a malformed file. Surface the failure to the console for
-    // debugging; the prompt gets the placeholder.
+    // Soft fail: a malformed file shouldn't break Suggest; use the placeholder.
     // eslint-disable-next-line no-console
     console.warn('[autofilltool] résumé text extraction failed:', err);
   }
@@ -86,22 +50,14 @@ export async function extractResumeText(resume: ResumeRecord): Promise<string> {
 /* ----------------------------------------------------------- pdfjs-dist */
 
 /**
- * Path of the bundled pdf.js worker, relative to the extension's package
- * root. Vite copies pdfjs-dist's worker file here at build time via the
- * `public/` mapping; the file is also listed in
- * `manifest.json#web_accessible_resources` so the service worker can
- * resolve a URL for it via `chrome.runtime.getURL`.
- *
- * Tests don't run in an extension, so they override `workerSrc` directly
- * (see tests/unit/resume-text.test.ts).
+ * Bundled pdf.js worker path (copied via `public/`, listed in manifest
+ * `web_accessible_resources`). Tests override workerSrc directly.
  */
 const PDFJS_WORKER_PATH = 'pdf.worker.mjs';
 
 async function extractPdf(b64: string): Promise<string> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // GlobalWorkerOptions is a process-global; set it once if not already
-  // configured. Tests set it from their own setup; this branch runs in
-  // the actual extension.
+  // GlobalWorkerOptions is a process-global; set workerSrc once (extension only).
   const opts = (pdfjs as { GlobalWorkerOptions?: { workerSrc?: string } })
     .GlobalWorkerOptions;
   if (opts && !opts.workerSrc) {
@@ -136,9 +92,8 @@ async function extractPdf(b64: string): Promise<string> {
     let line = '';
     for (const item of content.items) {
       if (!('str' in item)) continue;
-      // pdf.js's `transform` is a 6-tuple; index 5 is the y origin. Items
-      // with the same y are on the same line — group them so multi-column
-      // layouts don't collapse into nonsense.
+      // transform[5] is the y origin; same-y items share a line (keeps
+      // multi-column layouts from collapsing).
       const t = item.transform;
       const y: number | null =
         Array.isArray(t) && typeof t[5] === 'number' ? t[5] : null;
@@ -177,13 +132,8 @@ type PdfDocument = {
 /* --------------------------------------------------------------- mammoth */
 
 async function extractDocx(b64: string): Promise<string> {
-  // mammoth ships separate node + browser entry points (see its
-  // package.json `browser` field). They take different option keys:
-  //   - browser/unzip.js → `{ arrayBuffer }`
-  //   - lib/unzip.js     → `{ buffer }`
-  // Vite resolves to the browser build for our service worker (ideal).
-  // vitest resolves to the node build. Passing BOTH keys keeps the code
-  // path identical — only one matches in each environment.
+  // mammoth's browser build wants `{ arrayBuffer }`, the node build `{ buffer }`.
+  // Vite→browser, vitest→node; pass both so each env picks the key it needs.
   const mammothMod = (await import('mammoth')) as unknown as {
     extractRawText?: (opts: object) => Promise<{ value: string }>;
     default?: { extractRawText?: (opts: object) => Promise<{ value: string }> };

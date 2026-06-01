@@ -1,17 +1,7 @@
 /**
- * Google Gemini, via the OpenAI-compatible endpoint.
- *
- * Google ships an OpenAI-shaped /chat/completions at
- * `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`
- * that accepts a Bearer API key, `stream:true`, and the standard
- * `messages: [{role,content}]` body. The streamed deltas come back in the
- * same `choices[0].delta.content` shape — so this provider is a tiny
- * wrapper over the shared streamChatCompletions helper.
- *
- * Why this matters: Google's Gemini API has a real free tier (no card to
- * start), so this is the default we recommend for users who don't have an
- * OpenAI / Anthropic balance. `gemini-2.5-flash` is the current free
- * default; users can override the model in Options.
+ * Google Gemini via its OpenAI-compatible /chat/completions endpoint — a thin
+ * wrapper over streamChatCompletions. Recommended default because Gemini has a
+ * real free tier (no card); `gemini-2.5-flash` is the free default, overridable.
  */
 
 import { streamChatCompletions } from './openai-compat';
