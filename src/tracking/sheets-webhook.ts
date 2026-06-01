@@ -1,17 +1,9 @@
 /**
- * Posts submission records to the user's webhook (typically a Google Apps
- * Script web app URL). Runs in the background service worker, never in a
- * content script — content scripts share the page's origin and would get
- * CORS-blocked.
- *
- * We POST as `text/plain` deliberately: Apps Script accepts it via
- * `e.postData.contents`, and `text/plain` is a "simple" request that avoids
- * the CORS preflight roundtrip. The response is opaque to us if the user
- * hasn't granted host permission, but we surface that as a clear error.
- *
- * Retries once on transient network errors. Validates the URL through zod
- * so an obviously bad config (http://, not a URL, etc.) fails fast and
- * loudly rather than silently dropping the log.
+ * POSTs submission records to the user's webhook (usually a Google Apps Script
+ * URL), from the background worker only (content scripts would be CORS-blocked).
+ * Sent as `text/plain` deliberately — Apps Script reads `e.postData.contents`
+ * and a simple content type skips the CORS preflight. Retries once on transient
+ * errors; validates the URL via zod so bad config fails loudly.
  */
 
 import { z } from 'zod';
@@ -102,13 +94,10 @@ async function attemptPost(
   allowRetry: boolean,
 ): Promise<PostResult> {
   try {
-    // `text/plain` is a CORS-simple content type; the request goes without a
-    // preflight, which keeps Apps Script integrations friction-free.
     const res = await fetchImpl(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS-simple, no preflight
       body,
-      // No credentials — this is a one-shot logging POST, not a session.
       credentials: 'omit',
       redirect: 'follow',
     });
@@ -121,7 +110,7 @@ async function attemptPost(
     };
   } catch (err) {
     if (allowRetry) {
-      // One retry — give Apps Script a beat if it just woke up cold.
+      // One retry — give a cold-starting Apps Script a beat.
       await sleep(750);
       return attemptPost(url, body, fetchImpl, false);
     }

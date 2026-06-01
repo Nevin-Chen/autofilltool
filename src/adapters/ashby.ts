@@ -1,17 +1,9 @@
 /**
- * Ashby adapter. Ashby's hosted job boards live at
- * `jobs.ashbyhq.com/<company>/<posting>` and are a React SPA. Field markup
- * is wrapped in `[data-testid="FieldEntry"]` blocks; the human-readable
- * label is in `[data-testid="FieldLabel"]` and the editable input lives in
- * `[data-testid="..."]` slots like `InputField`, `MultiSelect`, etc.
- *
- * Strategy: walk every FieldEntry, read its FieldLabel text, classify by
- * label keywords, then pair with the input inside that block. Fall back to
- * shared heuristics for anything we can't recognise.
- *
- * Resume slot: the FieldEntry whose label contains "Resume" wraps an
- * `<input type="file">` (Ashby's drag-drop component still exposes the raw
- * input under the hood).
+ * Ashby adapter — a React SPA at `jobs.ashbyhq.com/<company>/<posting>`. Each
+ * field is a `[data-testid="FieldEntry"]` block with its label in
+ * `[data-testid="FieldLabel"]`. Walk every FieldEntry, classify by label
+ * keywords, pair with the input inside; fall back to shared heuristics. The
+ * resume FieldEntry wraps a raw `<input type="file">` under its drag-drop UI.
  */
 
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
@@ -33,7 +25,7 @@ export const ashbyAdapter: PlatformAdapter = {
   name: 'Ashby',
   matches: (url, doc) => {
     if (/(^|\.)ashbyhq\.com$/.test(url.hostname)) return true;
-    // Ashby embeds: their data-testid attributes are distinctive.
+    // Embeds: Ashby's data-testid attributes are distinctive.
     return !!doc.querySelector('[data-testid="FieldEntry"], [data-testid="FieldLabel"]');
   },
   detectFields,
@@ -41,11 +33,7 @@ export const ashbyAdapter: PlatformAdapter = {
   getJobDescription,
 };
 
-/**
- * Ashby keeps the description in `[data-testid="JobPostingDescription"]`
- * on the listing page; the apply route nests the same block above the
- * form. Falls back to `main` then body.
- */
+/** JD lives in `[data-testid="JobPostingDescription"]`; falls back to main, then body. */
 function getJobDescription(doc: Document): string {
   const byCss = pickJobDescriptionByCss(doc, [
     '[data-testid="JobPostingDescription"]',
@@ -61,11 +49,9 @@ function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
-  // 1. Walk FieldEntry blocks — each is one logical question + its inputs.
-  //    Classification per input: (a) keyword match on FieldLabel,
-  //    (b) input-type fallback (email/tel input, textarea → openEnded).
-  //    Ashby's FieldLabel is structured + reliable, so confidences here can
-  //    sit higher than the generic heuristic baseline.
+  // 1. Walk FieldEntry blocks (one question each). Classify each input by
+  //    keyword on the FieldLabel, else input-type. FieldLabel is reliable, so
+  //    confidences sit above the generic baseline.
   const entries = root.querySelectorAll<HTMLElement>('[data-testid="FieldEntry"]');
   for (const entry of Array.from(entries)) {
     const labelEl = entry.querySelector('[data-testid="FieldLabel"]');
@@ -104,8 +90,7 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  // 2. Fall back to the heuristic classifier for anything outside FieldEntry
-  //    blocks (rare on Ashby, but defensive).
+  // 2. Heuristics for anything outside FieldEntry blocks (defensive).
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('input, select, textarea'))) {
     if (seen.has(el)) continue;
     if (!isFillable(el)) continue;
@@ -120,8 +105,7 @@ function detectFields(root: Document): DetectedField[] {
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
   return attachResumeViaSlot(file, root, (d) => {
-    // Look for the FieldEntry whose label says "Resume" / "CV" and grab the
-    // <input type="file"> inside it.
+    // The FieldEntry labelled Resume/CV wraps the file input.
     const entries = d.querySelectorAll<HTMLElement>('[data-testid="FieldEntry"]');
     for (const entry of Array.from(entries)) {
       const labelEl = entry.querySelector('[data-testid="FieldLabel"]');

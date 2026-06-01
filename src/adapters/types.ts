@@ -1,18 +1,14 @@
 /**
- * The contract every platform adapter implements. Adapters are pure
- * detection + an optional resume-upload hook. They never write to storage,
- * call the AI, or hit the webhook — those go through the background worker.
- *
- * To add a new ATS: create a file in this directory, export an adapter,
- * register it in ./registry.ts.
+ * The contract every platform adapter implements: pure detection + an optional
+ * resume hook. Adapters never write storage, call AI, or hit the webhook.
+ * To add an ATS: add a file here, export an adapter, register in ./registry.ts.
  */
 
 import type { AdapterId } from '@/profile/schema';
 
 /**
- * The semantic role of a form field. The filler maps a profile to a value
- * per `kind`. Unknown / unsupported fields are simply not returned by
- * `detectFields` — the filler ignores anything it can't classify.
+ * The semantic role of a form field; the filler maps a profile to a value per
+ * `kind`. Unknown fields are just not returned by `detectFields`.
  */
 export type FieldKind =
   // identity
@@ -57,23 +53,14 @@ export type DetectedField = {
   kind: FieldKind;
   /** Human-readable label, for the action log + AI prompts. */
   label: string;
-  /**
-   * How sure the adapter is, 0..1. The filler uses this to break ties when
-   * two adapters/heuristics return overlapping kinds for the same element.
-   */
+  /** Confidence 0..1; the filler uses it to break ties between overlapping kinds. */
   confidence: number;
   /**
-   * How the field is rendered. Defaults to 'native' (a real <input>,
-   * <textarea>, or <select> handled by the sync `fillField` path).
-   *
-   * `'virtualizedDropdown'` signals a React-style combobox: a
-   * `<button role="combobox">` trigger that opens a portal-mounted
-   * `<ul role="listbox">` with `[role="option"]` entries. The runFill
-   * loop awaits `fillVirtualizedDropdown` for these because the popup
-   * appears asynchronously after the click.
-   *
-   * Per-platform adapters set this on Workday country/state pickers and
-   * similar widgets; the generic adapter leaves it unset.
+   * How the field is rendered. Default 'native' (real input/textarea/select,
+   * sync `fillField` path). `'virtualizedDropdown'` = React combobox: a
+   * `button[role=combobox]` opening a portal `ul[role=listbox]` of
+   * `[role=option]`s; runFill awaits `fillVirtualizedDropdown` since the popup
+   * appears async. Set by Workday-style pickers; generic leaves it unset.
    */
   widget?: 'native' | 'virtualizedDropdown';
 };
@@ -88,25 +75,15 @@ export interface PlatformAdapter {
   /** Finds and classifies the form fields on this page. */
   detectFields(root: Document): DetectedField[];
   /**
-   * Optional hook to attach the user's resume to a file input. Returns true
-   * if it actually uploaded; false if no slot was found. Defaults to a
-   * generic implementation if omitted.
+   * Optional hook to attach the resume to a file input. True if uploaded,
+   * false if no slot found. Falls back to a generic impl if omitted.
    */
   fillResume?(file: File, root: Document): Promise<boolean>;
   /**
-   * Best-effort extraction of the human-readable job description (the
-   * "About this role" / "What you'll do" body text — NOT the form fields).
-   * Used as prompt context for the AI Suggest feature so the model can
-   * write answers that actually match what the company asked for.
-   *
-   * Adapters should:
-   *   - Return the readable description text only, with whitespace
-   *     normalised. No HTML tags, no nav/footer, no script blobs.
-   *   - Cap output at ~3000 chars to keep prompt budgets sane. The prompt
-   *     builder will truncate again defensively.
-   *   - Return '' when nothing useful is found — never throw.
-   *
-   * The generic adapter uses `@mozilla/readability` as a last resort.
+   * Best-effort job-description text (the "About this role" body, NOT form
+   * fields) as AI Suggest context. Return normalised text only — no HTML, nav,
+   * or scripts — capped ~3000 chars; '' when nothing found, never throws.
+   * Generic adapter uses `@mozilla/readability` as a last resort.
    */
   getJobDescription(doc: Document): string;
 }

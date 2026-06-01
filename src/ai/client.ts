@@ -1,11 +1,7 @@
 /**
- * Provider-agnostic AI client. Adds a `dispatch()` that picks the right
- * provider implementation and yields text chunks via an async iterator. The
- * background worker calls this; nothing in the content script does.
- *
- * Providers are pure: they receive a fully-built prompt + the user's key,
- * call their HTTPS API, and yield chunks. They do NOT touch storage or know
- * about Profile.
+ * Provider-agnostic AI client. `dispatch()` picks the provider and yields text
+ * chunks via an async iterator; only the background worker calls it. Providers
+ * are pure: prompt + key in, chunks out — no storage, no Profile knowledge.
  */
 
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
@@ -24,13 +20,7 @@ export type SuggestRequest = {
   label?: string;
   /** Loose page context the adapter or content script extracted. */
   job?: { company?: string; role?: string; jobUrl?: string };
-  /**
-   * The human-readable job description text from the page, pulled by the
-   * platform adapter's `getJobDescription` (Readability fallback for the
-   * generic adapter). Cap is ~3000 chars; the prompt builder re-clips
-   * defensively. Optional because the content script may not have managed
-   * to grab anything (CSP, empty iframe, etc.).
-   */
+  /** JD text from the adapter's `getJobDescription` (~3000 chars). Optional: may be empty. */
   jobDescription?: string;
   /** Any character ceiling visible on the page (e.g. textarea maxLength). */
   maxChars?: number;
@@ -58,8 +48,7 @@ export async function* dispatch(
     };
     return;
   }
-  // Ollama runs locally and ignores auth on the public endpoint; every other
-  // provider needs the user's API key.
+  // Ollama runs locally without auth; every other provider needs the key.
   if (settings.provider !== 'ollama' && !settings.apiKey) {
     yield {
       kind: 'error',
@@ -133,24 +122,13 @@ export async function* dispatch(
 
 export type BuiltPrompt = { system: string; user: string };
 
-/**
- * Defensive ceiling on the job-description portion of the user prompt.
- * Adapters already clip to ~3000 chars in `clipJobDescription`; this is
- * belt-and-suspenders in case a future caller forgets to clip.
- */
+/** Defensive JD cap; adapters already clip to ~3000 in `clipJobDescription`. */
 const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
 
 /**
- * Build the prompt sent to the provider. Exposed for tests + reuse.
- *
- * Async because résumé text extraction may need to parse a PDF/DOCX (the
- * parsers ship in `src/ai/resume-text.ts`).
- *
- * System: writing-assistant role + constraints (first person, length, no
- * hallucinated facts, must use the job description as the "what they're
- * looking for" anchor).
- * User: question + label + job context + JOB DESCRIPTION + profile summary
- *       + resume excerpt.
+ * Build the provider prompt (exposed for tests). Async because résumé text may
+ * need PDF/DOCX parsing. System = writing-assistant role + constraints; user =
+ * question + label + job context + JD + profile summary + résumé excerpt.
  */
 export async function buildPrompt(
   req: SuggestRequest,
@@ -224,9 +202,6 @@ export function summarizeProfile(profile: Profile): string {
   }
   return lines.join('\n');
 }
-
-// `extractResumeText` lives in `./resume-text.ts` and is re-exported above
-// for the existing tests.
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;

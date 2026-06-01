@@ -1,11 +1,8 @@
 /**
- * MV3 service worker. The background is the only place that talks to the
- * user's tracking webhook or (later) the AI provider — content scripts share
- * the page's origin and would get CORS-blocked. It also forwards FILL_PAGE
- * from the popup to the active tab's content script.
- *
- * Keep this file lean — MV3 workers can be torn down at any time, so all
- * state lives in chrome.storage.local.
+ * MV3 service worker — the only place that talks to the webhook or AI provider
+ * (content scripts share the page origin and get CORS-blocked); also forwards
+ * FILL_PAGE to the active tab. Keep lean: workers can be torn down anytime, so
+ * all state lives in chrome.storage.local.
  */
 
 import { respondAsync } from '@/lib/messaging';
@@ -69,16 +66,13 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
               : 'Could not access this page.',
         };
       }
-      // Pick the frames that actually host an ATS form (or fall back to the
-      // top frame). See src/background/frames.ts for the rationale.
+      // ATS frames only, else the top frame (see frames.ts).
       const targets = pickTargetFrames(frames);
       if (targets.length === 0) {
         return { ok: false, error: 'No reachable frames on this tab.' };
       }
-      // Broadcast FILL_PAGE in parallel, collect each frame's response.
-      // chrome.tabs.sendMessage throws when a target frame has no listener
-      // (e.g. a sandboxed iframe we couldn't inject into); we capture that
-      // as a per-frame error and let the merger decide what to surface.
+      // Broadcast in parallel. sendMessage throws on a frame with no listener
+      // (sandboxed iframe we couldn't inject); capture as a per-frame error.
       const responses = await Promise.all(
         targets.map(async (f) => {
           try {
@@ -112,8 +106,7 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     }
 
     case 'LOG_SUBMISSION': {
-      // Fill in id + timestamp + run through the schema so anything malformed
-      // is rejected before it hits storage.
+      // Fill id + timestamp, then validate so malformed records never hit storage.
       const candidate = {
         id: msg.record.id ?? crypto.randomUUID(),
         timestamp: msg.record.timestamp ?? new Date().toISOString(),
@@ -162,25 +155,14 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
 }
 
 /**
- * Inject the content script bundle into every frame of `tabId`, then
- * report which frames are reachable. The content script has a window-level
- * guard (`__autofilltool_loaded__`) so re-injection on already-loaded
- * frames is a no-op for listener registration — that's what lets us call
- * this unconditionally without PING-first.
+ * Inject the content script into every frame of `tabId`, then report which
+ * frames are reachable. A window-level guard (`__autofilltool_loaded__`) makes
+ * re-injection a no-op, so we can call this unconditionally without PING-first.
  *
- * Why every frame: companies embed ATS application forms inside iframes
- * on their own career-page domains. The form HTML lives inside the iframe
- * on `boards.greenhouse.io` (or similar); the parent page is on
- * `company.com`. `chrome.tabs.sendMessage(tabId, msg)` only reaches the
- * top frame unless we pass `frameId` explicitly, so the caller needs the
- * full frame list to broadcast.
- *
- * activeTab grants the per-tab permission needed to inject across origins
- * for the focused tab.
- *
- * NOTE: the build pipeline (crxjs) rewrites the manifest's
- * `content_scripts` entry to a hashed file path. We read that path from
- * the live manifest so we don't hard-code a stale source filename.
+ * Every frame because ATS forms are iframed on the company's career domain;
+ * sendMessage only reaches the top frame unless we pass `frameId`, so the
+ * caller needs the full list. activeTab grants the cross-origin inject. The
+ * content-script path is read from the live manifest (crxjs hashes it).
  */
 async function ensureContentScriptInAllFrames(
   tabId: number,
@@ -194,9 +176,8 @@ async function ensureContentScriptInAllFrames(
     target: { tabId, allFrames: true },
     files: [contentJs],
   });
-  // Probe each frame for both location.href AND a DOM ATS hint. The probe
-  // is self-contained because chrome.scripting runs it in an isolated
-  // world without our module imports.
+  // Probe each frame for location.href + a DOM ATS hint. Self-contained:
+  // chrome.scripting runs it in an isolated world without our imports.
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     func: () => {
@@ -246,11 +227,7 @@ chrome.runtime.onMessage.addListener(
 
 /* ------------------------------------------------------- AI streaming */
 
-/**
- * Long-lived port for streaming AI suggestions back to the content script.
- * One connection per Suggest click; the content script disconnects on
- * cancel / page unload.
- */
+/** Long-lived port streaming AI suggestions; one per Suggest click, disconnects on cancel/unload. */
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== AI_PORT_NAME) return;
   let aborted = false;
@@ -282,8 +259,7 @@ chrome.runtime.onConnect.addListener((port) => {
             : settings.ai.provider === 'gemini'
               ? 'https://generativelanguage.googleapis.com/'
               : settings.ai.provider === 'ollama'
-                ? // Empty endpoint → localhost default. The provider module
-                  // resolves this identically when actually fetching.
+                ? // Empty endpoint → localhost default (provider resolves identically).
                   resolveOriginForPermission(
                     settings.ai.endpoint || OLLAMA_DEFAULT_BASE,
                   ) ?? ''

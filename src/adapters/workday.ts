@@ -1,31 +1,15 @@
 /**
- * Workday adapter. Workday's apply flow is a multi-step React wizard
- * hosted at `<company>.myworkdayjobs.com` (often also embedded as an
- * iframe on the company's career page).
- *
- * Coverage and conventions:
- *
- *  - **URL match**: `*.myworkdayjobs.com`. The frame-targeting helper in
- *    `src/background/frames.ts` already routes Workday iframes here.
- *  - **Selectors**: every interactive element carries a stable
- *    `data-automation-id` attribute (Workday's own QA hooks). React
- *    re-hashes CSS class names per build, so `data-automation-id` is the
- *    one reliable signal.
- *  - **Native vs virtualised**: text inputs are native `<input>`.
- *    Dropdowns (country, state, etc.) are `<button role="combobox">`
- *    triggers that open a portal-mounted listbox when clicked; handled
- *    via the `virtualizedDropdown` widget marker, which routes runFill
- *    through the async `fillVirtualizedDropdown` helper instead of the
- *    sync filler.
- *  - **Multi-step wizard**: each Workday phase ("My Information", "My
- *    Experience", "Application Questions", etc.) is a separate page.
- *    We don't auto-advance — the user clicks Next themselves and then
- *    re-clicks Fill on the next page. The adapter is intentionally
- *    stateless: detectFields just walks the current page.
- *  - **Resume upload**: there's a visible "Select files" button next to
- *    a hidden `<input type="file" data-automation-id="file-upload-input-ref">`.
- *    The shared `attachFile` helper sets `.files` directly on that
- *    hidden input via DataTransfer — same trick the other adapters use.
+ * Workday adapter — a multi-step React wizard at `<company>.myworkdayjobs.com`
+ * (often iframed on career pages). Key conventions:
+ *  - **Selectors**: every element carries a stable `data-automation-id`; CSS
+ *    classes are re-hashed per build, so this is the only reliable signal.
+ *  - **Native vs virtualised**: text inputs are native; dropdowns are
+ *    `button[role=combobox]` triggers opening a portal listbox, marked
+ *    `virtualizedDropdown` so runFill uses the async filler.
+ *  - **Multi-step**: each phase is a separate page; we don't auto-advance —
+ *    the user clicks Next and re-clicks Fill. detectFields is stateless.
+ *  - **Resume**: hidden `input[type=file][data-automation-id=
+ *    file-upload-input-ref]`, filled via the shared DataTransfer trick.
  */
 
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
@@ -39,11 +23,7 @@ import {
   pickJobDescriptionByCss,
 } from './_shared';
 
-/**
- * Map Workday's stable automation ids to our FieldKind enum. Order
- * matters when an automation id is a substring of another — checked
- * before the loose contains-match below.
- */
+/** Workday automation ids → FieldKind. Order matters (exact before substring). */
 const AUTOMATION_ID_MAP: ReadonlyArray<{
   id: string;
   kind: FieldKind;
@@ -53,9 +33,7 @@ const AUTOMATION_ID_MAP: ReadonlyArray<{
   { id: 'lastName', kind: 'lastName', confidence: 0.99 },
   { id: 'preferredName', kind: 'preferredName', confidence: 0.95 },
   { id: 'email', kind: 'email', confidence: 0.99 },
-  // Phone numbers vary: `phone-input`, `phoneNumber`, `mobilePhone`. We
-  // match the prefix in `kindFromAutomationId` so all of those land in
-  // 'phone'.
+  // Phone varies (phone-input, phoneNumber, mobilePhone); substring match folds them to 'phone'.
   { id: 'phone', kind: 'phone', confidence: 0.95 },
   { id: 'mobile', kind: 'phone', confidence: 0.85 },
   { id: 'addressLine1', kind: 'addressLine1', confidence: 0.99 },
@@ -70,11 +48,7 @@ const AUTOMATION_ID_MAP: ReadonlyArray<{
   { id: 'country', kind: 'country', confidence: 0.95 },
 ];
 
-/**
- * Substring match: maps any automation id that *contains* the key (case
- * insensitive) to the kind. Lower priority than the exact list above.
- * Used to catch variants like `phoneNumber--input`.
- */
+/** Exact match first, then case-insensitive substring (catches `phoneNumber--input` etc). */
 function kindFromAutomationId(
   automationId: string,
 ): { kind: FieldKind; confidence: number } | null {
@@ -84,8 +58,7 @@ function kindFromAutomationId(
   }
   for (const { id, kind, confidence } of AUTOMATION_ID_MAP) {
     if (lower.includes(id.toLowerCase())) {
-      // Knock confidence down a hair for substring matches.
-      return { kind, confidence: Math.max(0.7, confidence - 0.1) };
+      return { kind, confidence: Math.max(0.7, confidence - 0.1) }; // substring → lower confidence
     }
   }
   return null;
@@ -104,8 +77,7 @@ export const workdayAdapter: PlatformAdapter = {
   name: 'Workday',
   matches: (url, doc) => {
     if (/(^|\.)myworkdayjobs\.com$/.test(url.hostname)) return true;
-    // DOM markers — let us win over generic on a company iframe whose
-    // hostname doesn't match but whose content is clearly Workday.
+    // DOM marker for CNAMEd iframes whose hostname doesn't match.
     return !!doc.querySelector('[data-automation-id]');
   },
   detectFields,
@@ -117,9 +89,8 @@ function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
-  // 1) Walk every element with a `data-automation-id` and classify by id.
-  //    Both real inputs and virtualised-dropdown triggers are matched
-  //    here; the `widget` marker distinguishes them downstream.
+  // 1) Classify every `data-automation-id` element by id — both real inputs
+  //    and dropdown triggers; the `widget` marker distinguishes them later.
   const tagged = root.querySelectorAll<HTMLElement>('[data-automation-id]');
   for (const el of Array.from(tagged)) {
     const automationId = el.getAttribute('data-automation-id') ?? '';
@@ -127,9 +98,8 @@ function detectFields(root: Document): DetectedField[] {
     const classified = kindFromAutomationId(automationId);
     if (!classified) continue;
 
-    // Virtualised dropdown? The trigger itself isn't a fillable input,
-    // but the async filler handles it. Otherwise require the element
-    // pass the standard fillable check.
+    // Dropdown triggers aren't fillable inputs but the async filler handles
+    // them; everything else must pass the standard fillable check.
     const isCombo = isVirtualizedDropdownTrigger(el);
     if (!isCombo && !isFillable(el)) continue;
     if (seen.has(el)) continue;
@@ -146,9 +116,8 @@ function detectFields(root: Document): DetectedField[] {
     seen.add(el);
   }
 
-  // 2) Fall back to heuristic classification for inputs Workday didn't
-  //    tag (rare on real Workday pages, but defensive — also catches
-  //    open-ended textareas in the "Application Questions" step).
+  // 2) Heuristics for untagged inputs (defensive; also catches open-ended
+  //    textareas in the "Application Questions" step).
   for (const el of Array.from(
     root.querySelectorAll<HTMLElement>('input, select, textarea'),
   )) {
@@ -165,28 +134,21 @@ function detectFields(root: Document): DetectedField[] {
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
   return attachResumeViaSlot(file, root, (d) => {
-    // Workday's hidden file input has a very distinctive automation id.
+    // Distinctive automation id, then any file input with one (older tenants
+    // use `attachments-input-ref` etc.), then the generic finder.
     const byAutomation = d.querySelector<HTMLInputElement>(
       'input[type="file"][data-automation-id="file-upload-input-ref"]',
     );
     if (byAutomation && !byAutomation.disabled) return byAutomation;
-    // Some older Workday tenants use `attachments-input-ref` etc. Any
-    // `data-automation-id` attribute on a file input is a strong signal.
     const byAnyAutomation = d.querySelector<HTMLInputElement>(
       'input[type="file"][data-automation-id]',
     );
     if (byAnyAutomation && !byAnyAutomation.disabled) return byAnyAutomation;
-    // Last resort.
     return findResumeInput(d);
   });
 }
 
-/**
- * Workday job posting pages put the body text in
- * `[data-automation-id="jobPostingDescription"]`. The apply flow's
- * "About this role" sidebar uses the same automation id. Falls back to
- * `main` then body text.
- */
+/** JD lives in `[data-automation-id=jobPostingDescription]`; falls back to main, then body. */
 function getJobDescription(doc: Document): string {
   const byCss = pickJobDescriptionByCss(doc, [
     '[data-automation-id="jobPostingDescription"]',

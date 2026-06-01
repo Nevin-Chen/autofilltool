@@ -1,27 +1,12 @@
 /**
- * Greenhouse adapter. Greenhouse application forms come in two flavours:
+ * Greenhouse adapter. Two layouts: legacy `boards.greenhouse.io` (server-
+ * rendered, stable ids under `form#application-form`) and the new
+ * `job-boards.greenhouse.io` Next.js redesign (React inputs keyed by `name`
+ * + label text, no form-root id, file input hidden in an uploader widget).
  *
- *   - **Legacy** (`boards.greenhouse.io/<company>/jobs/<id>`): vanilla
- *     server-rendered form with stable ids — `#first_name`, `#last_name`,
- *     `#email`, `#phone`, `#resume`, wrapped in `<form id="application-form">`.
- *
- *   - **New redesign** (`job-boards.greenhouse.io/<company>/jobs/<id>`,
- *     also served inside iframes embedded on company career pages as
- *     `<iframe id="grnhse_iframe" src="https://job-boards.greenhouse.io/embed/...">`):
- *     Next.js SPA with React-controlled inputs. The stable signals are
- *     `name` attributes (`first_name`, `last_name`, `email`, `phone`) and
- *     label text. The form root id is gone; the file input is wrapped in a
- *     custom uploader widget with a hidden `<input type="file" accept=".pdf,...">`.
- *
- * Strategy: try every angle. Known names first (works on both layouts),
- * then known ids (legacy only), then walk every fillable input in the doc
- * and classify by label/heuristics. Resume slot uses name → id → accept
- * hint → shared finder.
- *
- * Custom domains (e.g. `careers.foo.com` CNAMing to a Greenhouse host) are
- * matched via DOM markers: the wrapping `<div id="grnhse_app">` from the
- * embed script and either `form#application-form` (legacy) or the
- * `<iframe id="grnhse_iframe">` that the embed JS inserts.
+ * Strategy: known `name=` first (both layouts), then `id=` (legacy), then
+ * walk + classify every fillable input. Custom domains are matched via DOM
+ * markers (`#grnhse_app`/`#grnhse_iframe`/`form#application-form`).
  */
 
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
@@ -35,11 +20,7 @@ import {
   pickJobDescriptionByCss,
 } from './_shared';
 
-/**
- * Greenhouse's stable input identifiers. The new redesign keeps the
- * `name` attribute but drops/renames `id`, so we check both — first by
- * `name=` (works on both layouts), then by `id` (legacy only).
- */
+/** Stable canonical fields — matched by `name=` then `id=` (see detectFields). */
 const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: number }> = [
   { field: 'first_name', kind: 'firstName', confidence: 0.99 },
   { field: 'last_name', kind: 'lastName', confidence: 0.99 },
@@ -59,15 +40,9 @@ export const greenhouseAdapter: PlatformAdapter = {
   id: 'greenhouse',
   name: 'Greenhouse',
   matches: (url, doc) => {
-    // 1) URL signal — covers both legacy + new-redesign hosts and any
-    //    *.greenhouse.io subdomain (including iframe sources).
+    // URL covers any *.greenhouse.io (incl. iframe sources); DOM markers
+    // catch custom/CNAMEd domains and embed parent pages.
     if (/(^|\.)greenhouse\.io$/.test(url.hostname)) return true;
-    // 2) DOM markers — used when a custom domain or a parent page CNAMEs
-    //    to Greenhouse, or when the adapter happens to run on the parent
-    //    page of an embed (so we still beat generic):
-    //      - `form#application-form` (legacy embed; some older layouts)
-    //      - `#grnhse_app`           (the wrapper div the embed JS creates)
-    //      - `#grnhse_iframe`        (the iframe id the embed JS creates)
     return !!(
       doc.querySelector('form#application-form') ||
       doc.getElementById('grnhse_app') ||
@@ -79,22 +54,8 @@ export const greenhouseAdapter: PlatformAdapter = {
   getJobDescription,
 };
 
-/**
- * Greenhouse job pages put the readable description in well-known
- * containers depending on the layout:
- *   - Legacy boards.greenhouse.io: `#content` (body), or `#header`'s
- *     siblings containing `.section-wrapper` with the post content.
- *   - New job-boards.greenhouse.io: the prose lives directly under a
- *     `<main>` that ALSO contains the application form. We strip the
- *     form by taking the first sibling of <main> that has prose, but
- *     simpler — just take the page text and trust `clipJobDescription`
- *     to bound it. The form labels are short and noisy text wins.
- *
- * Fallback walks main → article → body. Always returns clipped text or ''.
- */
+/** Job description via known containers (legacy `#content` first), else body. */
 function getJobDescription(doc: Document): string {
-  // 1) Legacy classic Greenhouse: there's a `#content` block that holds the
-  //    post body before the application-form block.
   const byCss = pickJobDescriptionByCss(doc, [
     '#content .section-wrapper.page-centered',
     '#content',
@@ -102,8 +63,7 @@ function getJobDescription(doc: Document): string {
     'article',
   ]);
   if (byCss) return byCss;
-  // 2) Last-ditch: clip the body. This is a noisy heuristic, but in an
-  //    embedded iframe the body IS essentially the description.
+  // Last-ditch: in an embedded iframe the body essentially is the description.
   if (doc.body) return clipJobDescription(doc.body.textContent ?? '');
   return '';
 }
@@ -112,8 +72,7 @@ function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
-  // 1) Known canonical fields — try `name=` first (works on both layouts),
-  //    then `id=` (legacy only). Highest confidence either way.
+  // Known canonical fields — `name=` first (both layouts), then `id=` (legacy).
   for (const { field, kind, confidence } of KNOWN_FIELDS) {
     let el: HTMLElement | null = root.querySelector<HTMLElement>(
       `input[name="${field}"], select[name="${field}"], textarea[name="${field}"]`,
@@ -129,10 +88,8 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  // 2) Walk every fillable input in the document and classify it. The
-  //    legacy layout was scoped to `form#application-form`, but the new
-  //    redesign drops that id — scope = whole doc works for both because
-  //    `isFillable` already excludes hidden/submit/file inputs.
+  // Walk + classify every other fillable input (whole doc; the new redesign
+  // has no form-root id, and isFillable already excludes hidden/submit/file).
   for (const el of Array.from(
     root.querySelectorAll<HTMLElement>('input, select, textarea'),
   )) {
@@ -154,24 +111,18 @@ function detectFields(root: Document): DetectedField[] {
 }
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
-  // Legacy: `<input id="resume" type="file">`.
-  // New redesign: hidden `<input type="file" name="resume" accept=".pdf,...">`
-  //   wrapped in a custom uploader widget that exposes an "Attach" button.
   return attachResumeViaSlot(file, root, (d) => {
-    // 1) name-based — works for both layouts; covers `resume`, `resumeFile`,
-    //    `cv`, etc.
+    // name-based (both layouts: resume/resumeFile/cv).
     const byName = d.querySelector<HTMLInputElement>(
       'input[type="file"][name*="resume" i], input[type="file"][name*="cv" i]',
     );
     if (byName && !byName.disabled) return byName;
-    // 2) Legacy id.
+    // legacy id.
     const byId = d.getElementById('resume');
     if (byId instanceof HTMLInputElement && byId.type === 'file' && !byId.disabled) {
       return byId;
     }
-    // 3) Fall back to the shared finder — uses RESUME_HINTS over the label
-    //    + accept attribute, so it picks up the new-redesign hidden input
-    //    via `accept=".pdf,.doc,.docx,.txt,.rtf"`.
+    // shared finder — matches the redesign's hidden input via its accept hint.
     return findResumeInput(d);
   });
 }
@@ -182,11 +133,7 @@ function textForLabel(root: Document, forId: string): string {
   return (lbl?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Walk up looking for a wrapping or sibling label-shaped element. Used
- * when the input has no `id` (so `label[for]` can't find it) — common in
- * the new React-rendered redesign.
- */
+/** Find a wrapping/sibling label when the input has no `id` (redesign case). */
 function textOfNearbyLabel(el: HTMLElement): string {
   const wrapping = el.closest('label');
   if (wrapping) {

@@ -1,12 +1,7 @@
 /**
- * Shared classification + DOM helpers used by every platform adapter.
- *
- * Per-platform adapters should:
- *   1. Use their own structured selectors first (cleaner than heuristics).
- *   2. Fall back to `classifyByHeuristics(el, ctx)` for anything unknown.
- *
- * The underscore prefix signals "internal to adapters/" — nothing outside
- * src/adapters/ imports this module directly.
+ * Shared classification + DOM helpers for every platform adapter. Adapters
+ * use their own structured selectors first, then fall back to
+ * `classifyByHeuristics`. Underscore prefix = internal to adapters/.
  */
 
 import type { FieldKind } from './types';
@@ -17,10 +12,7 @@ import { attachFile } from '@/content/filler';
 export type Context = {
   /** Best human-readable label we could resolve. */
   label: string;
-  /**
-   * Lowercased, normalized blob of label + aria + placeholder + name + id
-   * (+ fieldset legend for radios/checkboxes). Used for regex matching.
-   */
+  /** Lowercased blob of label+aria+placeholder+name+id (+group legend), for regex matching. */
   haystack: string;
   autocomplete: string;
   type: string;
@@ -57,11 +49,8 @@ export function collectContext(el: HTMLElement): Context {
 export type Classification = { kind: FieldKind; confidence: number };
 
 /**
- * Classify an element by combining standard HTML signals. Pure: no DOM
- * mutation, no side effects. Returns null if no signal is confident enough.
- *
- * Per-platform adapters should call this AFTER their own structured-selector
- * lookups so the platform's explicit knowledge wins over heuristics.
+ * Classify an element from standard HTML signals. Pure; returns null if no
+ * signal is confident enough. Adapters call this AFTER their own selectors.
  */
 export function classifyByHeuristics(el: HTMLElement, ctx: Context): Classification | null {
   // 1. autocomplete is by far the strongest signal.
@@ -245,12 +234,8 @@ export function textOf(node: Element): string {
 }
 
 /**
- * Best-effort label resolution. Tries, in order:
- *   1. aria-labelledby
- *   2. <label for="id">
- *   3. ancestor <label>
- *   4. closest label-ish element in a nearby form-group container
- *   5. aria-label / placeholder / name
+ * Best-effort label, tried in order: aria-labelledby, label[for], ancestor
+ * <label>, nearby label-ish container element, then aria-label/placeholder/name.
  */
 export function bestLabel(el: HTMLElement): string {
   const doc = el.ownerDocument;
@@ -349,38 +334,25 @@ export function cssEscape(s: string): string {
 
 /* ------------------------------------------------------- job description */
 
-/**
- * Per-adapter cap for `getJobDescription` output. The prompt builder
- * budgets the description separately from the résumé, so 3000 chars is
- * enough room for several screens of body text without crowding the rest
- * of the prompt.
- */
+/** JD cap for `getJobDescription`; budgeted separately from the résumé in the prompt. */
 export const JOB_DESCRIPTION_CHAR_BUDGET = 3000;
 
 /**
- * Normalise whitespace and clip to the JD budget. Adapters call this on
- * the text content of the chosen container so the prompt sees clean prose
- * (no double spaces, no run-on whitespace from inline tags) but keeps
- * paragraph breaks intact.
+ * Normalise whitespace and clip to the JD budget — collapses inline runs but
+ * keeps paragraph breaks, so the prompt sees clean prose.
  */
 export function clipJobDescription(raw: string): string {
   const collapsed = raw
-    // Per-line: collapse runs of inline whitespace; trim ends.
     .split(/\r?\n/)
-    .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim())
+    .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim()) // collapse inline runs per line
     .join('\n')
-    // Collapse 3+ consecutive newlines into a single blank line.
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n{3,}/g, '\n\n') // 3+ newlines → one blank line
     .trim();
   if (collapsed.length <= JOB_DESCRIPTION_CHAR_BUDGET) return collapsed;
   return collapsed.slice(0, JOB_DESCRIPTION_CHAR_BUDGET - 1).trimEnd() + '…';
 }
 
-/**
- * Try each selector in order; for the first one that matches a node with
- * non-empty textContent, return the clipped text. Used by ATS adapters
- * that know one of a handful of stable container selectors holds the JD.
- */
+/** First selector matching a node with non-empty text wins; returns clipped text. */
 export function pickJobDescriptionByCss(
   doc: Document,
   selectors: ReadonlyArray<string>,
@@ -399,10 +371,7 @@ export function pickJobDescriptionByCss(
 
 export const RESUME_HINTS = /\b(resume|résumé|cv|curriculum|attach.*resume|upload.*resume)\b/i;
 
-/**
- * Generic resume-slot finder. Per-platform adapters can override with a
- * tighter selector (e.g., Greenhouse's #resume input).
- */
+/** Generic resume-slot finder; adapters can override with a tighter selector. */
 export function findResumeInput(root: Document): HTMLInputElement | null {
   const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="file"]'));
   for (const input of inputs) {
@@ -420,9 +389,8 @@ export function findResumeInput(root: Document): HTMLInputElement | null {
 }
 
 /**
- * Convenience wrapper: pick a slot via `pickSlot` (or the default
- * `findResumeInput`) and attach the file via the safe filler. Returns true
- * if anything landed. Used as a fillResume default by per-platform adapters.
+ * Pick a slot (via `pickSlot`, default `findResumeInput`) and attach the file
+ * via the safe filler. Returns true if it landed. Default fillResume impl.
  */
 export async function attachResumeViaSlot(
   file: File,

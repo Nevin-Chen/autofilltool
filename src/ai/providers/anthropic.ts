@@ -1,14 +1,8 @@
 /**
- * Anthropic messages API, streaming.
- *
- * /v1/messages with stream:true emits typed SSE events. We care about
- * `content_block_delta` (whose `delta.text` is the next text chunk) and
- * `message_stop` (end of stream).
- *
- * The Anthropic browser API requires `anthropic-dangerous-direct-browser-access: true`
- * because by default it refuses cross-origin browser requests to avoid
- * leaking API keys via page JS. Our key never leaves the background worker
- * — it lives in chrome.storage.local — so this is the correct opt-in.
+ * Anthropic /v1/messages streaming. Typed SSE events; we use
+ * `content_block_delta` (`delta.text` chunks) and `message_stop`. Needs
+ * `anthropic-dangerous-direct-browser-access: true` — safe here because the key
+ * stays in the background worker (chrome.storage.local), never page JS.
  */
 
 import { parseSSE } from '../sse';

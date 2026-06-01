@@ -1,20 +1,8 @@
 /**
- * Lever adapter. Lever-hosted application forms live at
- * `jobs.lever.co/<company>/<posting>/apply` and use predictable input `name`
- * attributes:
- *
- *   - `name="name"`             → full name
- *   - `name="email"`            → email
- *   - `name="phone"`            → phone
- *   - `name="org"`              → current company (we leave this; not in profile)
- *   - `name="resume"`           → resume file input
- *   - `name="urls[LinkedIn]"`   → LinkedIn URL
- *   - `name="urls[GitHub]"`     → GitHub URL
- *   - `name="urls[Portfolio]"`  → portfolio URL
- *   - `name="urls[Other]"`      → other URL
- *
- * Custom questions live inside `.application-question` blocks with their
- * own labels — handled by the shared heuristic classifier as a fallback.
+ * Lever adapter. Forms at `jobs.lever.co/<company>/<posting>/apply` use
+ * predictable input `name`s: `name`, `email`, `phone`, `resume` (file), and
+ * `urls[LinkedIn|GitHub|Portfolio|Other]`. Custom questions live in
+ * `.application-question` blocks, handled by the shared classifier.
  */
 
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
@@ -44,8 +32,7 @@ export const leverAdapter: PlatformAdapter = {
   name: 'Lever',
   matches: (url, doc) => {
     if (/(^|\.)lever\.co$/.test(url.hostname)) return true;
-    // Some companies host Lever forms on their own subdomain — sniff the
-    // characteristic class names Lever bundles.
+    // CNAMEd forms: sniff Lever's characteristic markup.
     return !!doc.querySelector('form[action*="lever.co"], .lever-job-listing-page');
   },
   detectFields,
@@ -53,13 +40,7 @@ export const leverAdapter: PlatformAdapter = {
   getJobDescription,
 };
 
-/**
- * Lever's job description sits in `.posting-page .content` on the listing
- * view; the `/apply` page strips most of it but usually keeps the headline
- * and `.posting-headline`/`.section-wrapper` blocks containing
- * `.description` / `.requirements`. We grab those if present, otherwise
- * fall back to `main` / body.
- */
+/** JD from the listing's `.posting-page .content` and related blocks; falls back to main/body. */
 function getJobDescription(doc: Document): string {
   const byCss = pickJobDescriptionByCss(doc, [
     '.posting-page .content',
@@ -87,8 +68,7 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  // 2. Walk Lever's `.application-question` blocks; the shared classifier
-  //    handles the heterogeneous custom questions.
+  // 2. Custom questions — shared classifier handles them.
   const scope =
     root.querySelector('form[action*="lever.co"], form[action*="/apply"]') ?? root;
   for (const el of Array.from(scope.querySelectorAll<HTMLElement>('input, select, textarea'))) {
@@ -105,7 +85,7 @@ function detectFields(root: Document): DetectedField[] {
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
   return attachResumeViaSlot(file, root, (d) => {
-    // Lever uses name="resume" as the file input inside the drag-drop wrapper.
+    // name="resume" file input inside the drag-drop wrapper.
     const byName = d.querySelector<HTMLInputElement>('input[type="file"][name="resume"]');
     if (byName && !byName.disabled) return byName;
     return findResumeInput(d);
