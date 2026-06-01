@@ -21,6 +21,7 @@ import {
   findResumeInput,
   clipJobDescription,
   pickJobDescriptionByCss,
+  hasSubmissionConfirmText,
 } from './_shared';
 
 /** Workday automation ids → FieldKind. Order matters (exact before substring). */
@@ -83,7 +84,25 @@ export const workdayAdapter: PlatformAdapter = {
   detectFields,
   fillResume,
   getJobDescription,
+  detectSubmissionConfirmed,
 };
+
+/**
+ * Workday shows a confirmation step after the final Submit, tagged with a
+ * distinctive `data-automation-id`. Match the known ids, else fall back to the
+ * shared confirmation copy. (The in-page watcher only consults this after the
+ * user actually clicked Submit, so phrase-only is safe here.)
+ */
+function detectSubmissionConfirmed(doc: Document, _url: URL): boolean {
+  if (
+    doc.querySelector(
+      '[data-automation-id="confirmationPage"], [data-automation-id="successPage"], [data-automation-id="confirmation"]',
+    )
+  ) {
+    return true;
+  }
+  return hasSubmissionConfirmText(doc);
+}
 
 function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];

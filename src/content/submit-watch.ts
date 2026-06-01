@@ -13,15 +13,13 @@
 import type { PlatformAdapter } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { AdapterIdSchema, type AdapterId } from '@/profile/schema';
+import { hasSubmissionConfirmText } from '@/adapters/_shared';
 import { looksLikeSubmit } from './filler';
 import { sendToBackground } from '@/lib/messaging';
 import { log } from '@/lib/logger';
 
 const BREADCRUMB_KEY = 'autofilltool:lastFill';
 const WATCH_MS = 10 * 60 * 1000; // stop watching / honor a breadcrumb for 10 min
-
-const CONFIRM_RE =
-  /(thank you for (your )?appl|application (has been |was )?(submitted|received|complete)|we['’]?(ve| have) received your application|thanks for applying|successfully submitted)/i;
 
 type Breadcrumb = {
   jobUrl: string;
@@ -69,8 +67,7 @@ export function isSubmissionConfirmed(
 
 /** Adapter-agnostic fallback: a confirmation phrase with no open submit control. */
 export function sharedConfirmed(doc: Document): boolean {
-  const text = (doc.body?.textContent ?? '').slice(0, 5000);
-  if (!CONFIRM_RE.test(text)) return false;
+  if (!hasSubmissionConfirmText(doc)) return false;
   return !hasVisibleSubmit(doc);
 }
 

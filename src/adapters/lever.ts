@@ -14,6 +14,7 @@ import {
   findResumeInput,
   clipJobDescription,
   pickJobDescriptionByCss,
+  hasSubmissionConfirmText,
 } from './_shared';
 
 /** Exact-name matches for the canonical Lever fields. */
@@ -38,7 +39,22 @@ export const leverAdapter: PlatformAdapter = {
   detectFields,
   fillResume,
   getJobDescription,
+  detectSubmissionConfirmed,
 };
+
+/**
+ * Lever redirects to a `/thanks` (or `/confirmation`) route after a successful
+ * apply and renders a "thank you" page with the application form gone. Match
+ * the route, else require the confirmation copy with no apply form present.
+ */
+function detectSubmissionConfirmed(doc: Document, url: URL): boolean {
+  if (/\/(thanks|confirmation)\b/i.test(url.pathname)) return true;
+  if (doc.querySelector('.application-confirmation, [data-qa="confirmation"]')) return true;
+  const formGone = !doc.querySelector(
+    'form[action*="lever.co"], form[action*="/apply"], [data-qa="application-form"]',
+  );
+  return formGone && hasSubmissionConfirmText(doc);
+}
 
 /** JD from the listing's `.posting-page .content` and related blocks; falls back to main/body. */
 function getJobDescription(doc: Document): string {

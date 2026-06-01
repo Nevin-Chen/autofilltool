@@ -402,3 +402,19 @@ export async function attachResumeViaSlot(
   const action = attachFile(slot, file, { forceOverwrite: false });
   return action.status === 'attached';
 }
+
+/* ---------------------------------------------- submission confirmation */
+
+/**
+ * Post-submit confirmation copy ("thank you for applying", "application
+ * submitted/received", …). Single source of truth shared by every adapter's
+ * `detectSubmissionConfirmed` and submit-watch's generic fallback.
+ */
+export const SUBMISSION_CONFIRM_RE =
+  /(thank you for (your )?appl|application (has been |was )?(submitted|received|complete)|we['’]?(ve| have) received your application|thanks for applying|successfully submitted|your application is complete)/i;
+
+/** True when the page's visible text carries a post-submit confirmation phrase. */
+export function hasSubmissionConfirmText(doc: Document): boolean {
+  const text = (doc.body?.textContent ?? '').slice(0, 5000);
+  return SUBMISSION_CONFIRM_RE.test(text);
+}

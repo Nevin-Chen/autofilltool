@@ -18,6 +18,7 @@ import {
   textOf,
   clipJobDescription,
   pickJobDescriptionByCss,
+  hasSubmissionConfirmText,
 } from './_shared';
 
 export const ashbyAdapter: PlatformAdapter = {
@@ -31,7 +32,25 @@ export const ashbyAdapter: PlatformAdapter = {
   detectFields,
   fillResume,
   getJobDescription,
+  detectSubmissionConfirmed,
 };
+
+/**
+ * Ashby is an SPA: after submit it swaps the FieldEntry form for a confirmation
+ * view in place. Match a known confirmation testid, else require the
+ * confirmation copy with no FieldEntry blocks remaining.
+ */
+function detectSubmissionConfirmed(doc: Document, _url: URL): boolean {
+  if (
+    doc.querySelector(
+      '[data-testid="application-confirmation"], [data-testid="ApplicationConfirmation"], [data-testid="submitted-application"]',
+    )
+  ) {
+    return true;
+  }
+  const formGone = !doc.querySelector('[data-testid="FieldEntry"]');
+  return formGone && hasSubmissionConfirmText(doc);
+}
 
 /** JD lives in `[data-testid="JobPostingDescription"]`; falls back to main, then body. */
 function getJobDescription(doc: Document): string {
