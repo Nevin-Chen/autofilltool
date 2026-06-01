@@ -86,4 +86,11 @@ export interface PlatformAdapter {
    * Generic adapter uses `@mozilla/readability` as a last resort.
    */
   getJobDescription(doc: Document): string;
+  /**
+   * Optional: true when the page is showing a post-submit confirmation (e.g. a
+   * "thank you for applying" view). Used by submit-watch to auto-log a real
+   * submission. Detection only — never clicks or submits. Falls back to a shared
+   * phrase heuristic when omitted. Must be cheap and never throw.
+   */
+  detectSubmissionConfirmed?(doc: Document, url: URL): boolean;
 }

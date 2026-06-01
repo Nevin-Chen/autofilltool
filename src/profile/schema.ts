@@ -115,6 +115,8 @@ export const TrackingSettingsSchema = z.object({
     .startsWith('https://', { message: 'Webhook must use https://' })
     .or(z.literal(''))
     .default(''),
+  // Opt-in: auto-log when the user's own submit succeeds, skipping the pill.
+  autoLogOnSubmit: z.boolean().default(false),
 });
 export type TrackingSettings = z.infer<typeof TrackingSettingsSchema>;
 

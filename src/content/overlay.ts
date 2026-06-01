@@ -9,6 +9,7 @@ import type { AdapterId } from '@/profile/schema';
 import type { JobContext } from './job-context';
 import { extractJobContext } from './job-context';
 import { sendToBackground } from '@/lib/messaging';
+import type { LoggedRecord } from './submit-watch';
 
 const HOST_ID = 'autofilltool-pill-host';
 
@@ -50,6 +51,43 @@ export function showPill(input: PillInput): void {
   renderSummary(container, input, () => renderForm(container, input, close), close);
 
   (document.body ?? document.documentElement).appendChild(host);
+}
+
+/**
+ * Small auto-dismissing toast shown when submit-watch auto-logs an application.
+ * Replaces any open pill so the user isn't asked to "Mark submitted" twice.
+ */
+export function showLoggedToast(record: LoggedRecord): void {
+  document.getElementById(HOST_ID)?.remove();
+
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  Object.assign(host.style, {
+    position: 'fixed',
+    right: '16px',
+    bottom: '16px',
+    zIndex: '2147483647',
+    all: 'initial',
+  } as CSSStyleDeclaration);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+  shadow.appendChild(buildStyle());
+  const container = document.createElement('div');
+  container.className = 'card';
+  shadow.appendChild(container);
+
+  const where = record.posted ? 'Logged to your sheet' : 'Logged locally';
+  const label = [record.role, record.company].filter(Boolean).join(' · ');
+  container.append(
+    h('div', { class: 'row between' }, [
+      h('div', { class: 'title' }, ['Application logged ✓']),
+      btn({ class: 'icon', text: '×', title: 'Dismiss', onClick: () => host.remove() }),
+    ]),
+    h('div', { class: 'sub' }, [where + (label ? ` — ${label}` : '')]),
+  );
+
+  (document.body ?? document.documentElement).appendChild(host);
+  setTimeout(() => host.remove(), 6000);
 }
 
 /* ----------------------------------------------------------- rendering */

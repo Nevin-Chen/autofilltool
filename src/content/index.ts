@@ -12,9 +12,10 @@ import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
-import { showPill } from './overlay';
+import { showPill, showLoggedToast } from './overlay';
 import { installSuggestButtons } from './suggest';
 import { extractJobContext } from './job-context';
+import { installSubmitWatch, maybeLogPostNavigation } from './submit-watch';
 
 declare global {
   interface Window {
@@ -28,7 +29,25 @@ if (window.__autofilltool_loaded__) {
 } else {
   window.__autofilltool_loaded__ = true;
   initialize();
+  void maybeAutoLogOnLoad();
   log.debug('content script loaded on', location.href);
+}
+
+/**
+ * On load, handle the full-navigation submit case: if auto-log is on and this
+ * looks like a confirmation page following a recent fill, log it. No-op
+ * otherwise. Cheap: bails right after the settings check when disabled.
+ */
+async function maybeAutoLogOnLoad(): Promise<void> {
+  try {
+    const settings = await getSettings();
+    if (!settings.tracking.autoLogOnSubmit) return;
+    const url = new URL(location.href);
+    const adapter = pickAdapter(url, document);
+    await maybeLogPostNavigation(adapter, document, url, showLoggedToast);
+  } catch (err) {
+    log.warn('auto-log on load failed', err);
+  }
 }
 
 function initialize(): void {
@@ -120,11 +139,12 @@ async function runFill(forceFromMsg?: boolean) {
     return a.note ? { ...base, note: a.note } : base;
   });
 
+  const ctx = extractJobContext(document, url);
+
   // Inject ✨ Suggest buttons next to open-ended textareas (idempotent). Pull
   // jobDescription from the adapter for prompt context, guarded so a crashed
   // Readability run doesn't kill suggest setup.
   try {
-    const ctx = extractJobContext(document, url);
     try {
       ctx.jobDescription = adapter.getJobDescription(document) || '';
     } catch (err) {
@@ -133,6 +153,15 @@ async function runFill(forceFromMsg?: boolean) {
     installSuggestButtons(fields, ctx);
   } catch (err) {
     log.warn('suggest-button injection failed', err);
+  }
+
+  // Opt-in: watch for the user's real submit and auto-log it to history/sheet.
+  if (settings.tracking.autoLogOnSubmit) {
+    try {
+      installSubmitWatch({ adapter, ctx, onLogged: showLoggedToast });
+    } catch (err) {
+      log.warn('submit-watch install failed', err);
+    }
   }
 
   // Fire-and-forget the pill; never block the response on it.

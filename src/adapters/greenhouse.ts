@@ -52,7 +52,24 @@ export const greenhouseAdapter: PlatformAdapter = {
   detectFields,
   fillResume,
   getJobDescription,
+  detectSubmissionConfirmed,
 };
+
+/**
+ * Greenhouse confirms via a server-rendered "thank you / application submitted"
+ * page where the application form is gone. Both layouts use a `#application_confirmation`
+ * region (legacy) or a confirmation heading; we check both plus the form's absence.
+ */
+function detectSubmissionConfirmed(doc: Document, _url: URL): boolean {
+  if (doc.getElementById('application_confirmation')) return true;
+  const formGone = !doc.querySelector('form#application-form, #grnhse_app form');
+  const text = (doc.body?.textContent ?? '').slice(0, 4000);
+  const confirmed =
+    /thank you for applying|application (was |has been )?(submitted|received)|we('| ?ha)?ve received your application/i.test(
+      text,
+    );
+  return confirmed && formGone;
+}
 
 /** Job description via known containers (legacy `#content` first), else body. */
 function getJobDescription(doc: Document): string {
