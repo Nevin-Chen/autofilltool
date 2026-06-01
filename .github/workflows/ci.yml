@@ -1,0 +1,40 @@
+# CI: type-check, lint, and unit tests on every push / PR.
+#
+# Mirrors the local pre-ship gate from CLAUDE.local.md §9
+# (tsc clean → lint → vitest green) so drift like an un-run lint script
+# can't slip onto main unnoticed. Deliberately does NOT build or package —
+# `tsc --noEmit` already type-checks, and a full crxjs build needs no
+# verification gate here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # pdfjs-dist@5 requires Node >=22.13 (resume-text tests pull in its
+          # legacy build, which uses process.getBuiltinModule). Keep this at
+          # 22+ even though package.json engines still says >=20.
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
