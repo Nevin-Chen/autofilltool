@@ -87,3 +87,16 @@ if (typeof (globalThis as { DataTransfer?: unknown }).DataTransfer === 'undefine
   (globalThis as unknown as { DataTransfer: typeof FakeDataTransfer }).DataTransfer =
     FakeDataTransfer;
 }
+
+// --- DOMMatrix -----------------------------------------------------------
+// pdfjs-dist evaluates `const SCALE_MATRIX = new DOMMatrix()` at module load,
+// but jsdom doesn't implement DOMMatrix, so importing pdfjs throws a
+// ReferenceError before any test runs. Text extraction never rasterises, so a
+// no-op stub is enough to let the module import; its geometry methods go unused.
+if (typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix === 'undefined') {
+  class DOMMatrixStub {
+    // Accept the optional init arg pdfjs passes in its (unused-here) render paths.
+    constructor(_init?: string | number[]) {}
+  }
+  (globalThis as unknown as { DOMMatrix: typeof DOMMatrixStub }).DOMMatrix = DOMMatrixStub;
+}

@@ -240,7 +240,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
           {settings.provider === 'gemini' && (
             <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
               <span className="font-mono">gemini-2.5-flash</span> is
-              rate-limited but doesn't require a card. Grab a key at{' '}
+              rate-limited but doesn&apos;t require a card. Grab a key at{' '}
               <a
                 href={PROVIDER_KEY_URL.gemini}
                 target="_blank"

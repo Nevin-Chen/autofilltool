@@ -135,13 +135,6 @@ export async function clearHistory(): Promise<void> {
   await chrome.storage.local.remove(STORAGE_KEYS.history);
 }
 
-/** Replace the whole history ring (used by encrypted import). Capped like pushHistory. */
-export async function replaceHistory(
-  records: SubmissionRecord[],
-): Promise<void> {
-  await rawSet(STORAGE_KEYS.history, wrap(records.slice(0, HISTORY_CAP)));
-}
-
 /* --------------------------------------------------------- Subscriptions */
 
 type Listener = (changed: Partial<Record<StorageKey, unknown>>) => void;
