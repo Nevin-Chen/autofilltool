@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>Mixed fields</title></head>
+  <body>
+    <!-- One empty field (gets filled + highlighted) and one pre-filled field
+         (skipped, must NOT be highlighted). Used by the post-fill highlight
+         test (FR-010) and as a general mixed empty/pre-filled fixture. -->
+    <form id="application-form">
+      <label>First name <input type="text" name="first_name" /></label>
+      <label>Last name <input type="text" name="last_name" value="Existing" /></label>
+    </form>
+  </body>
+</html>

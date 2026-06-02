@@ -12,8 +12,8 @@ import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
-import { showPill, showLoggedToast } from './overlay';
-import { installSuggestButtons } from './suggest';
+import { showPill, showLoggedToast, showNoticeToast } from './overlay';
+import { installSuggestButtons, aiConfigured } from './suggest';
 import { extractJobContext } from './job-context';
 import { installSubmitWatch, maybeLogPostNavigation } from './submit-watch';
 
@@ -69,6 +69,17 @@ function initialize(): void {
         },
       );
       return true; // we'll respond async
+    }
+
+    if (msg.type === 'SHOW_NOTICE') {
+      // Background sends this to the top frame (e.g. "no form detected").
+      try {
+        showNoticeToast(msg.text);
+        sendResponse({ ok: true, value: { shown: true } });
+      } catch (err) {
+        sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
+      return true;
     }
 
     return false;
@@ -150,7 +161,7 @@ async function runFill(forceFromMsg?: boolean) {
     } catch (err) {
       log.warn('getJobDescription failed', err);
     }
-    installSuggestButtons(fields, ctx);
+    installSuggestButtons(fields, ctx, { aiConfigured: aiConfigured(settings) });
   } catch (err) {
     log.warn('suggest-button injection failed', err);
   }
@@ -190,6 +201,7 @@ async function runFill(forceFromMsg?: boolean) {
       skipped,
       failed,
       total: actions.length,
+      fieldsDetected: fields.length,
       actions: wire,
     },
   };

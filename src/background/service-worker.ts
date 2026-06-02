@@ -87,7 +87,22 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
           }
         }),
       );
-      return mergeFillResponses(responses);
+      const merged = mergeFillResponses(responses);
+      // US3 s3: zero candidate fields across all targeted frames => no form.
+      // Surface an in-page toast in the top frame (the popup shows its own
+      // message from `fieldsDetected` too). Fire-and-forget; presentational.
+      if (merged.ok && merged.value.fieldsDetected === 0) {
+        chrome.tabs
+          .sendMessage(
+            msg.tabId,
+            { type: 'SHOW_NOTICE', text: 'No application form detected on this page' },
+            { frameId: 0 },
+          )
+          .catch(() => {
+            /* top frame may lack a content script; the popup still shows it */
+          });
+      }
+      return merged;
     }
 
     case 'GET_HISTORY': {
@@ -145,6 +160,10 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
       }
       return { ok: true, value: { stored: true, posted: true, record } };
     }
+
+    case 'SHOW_NOTICE':
+      // Sent background→content (top frame); the background is never a recipient.
+      return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
     default: {
       const _: never = msg;

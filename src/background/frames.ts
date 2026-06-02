@@ -126,6 +126,7 @@ export function mergeFillResponses(
           skipped: 0,
           failed: 0,
           total: 0,
+          fieldsDetected: 0,
           actions: [],
         },
       };
@@ -151,12 +152,14 @@ export function mergeFillResponses(
   let skipped = 0;
   let failed = 0;
   let total = 0;
+  let fieldsDetected = 0;
   const actions: FillActionWire[] = [];
   for (const r of oks) {
     filled += r.value.filled;
     skipped += r.value.skipped;
     failed += r.value.failed;
     total += r.value.total;
+    fieldsDetected += r.value.fieldsDetected;
     actions.push(...r.value.actions);
   }
 
@@ -168,6 +171,7 @@ export function mergeFillResponses(
       skipped,
       failed,
       total,
+      fieldsDetected,
       actions,
     },
   };

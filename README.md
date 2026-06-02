@@ -10,7 +10,7 @@ exists today and what's coming.
 
 ## Status
 
-**v0.11.0 — Steps 1 + 2 + 3 + 4 + 5 + 6 + 7 of 8: skeleton + generic fill + resume upload (with PDF/DOCX text extraction for AI context) + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby / **Workday** with virtualised-dropdown support) + AI suggestions grounded in profile + parsed résumé + scraped job description (OpenAI / Anthropic / Gemini / Ollama) + Google Sheets logging.**
+**v0.12.0 — skeleton + generic fill + resume upload (with PDF/DOCX text extraction for AI context) + ATS adapters (Greenhouse — legacy `boards.greenhouse.io` AND the new `job-boards.greenhouse.io` Next.js redesign, both standalone and iframe-embedded — / Lever / Ashby / **Workday** with virtualised-dropdown support) + AI suggestions grounded in profile + parsed résumé + scraped job description (OpenAI / Anthropic / Gemini / Ollama) + Google Sheets logging + spec-compliance polish (transient post-fill highlight, Suggest button gated on AI config with a zero-network empty state, and a "no application form detected" message).**
 
 What works:
 

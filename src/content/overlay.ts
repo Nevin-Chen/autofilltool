@@ -90,6 +90,42 @@ export function showLoggedToast(record: LoggedRecord): void {
   setTimeout(() => host.remove(), 6000);
 }
 
+/**
+ * Generic transient notice toast (e.g. "No application form detected"). Sent by
+ * the background to the top frame after a Fill that detected zero fields, so the
+ * message appears in-page alongside the popup's. Presentational only.
+ */
+export function showNoticeToast(text: string): void {
+  document.getElementById(HOST_ID)?.remove();
+
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  Object.assign(host.style, {
+    position: 'fixed',
+    right: '16px',
+    bottom: '16px',
+    zIndex: '2147483647',
+    all: 'initial',
+  } as CSSStyleDeclaration);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+  shadow.appendChild(buildStyle());
+  const container = document.createElement('div');
+  container.className = 'card';
+  shadow.appendChild(container);
+
+  container.append(
+    h('div', { class: 'row between' }, [
+      h('div', { class: 'title' }, ['AutoFillTool']),
+      btn({ class: 'icon', text: '×', title: 'Dismiss', onClick: () => host.remove() }),
+    ]),
+    h('div', { class: 'sub' }, [text]),
+  );
+
+  (document.body ?? document.documentElement).appendChild(host);
+  setTimeout(() => host.remove(), 6000);
+}
+
 /* ----------------------------------------------------------- rendering */
 
 function renderSummary(
