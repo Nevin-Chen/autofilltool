@@ -4,6 +4,14 @@
  * the AI response straight into the textarea via the safe filler (so React
  * notices each delta).
  *
+ * Gated on AI configuration (FR-013/FR-016), layered:
+ *   - Primary: the button is only injected when a provider is configured
+ *     (`installSuggestButtons(..., { aiConfigured })`).
+ *   - Defensive: a click re-reads settings and, if no provider is configured
+ *     (e.g. cleared after injection), shows a "Configure an AI provider"
+ *     prompt and opens NO port / makes NO request — a hard privacy guarantee
+ *     enforced in `guardedConnect`, not best-effort.
+ *
  * Buttons live in a closed Shadow DOM so the host page can't restyle them.
  * One injector instance per page; calls to `installSuggestButtons` are
  * idempotent — buttons already on the page don't get duplicated.
@@ -11,15 +19,29 @@
 
 import type { DetectedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
+import type { Settings } from '@/profile/schema';
+import { getSettings } from '@/profile/store';
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
 import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 
 const HOST_DATA_ATTR = 'data-autofilltool-suggest-host';
 
+/** True when an AI provider is selected (the visibility + click-guard gate). */
+export function aiConfigured(settings: Settings): boolean {
+  return settings.ai.provider !== 'none';
+}
+
+export type InstallSuggestOptions = {
+  /** Visibility gate (FR-013): skip injection entirely when no provider is set. */
+  aiConfigured: boolean;
+};
+
 export function installSuggestButtons(
   fields: DetectedField[],
   ctx: JobContext,
+  opts: InstallSuggestOptions,
 ): void {
+  if (!opts.aiConfigured) return; // FR-013: no button without a provider
   for (const field of fields) {
     if (field.kind !== 'openEnded' && field.kind !== 'coverLetter') continue;
     if (!(field.el instanceof HTMLTextAreaElement)) continue;
@@ -27,6 +49,33 @@ export function installSuggestButtons(
     field.el.dataset[CAMEL_FLAG] = '1';
     attachButtonFor(field.el, field.label, ctx);
   }
+}
+
+/**
+ * The hard privacy gate (FR-016): read settings, and only open the port when a
+ * provider is configured. Otherwise call `onNoProvider` (the prompt) and return
+ * null WITHOUT connecting — so an unconfigured click provably opens no port and
+ * issues no request. Settings come from chrome.storage.local (no network). Deps
+ * are injected so this is unit-testable with spies.
+ */
+export async function guardedConnect(deps: {
+  loadSettings: () => Promise<Settings>;
+  connect: () => chrome.runtime.Port;
+  onNoProvider: () => void;
+}): Promise<chrome.runtime.Port | null> {
+  let settings: Settings;
+  try {
+    settings = await deps.loadSettings();
+  } catch {
+    // Fail safe: if we can't confirm a provider, behave as unconfigured.
+    deps.onNoProvider();
+    return null;
+  }
+  if (!aiConfigured(settings)) {
+    deps.onNoProvider();
+    return null;
+  }
+  return deps.connect();
 }
 
 // dataset keys are camelCased forms of the data- attribute name.
@@ -81,6 +130,10 @@ function attachButtonFor(
   };
 
   btn.addEventListener('click', () => {
+    void onActivate();
+  });
+
+  async function onActivate(): Promise<void> {
     if (streaming && currentPort) {
       // Click during stream = cancel.
       try {
@@ -94,7 +147,17 @@ function attachButtonFor(
       return;
     }
 
-    // Clear the textarea first if it's empty-ish; otherwise append a newline.
+    // Defensive gate (FR-016): no provider → prompt, and provably no port/fetch.
+    const port = await guardedConnect({
+      loadSettings: getSettings,
+      connect: () => chrome.runtime.connect({ name: AI_PORT_NAME }),
+      onNoProvider: () => showNoProviderPrompt(status),
+    });
+    if (!port) return;
+    currentPort = port;
+
+    // Only now that we're proceeding do we touch the textarea: clear if empty,
+    // else append a blank line so we don't clobber the user's draft.
     if (textarea.value.trim().length === 0) {
       setNativeValue(textarea, '');
     } else {
@@ -107,8 +170,6 @@ function attachButtonFor(
     btn.textContent = '✕ Stop';
     status.textContent = ' connecting…';
 
-    const port = chrome.runtime.connect({ name: AI_PORT_NAME });
-    currentPort = port;
     let first = true;
 
     port.onMessage.addListener((raw: AiBgToClient) => {
@@ -153,9 +214,25 @@ function attachButtonFor(
         ...(maxChars ? { maxChars } : {}),
       },
     });
-  });
+  }
 
   document.body.appendChild(host);
+}
+
+/**
+ * Empty-state prompt (US4 scenario 3): tell the user to configure a provider.
+ * Purely presentational — shown inside the button's own shadow status line, so
+ * it can't be reached or restyled by the page, and triggers no navigation.
+ */
+function showNoProviderPrompt(status: HTMLElement): void {
+  status.textContent = ' Configure an AI provider in Settings';
+  status.setAttribute('data-aft-no-provider', '1');
+  setTimeout(() => {
+    if (status.getAttribute('data-aft-no-provider') === '1') {
+      status.removeAttribute('data-aft-no-provider');
+      status.textContent = '';
+    }
+  }, 4000);
 }
 
 function buildStyle(): HTMLStyleElement {

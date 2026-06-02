@@ -1,6 +1,6 @@
 {
   "name": "autofilltool",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Local-first Chrome extension that autofills job application forms and keeps the user in control.",
   "type": "module",

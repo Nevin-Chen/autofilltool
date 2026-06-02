@@ -182,6 +182,7 @@ function ok(
   filled: number,
   skipped = 0,
   failed = 0,
+  fieldsDetected = filled + skipped + failed,
 ): FillPageResponse {
   return {
     ok: true,
@@ -191,6 +192,7 @@ function ok(
       skipped,
       failed,
       total: filled + skipped + failed,
+      fieldsDetected,
       actions: [],
     },
   };
@@ -238,6 +240,23 @@ describe('mergeFillResponses', () => {
     }
   });
 
+  it('reports fieldsDetected = 0 when no frame found any fields (no-form, US3 s3)', () => {
+    const merged = mergeFillResponses([
+      ok('generic', 0, 0, 0, 0),
+      ok('generic', 0, 0, 0, 0),
+    ]);
+    expect(merged.ok).toBe(true);
+    if (merged.ok) expect(merged.value.fieldsDetected).toBe(0);
+  });
+
+  it('is NOT no-form when fields were detected but none filled (all pre-filled)', () => {
+    const merged = mergeFillResponses([ok('greenhouse', 0, 3, 0, 3)]);
+    if (merged.ok) {
+      expect(merged.value.filled).toBe(0);
+      expect(merged.value.fieldsDetected).toBe(3); // > 0 => message must not show
+    }
+  });
+
   it('concatenates actions across frames', () => {
     const a: FillPageResponse = {
       ok: true,
@@ -247,6 +266,7 @@ describe('mergeFillResponses', () => {
         skipped: 0,
         failed: 0,
         total: 1,
+        fieldsDetected: 1,
         actions: [{ label: 'First name', kind: 'firstName', status: 'filled' }],
       },
     };
@@ -258,6 +278,7 @@ describe('mergeFillResponses', () => {
         skipped: 1,
         failed: 0,
         total: 1,
+        fieldsDetected: 1,
         actions: [{ label: 'Newsletter', kind: 'email', status: 'skipped' }],
       },
     };

@@ -124,6 +124,7 @@ function fillTextInput(
   }
   setNativeValue(el, value);
   dispatchInputEvents(el);
+  flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -146,6 +147,7 @@ function fillSelect(
   }
   setNativeValue(el, target);
   dispatchInputEvents(el);
+  flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -191,6 +193,7 @@ function fillCheckbox(
   }
   // click() not .checked, so frameworks notice and run follow-up logic.
   el.click();
+  flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -236,6 +239,7 @@ function fillRadio(
     return { ...meta, status: 'skipped', note: 'already in desired state' };
   }
   target.click();
+  flashFilled(target);
   return { ...meta, status: 'filled' };
 }
 
@@ -273,6 +277,45 @@ function labelTextFor(el: HTMLInputElement): string {
 function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
   return s.replace(/(["\\#.:;,?!+*~'`()[\]{}<>=|/])/g, '\\$1');
+}
+
+/* ------------------------------------------------------- post-fill highlight */
+
+// Transient highlight on fields we actually wrote (FR-010). Presentational
+// ONLY: never dispatches events or alters values, and only called from the
+// 'filled' paths above (skipped/pre-filled fields stay untouched). Saves and
+// restores the element's inline box-shadow + transition so the element is left
+// exactly as found. A box-shadow glow shifts no layout and avoids !important
+// wars with page CSS; the sky tint reads on both light and dark forms.
+const HIGHLIGHT_HOLD_MS = 1100;
+const HIGHLIGHT_FADE_MS = 450;
+const HIGHLIGHT_SHADOW =
+  '0 0 0 2px rgba(56,189,248,0.9), 0 0 8px 2px rgba(56,189,248,0.45)';
+
+function flashFilled(el: HTMLElement): void {
+  try {
+    const style = el.style;
+    const prevBoxShadow = style.boxShadow;
+    const prevTransition = style.transition;
+    style.transition = `box-shadow ${HIGHLIGHT_FADE_MS}ms ease-out`;
+    style.boxShadow = HIGHLIGHT_SHADOW;
+    setTimeout(() => {
+      try {
+        style.boxShadow = prevBoxShadow; // fades out via the transition above
+        setTimeout(() => {
+          try {
+            style.transition = prevTransition; // restore inline exactly as found
+          } catch {
+            /* element detached — nothing to restore */
+          }
+        }, HIGHLIGHT_FADE_MS);
+      } catch {
+        /* element detached */
+      }
+    }, HIGHLIGHT_HOLD_MS);
+  } catch {
+    /* a cosmetic flash must never break a fill */
+  }
 }
 
 /* ------------------------------------------------------- virtualised dropdowns */
@@ -347,6 +390,7 @@ export async function fillVirtualizedDropdown(
 
   option.click();
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
+  flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
 }
 

@@ -15,6 +15,7 @@ type FillSummary = {
   skipped: number;
   failed: number;
   total: number;
+  fieldsDetected: number;
 };
 
 export function PopupApp() {
@@ -73,6 +74,7 @@ export function PopupApp() {
           skipped: r.value.skipped,
           failed: r.value.failed,
           total: r.value.total,
+          fieldsDetected: r.value.fieldsDetected,
         });
       } else {
         setFillErr(r.error);
@@ -107,7 +109,13 @@ export function PopupApp() {
         {filling ? 'Filling…' : 'Fill this page'}
       </button>
 
-      {summary && (
+      {summary && summary.fieldsDetected === 0 && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          No application form detected on this page. Nothing was changed.
+        </div>
+      )}
+
+      {summary && summary.fieldsDetected > 0 && (
         <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-800">
           <div className="mb-1 font-medium text-slate-700 dark:text-slate-200">
             via <span className="font-mono">{summary.adapterId}</span>
@@ -124,7 +132,7 @@ export function PopupApp() {
                 {summary.failed} failed
               </span>
             )}
-            <span className="text-slate-400">of {summary.total} detected</span>
+            <span className="text-slate-400">of {summary.fieldsDetected} detected</span>
           </div>
         </div>
       )}

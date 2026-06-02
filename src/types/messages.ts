@@ -44,6 +44,12 @@ export type GetHistoryMsg = { type: 'GET_HISTORY'; limit?: number };
 /** Fires a tiny test payload at the configured webhook for the Options page. */
 export type TestWebhookMsg = { type: 'TEST_WEBHOOK' };
 
+/**
+ * Asks a content script (sent to the top frame) to show a transient in-page
+ * notice — e.g. "No application form detected". Presentational only.
+ */
+export type ShowNoticeMsg = { type: 'SHOW_NOTICE'; text: string };
+
 export type RequestMessage =
   | GetProfileMsg
   | GetSettingsMsg
@@ -51,7 +57,8 @@ export type RequestMessage =
   | FillPageMsg
   | LogSubmissionMsg
   | GetHistoryMsg
-  | TestWebhookMsg;
+  | TestWebhookMsg
+  | ShowNoticeMsg;
 
 /* ------------------------------------------------------------ Responses */
 
@@ -74,6 +81,12 @@ export type FillPageResponse = Result<{
   skipped: number;
   failed: number;
   total: number;
+  /**
+   * Candidate fields the adapter detected (summed across frames). DISTINCT from
+   * `total` (filled+skipped+… actions, incl. resume). Zero => no form on the
+   * page (US3 s3); >0 with filled=0 is a normal "all pre-filled" completion.
+   */
+  fieldsDetected: number;
   actions: FillActionWire[];
 }>;
 export type LogSubmissionResponse = Result<{
@@ -84,6 +97,7 @@ export type LogSubmissionResponse = Result<{
 }>;
 export type GetHistoryResponse = Result<SubmissionRecord[]>;
 export type TestWebhookResponse = Result<{ status: number }>;
+export type ShowNoticeResponse = Result<{ shown: boolean }>;
 
 /** Maps each request type to its response type. */
 export interface MessageMap {
@@ -94,6 +108,7 @@ export interface MessageMap {
   LOG_SUBMISSION: LogSubmissionResponse;
   GET_HISTORY: GetHistoryResponse;
   TEST_WEBHOOK: TestWebhookResponse;
+  SHOW_NOTICE: ShowNoticeResponse;
 }
 
 export type ResponseFor<M extends RequestMessage> = MessageMap[M['type']];
@@ -110,6 +125,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'FILL_PAGE' ||
     t === 'LOG_SUBMISSION' ||
     t === 'GET_HISTORY' ||
-    t === 'TEST_WEBHOOK'
+    t === 'TEST_WEBHOOK' ||
+    t === 'SHOW_NOTICE'
   );
 }
