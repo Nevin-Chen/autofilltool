@@ -69,6 +69,8 @@ export const ProfileSchema = z.object({
   preferredName: z.string().default(''),
   email: z.string().email().or(z.literal('')).default(''),
   phone: z.string().default(''),
+  phoneCountry: z.string().default(''), // ISO 3166-1 alpha-2; drives the dial-code picker
+
   address: AddressSchema.default({}),
   links: LinksSchema.default({}),
   workAuth: WorkAuthSchema.default({}),

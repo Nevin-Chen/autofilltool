@@ -40,6 +40,11 @@ const PROVIDER_DEFAULT_MODELS: Record<Exclude<AiProvider, 'none'>, string> = {
   ollama: OLLAMA_DEFAULT_MODEL,
 };
 
+/** Every provider's default model — used to detect an untouched model field. */
+const KNOWN_DEFAULT_MODELS = new Set<string>(
+  Object.values(PROVIDER_DEFAULT_MODELS),
+);
+
 const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
   openai: 'sk-…',
   anthropic: 'sk-ant-…',
@@ -96,13 +101,21 @@ export function AISection({ settings, onChange }: AISectionProps) {
   }, [providerHost]);
 
   const setProvider = (provider: AiProvider) => {
+    // Swap the model to the new provider's default unless the user typed a
+    // custom one. A blank field or any known per-provider default counts as
+    // "untouched", so switching providers always shows that provider's model
+    // rather than a stale value from the previously selected provider.
+    const hasCustomModel =
+      settings.model.length > 0 && !KNOWN_DEFAULT_MODELS.has(settings.model);
     const next: AiSettings = {
       ...settings,
       provider,
       model:
         provider === 'none'
           ? ''
-          : settings.model || PROVIDER_DEFAULT_MODELS[provider],
+          : hasCustomModel
+            ? settings.model
+            : PROVIDER_DEFAULT_MODELS[provider],
     };
     onChange(next);
     setStatus({ kind: 'idle' });
