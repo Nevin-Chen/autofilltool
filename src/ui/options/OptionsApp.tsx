@@ -8,6 +8,7 @@ import {
   type Settings,
 } from '@/profile/schema';
 import { getProfile, setProfile, getSettings, setSettings } from '@/profile/store';
+import { COUNTRIES, splitPhone, joinPhone } from '@/lib/countries';
 import { TrackingSection } from './TrackingSection';
 import { ResumeSection } from './ResumeSection';
 import { AISection } from './AISection';
@@ -113,10 +114,16 @@ export function OptionsApp() {
               value={profile.email}
               onChange={(v) => updateProfile('email', v)}
             />
-            <TextField
-              label="Phone"
-              value={profile.phone}
-              onChange={(v) => updateProfile('phone', v)}
+            <PhoneField
+              country={profile.phoneCountry}
+              phone={profile.phone}
+              onChange={(country, phone) =>
+                setProfileState((prev) => ({
+                  ...prev,
+                  phoneCountry: country,
+                  phone,
+                }))
+              }
             />
           </Grid>
         </Section>
@@ -159,7 +166,7 @@ export function OptionsApp() {
                 updateProfile('address', { ...profile.address, postalCode: v })
               }
             />
-            <TextField
+            <CountryField
               label="Country"
               value={profile.address.country}
               onChange={(v) =>
@@ -369,6 +376,82 @@ function TextField(props: {
         onChange={(e) => props.onChange(e.target.value)}
         className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       />
+    </label>
+  );
+}
+
+function CountryField(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  // Store the country *name* (forms expect "United States", not "US"). Keep a
+  // pre-existing free-text value selectable so saved data is never silently
+  // dropped just because it isn't in our curated list.
+  const known = COUNTRIES.some((c) => c.name === props.value);
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-slate-700 dark:text-slate-200">
+        {props.label}
+      </span>
+      <select
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+      >
+        <option value="">— select —</option>
+        {!known && props.value !== '' && (
+          <option value={props.value}>{props.value}</option>
+        )}
+        {COUNTRIES.map((c) => (
+          <option key={c.iso} value={c.name}>
+            {c.flag} {c.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function PhoneField(props: {
+  country: string;
+  phone: string;
+  onChange: (country: string, phone: string) => void;
+}) {
+  // Seed the national-number box and the dropdown from saved data: prefer the
+  // persisted ISO, otherwise infer it from a `+<dial>` prefix on the number.
+  const { iso, national } = splitPhone(props.phone, props.country);
+
+  const setCountry = (nextIso: string) =>
+    props.onChange(nextIso, joinPhone(nextIso, national));
+  const setNational = (nextNational: string) =>
+    props.onChange(iso, joinPhone(iso, nextNational));
+
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-slate-700 dark:text-slate-200">Phone</span>
+      <div className="flex gap-2">
+        <select
+          aria-label="Country dialing code"
+          value={iso}
+          onChange={(e) => setCountry(e.target.value)}
+          className="w-32 shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        >
+          <option value="">—</option>
+          {COUNTRIES.map((c) => (
+            <option key={c.iso} value={c.iso}>
+              {c.flag} {c.iso} +{c.dial}
+            </option>
+          ))}
+        </select>
+        <input
+          type="tel"
+          value={national}
+          onChange={(e) => setNational(e.target.value)}
+          placeholder="555 123 4567"
+          className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+      </div>
     </label>
   );
 }

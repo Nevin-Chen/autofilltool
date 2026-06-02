@@ -76,9 +76,11 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
       const responses = await Promise.all(
         targets.map(async (f) => {
           try {
-            return (await chrome.tabs.sendMessage(msg.tabId, msg, {
-              frameId: f.frameId,
-            })) as ResponseFor<typeof msg>;
+            return (await sendToFrameWithRetry(
+              msg.tabId,
+              msg,
+              f.frameId,
+            )) as ResponseFor<typeof msg>;
           } catch (err) {
             return {
               ok: false as const,
@@ -171,6 +173,42 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
       return { ok: false, error: 'Unknown message type' };
     }
   }
+}
+
+/** A connection error means the frame's listener wasn't ready — safe to retry. */
+function isNotReadyError(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err);
+  return /Could not establish connection|Receiving end does not exist/i.test(m);
+}
+
+/**
+ * Send a message to one frame, retrying briefly while the content script's
+ * onMessage listener is still coming up. crxjs injects the content bundle as a
+ * module that registers its listener a tick after executeScript resolves, so
+ * the very first FILL_PAGE after a fresh inject can race ahead of it and fail
+ * with "Could not establish connection" — the symptom where autofill only
+ * worked on the second click. Retrying on that specific error closes the race;
+ * a frame with genuinely no listener (sandboxed iframe) just exhausts the
+ * retries and surfaces as a normal per-frame error.
+ */
+async function sendToFrameWithRetry(
+  tabId: number,
+  message: RequestMessage,
+  frameId: number,
+  attempts = 6,
+  delayMs = 100,
+): Promise<unknown> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message, { frameId });
+    } catch (err) {
+      lastErr = err;
+      if (!isNotReadyError(err)) throw err;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 /**
