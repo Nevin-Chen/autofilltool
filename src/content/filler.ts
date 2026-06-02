@@ -272,7 +272,7 @@ function labelTextFor(el: HTMLInputElement): string {
 
 function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
-  return s.replace(/(["\\#.:;,?!+*~'`()\[\]{}<>=|/])/g, '\\$1');
+  return s.replace(/(["\\#.:;,?!+*~'`()[\]{}<>=|/])/g, '\\$1');
 }
 
 /* ------------------------------------------------------- virtualised dropdowns */

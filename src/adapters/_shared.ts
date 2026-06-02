@@ -223,7 +223,7 @@ export function isFillable(el: HTMLElement): boolean {
 export function normalize(s: string): string {
   return s
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_\-]+/g, ' ')
+    .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
@@ -329,7 +329,7 @@ export function groupLabelFor(el: HTMLInputElement): string {
 
 export function cssEscape(s: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
-  return s.replace(/(["\\#.:;,?!+*~'`()\[\]{}<>=|/])/g, '\\$1');
+  return s.replace(/(["\\#.:;,?!+*~'`()[\]{}<>=|/])/g, '\\$1');
 }
 
 /* ------------------------------------------------------- job description */
