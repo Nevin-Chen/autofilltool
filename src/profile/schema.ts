@@ -122,6 +122,12 @@ export const TrackingSettingsSchema = z.object({
 });
 export type TrackingSettings = z.infer<typeof TrackingSettingsSchema>;
 
+// Visual behaviour. `animateFill` toggles the design's staggered fill animation.
+export const UiSettingsSchema = z.object({
+  animateFill: z.boolean().default(true),
+});
+export type UiSettings = z.infer<typeof UiSettingsSchema>;
+
 export const SettingsSchema = z.object({
   enabledAdapters: z.array(AdapterIdSchema).default([
     'greenhouse',
@@ -134,6 +140,7 @@ export const SettingsSchema = z.object({
   perSiteAllowlist: z.array(z.string()).default([]), // hostnames
   ai: AiSettingsSchema.default({}),
   tracking: TrackingSettingsSchema.default({}),
+  ui: UiSettingsSchema.default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
