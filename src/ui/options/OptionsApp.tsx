@@ -287,6 +287,28 @@ export function OptionsApp() {
               </span>
             </span>
           </label>
+
+          <label className="mt-3 flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={settings.ui.animateFill}
+              onChange={(e) =>
+                setSettingsState((prev) => ({
+                  ...prev,
+                  ui: { ...prev.ui, animateFill: e.target.checked },
+                }))
+              }
+            />
+            <span>
+              <span className="font-medium">Animate filling fields</span>
+              <span className="block text-slate-500 dark:text-slate-400">
+                Populate detected fields one-by-one top-to-bottom with a brief
+                highlight on each. Honors your system{' '}
+                <em>reduce motion</em> setting. Turn off for instant fill.
+              </span>
+            </span>
+          </label>
         </Section>
 
         {/* ------------------------------------------------ Resume */}

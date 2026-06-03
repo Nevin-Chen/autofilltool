@@ -69,6 +69,8 @@ export type FillAction = {
 
 export type FillOptions = {
   forceOverwrite: boolean;
+  // Skip the built-in post-fill highlight; the animation runner handles it.
+  suppressFlash?: boolean;
 };
 
 /** Set a single field; returns an action record for the caller's log. */
@@ -124,7 +126,7 @@ function fillTextInput(
   }
   setNativeValue(el, value);
   dispatchInputEvents(el);
-  flashFilled(el);
+  if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -147,7 +149,7 @@ function fillSelect(
   }
   setNativeValue(el, target);
   dispatchInputEvents(el);
-  flashFilled(el);
+  if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -193,7 +195,7 @@ function fillCheckbox(
   }
   // click() not .checked, so frameworks notice and run follow-up logic.
   el.click();
-  flashFilled(el);
+  if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
 }
 
@@ -239,7 +241,7 @@ function fillRadio(
     return { ...meta, status: 'skipped', note: 'already in desired state' };
   }
   target.click();
-  flashFilled(target);
+  if (!opts.suppressFlash) flashFilled(target);
   return { ...meta, status: 'filled' };
 }
 
@@ -330,6 +332,8 @@ export type VirtualizedDropdownOptions = {
   timeoutMs?: number;
   /** Search root; defaults to the trigger's ownerDocument. */
   root?: Document;
+  /** Skip the built-in post-fill highlight; the animation runner handles it. */
+  suppressFlash?: boolean;
 };
 
 export async function fillVirtualizedDropdown(
@@ -387,7 +391,7 @@ export async function fillVirtualizedDropdown(
 
   option.click();
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
-  flashFilled(trigger);
+  if (!opts.suppressFlash) flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
 }
 
