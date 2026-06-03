@@ -34,6 +34,8 @@ type State = {
   detected: number;
   onFill: () => void;
   stats: TriggerStats | null;
+  // Set during animated fill so renderFilling() can show a determinate bar.
+  progress: { done: number; total: number } | null;
 };
 
 let state: State | null = null;
@@ -63,7 +65,19 @@ export function showFillTrigger(opts: {
 export function setFillTriggerFilling(): void {
   const s = ensureHost();
   s.phase = 'filling';
+  s.progress = null;
   render();
+}
+
+/** Update the determinate progress bar during an animated fill. */
+export function setFillTriggerProgress(done: number, total: number): void {
+  if (!state) return;
+  state.progress = { done, total };
+  // Cheap partial update — avoid full re-render every 130ms.
+  const bar = state.shadow.querySelector('.track .fill') as HTMLElement | null;
+  const count = state.shadow.querySelector('.count') as HTMLElement | null;
+  if (bar && total > 0) bar.style.width = `${Math.max(8, Math.round((done / total) * 100))}%`;
+  if (count) count.textContent = `${done} / ${total} fields`;
 }
 
 /**
@@ -118,6 +132,7 @@ function ensureHost(): State {
     detected: 0,
     onFill: () => {},
     stats: null,
+    progress: null,
   };
   return state;
 }
@@ -171,10 +186,21 @@ function renderIdlePill(): HTMLElement {
 }
 
 function renderFilling(): HTMLElement {
+  const s = state!;
   const label = h('div', { class: 'sub light' }, ['Filling fields…']);
   const bar = h('div', { class: 'track' }, [h('div', { class: 'fill' }, [])]);
-  // Animate the indeterminate bar forward on the next frame.
   const inner = bar.firstElementChild as HTMLElement;
+
+  if (s.progress) {
+    // Determinate (animated fill): bar tracks done/total, with a numeric caption.
+    const { done, total } = s.progress;
+    const pct = total > 0 ? Math.max(8, Math.round((done / total) * 100)) : 8;
+    inner.style.width = `${pct}%`;
+    const count = h('div', { class: 'sub count' }, [`${done} / ${total} fields`]);
+    return frag([label, bar, count]);
+  }
+
+  // Indeterminate (toggle off / synchronous fill): nudge forward on next frame.
   inner.style.width = '8%';
   requestAnimationFrame(() => {
     inner.style.width = '92%';

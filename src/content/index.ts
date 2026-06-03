@@ -16,11 +16,21 @@ import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
   setFillTriggerFilling,
+  setFillTriggerProgress,
   showFillTriggerDone,
 } from './affordance';
 import { installSuggestButtons, aiConfigured } from './suggest';
 import { extractJobContext } from './job-context';
 import { installSubmitWatch, maybeLogPostNavigation } from './submit-watch';
+import {
+  FILL_ANIM,
+  applyFlash,
+  beginRun,
+  clearFlashes,
+  delay,
+  isCurrentRun,
+  prefersReducedMotion,
+} from './fill-anim';
 
 declare global {
   interface Window {
@@ -144,18 +154,43 @@ async function runFill(forceFromMsg?: boolean) {
     getResume(),
   ]);
   const forceOverwrite = forceFromMsg ?? settings.forceOverwrite;
+  const animate = settings.ui.animateFill && !prefersReducedMotion();
+  const runId = animate ? beginRun() : 0;
+
+  if (animate) {
+    clearFlashes();
+    setFillTriggerFilling();
+    setFillTriggerProgress(0, fields.length);
+  }
 
   const actions: FillAction[] = [];
-  for (const field of fields) {
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i]!;
     const value = valueForField(profile, field.kind);
+    let action: FillAction;
     // Virtualised dropdowns need the async click-popup-click flow; rest are sync.
     if (field.widget === 'virtualizedDropdown') {
       // eslint-disable-next-line no-await-in-loop -- dropdowns are sequential by design
-      actions.push(await fillVirtualizedDropdown(field, value));
+      action = await fillVirtualizedDropdown(field, value, { suppressFlash: animate });
     } else {
-      actions.push(fillField(field, value, { forceOverwrite }));
+      action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
+    }
+    actions.push(action);
+
+    if (animate) {
+      if (!isCurrentRun(runId)) break; // superseded by a new fill
+      if (action.status === 'filled' && field.el instanceof HTMLElement) {
+        applyFlash(field.el);
+      }
+      setFillTriggerProgress(i + 1, fields.length);
+      if (i < fields.length - 1) {
+        // eslint-disable-next-line no-await-in-loop -- per-field stagger is the feature
+        await delay(FILL_ANIM.STAGGER_MS);
+      }
     }
   }
+
+  if (animate) await delay(FILL_ANIM.SETTLE_MS);
 
   // Resume attaches after text fields so visibility-toggling listeners settle.
   let resumeStatus: 'attached' | 'skipped' | 'notFound' | 'noResume' | 'noHook' =
