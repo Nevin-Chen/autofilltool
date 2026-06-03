@@ -282,11 +282,8 @@ function cssEscape(s: string): string {
 /* ------------------------------------------------------- post-fill highlight */
 
 // Transient highlight on fields we actually wrote (FR-010). Presentational
-// ONLY: never dispatches events or alters values, and only called from the
-// 'filled' paths above (skipped/pre-filled fields stay untouched). Saves and
-// restores the element's inline box-shadow + transition so the element is left
-// exactly as found. A box-shadow glow shifts no layout and avoids !important
-// wars with page CSS; the sky tint reads on both light and dark forms.
+// Transient sky box-shadow glow on filled fields only; never touches SUBMIT_DENY.
+// Saves/restores inline style; cosmetic failures are swallowed.
 const HIGHLIGHT_HOLD_MS = 1100;
 const HIGHLIGHT_FADE_MS = 450;
 const HIGHLIGHT_SHADOW =

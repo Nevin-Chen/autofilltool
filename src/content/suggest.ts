@@ -1,21 +1,6 @@
-/**
- * Inline "✨ Suggest" button injected next to every detected open-ended
- * textarea. On click, opens a long-lived port to the background and streams
- * the AI response straight into the textarea via the safe filler (so React
- * notices each delta).
- *
- * Gated on AI configuration (FR-013/FR-016), layered:
- *   - Primary: the button is only injected when a provider is configured
- *     (`installSuggestButtons(..., { aiConfigured })`).
- *   - Defensive: a click re-reads settings and, if no provider is configured
- *     (e.g. cleared after injection), shows a "Configure an AI provider"
- *     prompt and opens NO port / makes NO request — a hard privacy guarantee
- *     enforced in `guardedConnect`, not best-effort.
- *
- * Buttons live in a closed Shadow DOM so the host page can't restyle them.
- * One injector instance per page; calls to `installSuggestButtons` are
- * idempotent — buttons already on the page don't get duplicated.
- */
+/** Inline "✨ Suggest" buttons for open-ended fields with AI provider gating. */
+// Dual-layer gate: visibility + click-time recheck (hardened privacy guarantee).
+// Closed Shadow DOM, idempotent injection, streams responses into textareas.
 
 import type { DetectedField } from '@/adapters/types';
 import type { JobContext } from './job-context';

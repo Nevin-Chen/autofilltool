@@ -21,6 +21,10 @@ export function OptionsApp() {
   const [loaded, setLoaded] = useState(false);
   const [save, setSave] = useState<SaveState>('idle');
   const [error, setError] = useState<string | null>(null);
+  // The provider actually persisted to storage — distinct from the live
+  // `settings.ai.provider`, which reflects an unsaved radio selection. Drives
+  // the "(current)" marker so the user can tell what's saved vs picked.
+  const [savedProvider, setSavedProvider] = useState<Settings['ai']['provider']>('none');
 
   // Initial load from chrome.storage.local.
   useEffect(() => {
@@ -30,6 +34,7 @@ export function OptionsApp() {
       if (cancelled) return;
       setProfileState(p);
       setSettingsState(s);
+      setSavedProvider(s.ai.provider);
       setLoaded(true);
     })();
     return () => {
@@ -56,6 +61,7 @@ export function OptionsApp() {
     }
     try {
       await Promise.all([setProfile(pParsed.data), setSettings(sParsed.data)]);
+      setSavedProvider(sParsed.data.ai.provider);
       setSave('saved');
       setTimeout(() => setSave('idle'), 1500);
     } catch (err) {
@@ -289,6 +295,7 @@ export function OptionsApp() {
         {/* ------------------------------------------------ AI */}
         <AISection
           settings={settings.ai}
+          savedProvider={savedProvider}
           onChange={(ai) => setSettingsState((prev) => ({ ...prev, ai }))}
         />
 
@@ -385,9 +392,7 @@ function CountryField(props: {
   value: string;
   onChange: (v: string) => void;
 }) {
-  // Store the country *name* (forms expect "United States", not "US"). Keep a
-  // pre-existing free-text value selectable so saved data is never silently
-  // dropped just because it isn't in our curated list.
+  // Store country name (forms expect "United States"); preserve free-text fallback.
   const known = COUNTRIES.some((c) => c.name === props.value);
   return (
     <label className="block text-sm">
@@ -418,8 +423,7 @@ function PhoneField(props: {
   phone: string;
   onChange: (country: string, phone: string) => void;
 }) {
-  // Seed the national-number box and the dropdown from saved data: prefer the
-  // persisted ISO, otherwise infer it from a `+<dial>` prefix on the number.
+  // Seed from saved ISO or inferred +<dial> prefix.
   const { iso, national } = splitPhone(props.phone, props.country);
 
   const setCountry = (nextIso: string) =>
