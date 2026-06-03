@@ -350,8 +350,34 @@ function safePost(port: chrome.runtime.Port, msg: AiBgToClient): void {
 
 /* ------------------------------------------------------- lifecycle */
 
+/**
+ * chrome.storage.session defaults to TRUSTED_CONTEXTS, which excludes content
+ * scripts — so submit-watch's breadcrumb writes throw "Access to storage is not
+ * allowed from this context." Granting untrusted contexts access (only the
+ * service worker may set this) lets the in-page breadcrumb read/write work.
+ * The setting is per-session, so re-apply it on every worker startup.
+ */
+function allowSessionStorageInContentScripts(): void {
+  try {
+    void chrome.storage.session
+      .setAccessLevel({
+        accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' as chrome.storage.AccessLevel,
+      })
+      ?.catch((err: unknown) => log.warn('session setAccessLevel failed', err));
+  } catch (err) {
+    log.warn('session setAccessLevel threw', err);
+  }
+}
+
+allowSessionStorageInContentScripts();
+
 chrome.runtime.onInstalled.addListener((details) => {
   log.info('installed', details.reason);
+  allowSessionStorageInContentScripts();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  allowSessionStorageInContentScripts();
 });
 
 self.addEventListener('activate', () => {

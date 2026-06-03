@@ -65,10 +65,21 @@ type Status =
 
 export type AISectionProps = {
   settings: AiSettings;
+  /** Provider persisted to storage; marks the matching radio as "(current)". */
+  savedProvider?: AiProvider;
   onChange: (next: AiSettings) => void;
 };
 
-export function AISection({ settings, onChange }: AISectionProps) {
+/** Small "(current)" badge on the provider that's actually saved to storage. */
+function CurrentTag() {
+  return (
+    <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400">
+      (current)
+    </span>
+  );
+}
+
+export function AISection({ settings, savedProvider, onChange }: AISectionProps) {
   const [granted, setGranted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [testing, setTesting] = useState(false);
@@ -212,6 +223,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 onChange={() => setProvider('none')}
               />
               None
+              {savedProvider === 'none' && <CurrentTag />}
             </label>
             <label className="inline-flex items-center gap-2">
               <input
@@ -221,6 +233,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 onChange={() => setProvider('openai')}
               />
               OpenAI
+              {savedProvider === 'openai' && <CurrentTag />}
             </label>
             <label className="inline-flex items-center gap-2">
               <input
@@ -230,6 +243,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 onChange={() => setProvider('anthropic')}
               />
               Anthropic
+              {savedProvider === 'anthropic' && <CurrentTag />}
             </label>
             <label className="inline-flex items-center gap-2">
               <input
@@ -239,6 +253,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 onChange={() => setProvider('gemini')}
               />
               Google Gemini
+              {savedProvider === 'gemini' && <CurrentTag />}
             </label>
             <label className="inline-flex items-center gap-2">
               <input
@@ -248,6 +263,7 @@ export function AISection({ settings, onChange }: AISectionProps) {
                 onChange={() => setProvider('ollama')}
               />
               Ollama (local)
+              {savedProvider === 'ollama' && <CurrentTag />}
             </label>
           </div>
           {settings.provider === 'gemini' && (

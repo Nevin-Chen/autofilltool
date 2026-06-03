@@ -1,12 +1,4 @@
-/**
- * Country dial-code table for the phone field. `iso` is the ISO 3166-1
- * alpha-2 code we persist (Profile.phoneCountry) so the Options UI can
- * reconstruct the dropdown selection on reload; `dial` is the calling-code
- * prefix (without the leading `+`) prepended to the stored phone string.
- *
- * Not exhaustive — a practical set covering the regions our users apply
- * from. Sorted alphabetically by name; the picker pins a default (US) on top.
- */
+/** Country dial-code table for the phone field. ISO persisted; `dial` is the +prefix. */
 
 export type Country = {
   iso: string;
@@ -77,12 +69,7 @@ export function countryByIso(iso: string): Country | undefined {
   return BY_ISO.get(iso);
 }
 
-/**
- * Split a stored phone string into its dial-code country (by `iso`) and the
- * remaining national number. Used to seed the picker from saved data when the
- * persisted phoneCountry is missing/blank. Prefers the longest matching dial
- * code so e.g. +1 isn't chosen over a 3-digit code that also starts with 1.
- */
+/** Split stored phone by dial code; prefers longest match for +1-prefixed codes. */
 export function splitPhone(
   phone: string,
   preferredIso?: string,
