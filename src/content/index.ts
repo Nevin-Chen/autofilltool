@@ -19,6 +19,7 @@ import {
   setFillTriggerProgress,
   showFillTriggerDone,
   type TriggerStats,
+  type ReviewableField,
 } from './affordance';
 import { installSuggestButtons, aiConfigured } from './suggest';
 import { extractJobContext } from './job-context';
@@ -167,9 +168,11 @@ function pillProgress(done: number, total: number): void {
   else setFillTriggerProgress(done, total);
 }
 
-function pillDone(stats: TriggerStats): void {
+function pillDone(stats: TriggerStats, items: ReviewableField[]): void {
+  // Items hold live element refs that can't cross the iframe→parent boundary,
+  // so the parent path is counts-only; the iframe loses chip-as-button review.
   if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-complete', ...stats });
-  else showFillTriggerDone(stats);
+  else showFillTriggerDone(stats, items);
 }
 
 function postToParent(msg: Record<string, unknown>): void {
@@ -258,6 +261,7 @@ async function runFill(forceFromMsg?: boolean) {
   }
 
   const actions: FillAction[] = [];
+  const reviewItems: ReviewableField[] = [];
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;
     const value = valueForField(profile, field.kind);
@@ -270,6 +274,13 @@ async function runFill(forceFromMsg?: boolean) {
       action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
     }
     actions.push(action);
+    if (field.el instanceof HTMLElement) {
+      if (action.status === 'filled') {
+        reviewItems.push({ group: 'filled', label: action.label, el: field.el });
+      } else if (action.status === 'skipped') {
+        reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+      }
+    }
 
     if (animate) {
       if (!isCurrentRun(runId)) break; // superseded by a new fill
@@ -354,27 +365,36 @@ async function runFill(forceFromMsg?: boolean) {
 
   // Open-ended fields that still want a human/AI answer — surfaced as the
   // "✨ N to Suggest" chip, only when an AI provider is configured.
-  const suggestCount = aiConfigured(settings)
+  const suggestFields = aiConfigured(settings)
     ? fields.filter(
         (f) =>
           (f.kind === 'openEnded' || f.kind === 'coverLetter') &&
           f.el instanceof HTMLTextAreaElement,
-      ).length
-    : 0;
+      )
+    : [];
+  const suggestCount = suggestFields.length;
+  for (const f of suggestFields) {
+    if (f.el instanceof HTMLElement) {
+      reviewItems.push({ group: 'suggest', label: f.label, el: f.el });
+    }
+  }
 
   // Drive the unified in-page affordance into its results state — in an
   // iframe this becomes a postMessage to the parent-stub. Never block the
   // response on it.
   try {
-    pillDone({
-      filled,
-      skipped,
-      failed,
-      suggest: suggestCount,
-      adapterId: adapter.id,
-      adapterName: adapter.name,
-      resume: resumeStatus,
-    });
+    pillDone(
+      {
+        filled,
+        skipped,
+        failed,
+        suggest: suggestCount,
+        adapterId: adapter.id,
+        adapterName: adapter.name,
+        resume: resumeStatus,
+      },
+      reviewItems,
+    );
   } catch (err) {
     log.warn('overlay affordance failed', err);
   }

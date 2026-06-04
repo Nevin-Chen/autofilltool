@@ -24,6 +24,19 @@ export type TriggerStats = {
   resume: TriggerResume;
 };
 
+/**
+ * Groups the user can step through after a fill. "filled" = double-check sweep,
+ * "skipped" = manual TODOs, "suggest" = open-ended fields awaiting AI.
+ */
+export type ReviewGroup = 'filled' | 'skipped' | 'suggest';
+
+export type ReviewableField = {
+  group: ReviewGroup;
+  label: string;
+  /** Live ref on the page — checked with isConnected before scroll/highlight. */
+  el: HTMLElement;
+};
+
 type Phase = 'idle' | 'filling' | 'done';
 
 type State = {
@@ -36,6 +49,10 @@ type State = {
   stats: TriggerStats | null;
   // Set during animated fill so renderFilling() can show a determinate bar.
   progress: { done: number; total: number } | null;
+  // Reviewable fields collected during the fill (top frame only).
+  items: ReviewableField[];
+  // When non-null the pill is in review mode for that group at that index.
+  review: { group: ReviewGroup; index: number } | null;
 };
 
 let state: State | null = null;
@@ -90,12 +107,18 @@ export function setFillTriggerProgress(done: number, total: number): void {
 /**
  * Show the post-fill results. Mounts the surface if it isn't already present
  * (e.g. a popup-triggered fill on a page where the idle trigger was dismissed),
- * so the outcome is always visible.
+ * so the outcome is always visible. `items` powers chip-as-button review mode
+ * and is top-frame-only — iframe-driven completions pass an empty array.
  */
-export function showFillTriggerDone(stats: TriggerStats): void {
+export function showFillTriggerDone(
+  stats: TriggerStats,
+  items: ReviewableField[] = [],
+): void {
   const s = ensureHost();
   s.phase = 'done';
   s.stats = stats;
+  s.items = items;
+  s.review = null;
   render();
 }
 
@@ -111,6 +134,24 @@ export function __resetAffordanceForTests(): void {
   state = null;
   dismissedThisPage = false;
   mountAttempts = 0;
+}
+
+/** Test-only: peek at the review-mode state without piercing the closed shadow. */
+export function __getReviewStateForTests(): {
+  group: ReviewGroup;
+  index: number;
+} | null {
+  return state?.review ? { ...state.review } : null;
+}
+
+/** Test-only: enter review mode for a group (mirrors a chip click). */
+export function __enterReviewForTests(group: ReviewGroup): void {
+  enterReview(group);
+}
+
+/** Test-only: step the review cursor (mirrors an arrow keypress). */
+export function __stepReviewForTests(dir: 1 | -1): void {
+  stepReview(dir);
 }
 
 /* ------------------------------------------------------------- internals */
@@ -150,6 +191,8 @@ function ensureHost(): State {
     onFill: () => {},
     stats: null,
     progress: null,
+    items: [],
+    review: null,
   };
   scheduleMountWatchdog(host);
   return state;
@@ -198,16 +241,34 @@ function render(): void {
 
 function renderCard(): HTMLElement {
   const s = state!;
+  const inReview = s.phase === 'done' && s.review !== null;
+  const title = inReview
+    ? reviewTitle(s.review!.group)
+    : s.phase === 'done'
+      ? 'Filled'
+      : 'AutoFillTool';
   const header = h('div', { class: 'row between head' }, [
     h('div', { class: 'row gap-sm' }, [
       brandMark(20),
-      h('span', { class: 'title' }, [s.phase === 'done' ? 'Filled' : 'AutoFillTool']),
+      h('span', { class: 'title' }, [title]),
     ]),
     iconBtn('×', 'Collapse', collapse),
   ]);
 
-  const content = s.phase === 'filling' ? renderFilling() : renderDone();
+  const content =
+    s.phase === 'filling' ? renderFilling() : inReview ? renderReview() : renderDone();
   return frag([header, content]);
+}
+
+function reviewTitle(g: ReviewGroup): string {
+  switch (g) {
+    case 'filled':
+      return 'Reviewing filled';
+    case 'skipped':
+      return 'Reviewing skipped';
+    case 'suggest':
+      return 'Reviewing to Suggest';
+  }
 }
 
 /** Small idle pill — tucked into the right edge; click runs the fill. */
@@ -258,10 +319,10 @@ function renderDone(): HTMLElement {
   };
 
   const chips = h('div', { class: 'row gap chips' }, [
-    chip('ok', `✓ ${st.filled} filled`),
-    ...(st.skipped > 0 ? [chip('skip', `${st.skipped} skipped`)] : []),
+    reviewChip('ok', 'filled', `✓ ${st.filled} filled`),
+    ...(st.skipped > 0 ? [reviewChip('skip', 'skipped', `${st.skipped} skipped`)] : []),
     ...(st.failed > 0 ? [chip('fail', `${st.failed} failed`)] : []),
-    ...(st.suggest > 0 ? [chip('ai', `✨ ${st.suggest} to Suggest`)] : []),
+    ...(st.suggest > 0 ? [reviewChip('ai', 'suggest', `✨ ${st.suggest} to Suggest`)] : []),
   ]);
 
   const resume = resumeLine(st.resume);
@@ -337,6 +398,153 @@ function chip(kind: 'ok' | 'skip' | 'fail' | 'ai', text: string): HTMLElement {
   return h('span', { class: `chip ${kind}` }, [text]);
 }
 
+/**
+ * A chip that enters review-mode for `group` when there's at least one
+ * connected item in it. Falls back to the static <span> chip otherwise so the
+ * count is still shown — but isn't a misleading affordance.
+ */
+function reviewChip(
+  kind: 'ok' | 'skip' | 'ai',
+  group: ReviewGroup,
+  text: string,
+): HTMLElement {
+  const has = itemsInGroup(group).some((i) => i.el.isConnected);
+  if (!has) return chip(kind, text);
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `chip ${kind} clickable`;
+  b.textContent = text;
+  b.title = 'Step through these fields';
+  b.addEventListener('click', () => enterReview(group));
+  return b;
+}
+
+function itemsInGroup(group: ReviewGroup): ReviewableField[] {
+  return (state?.items ?? []).filter((i) => i.group === group);
+}
+
+function enterReview(group: ReviewGroup): void {
+  if (!state) return;
+  const items = itemsInGroup(group);
+  const first = nextConnected(items, -1, 1);
+  if (first === -1) return; // nothing live to review
+  state.review = { group, index: first };
+  render();
+  focusReviewPane();
+  spotlight(items[first]!.el);
+}
+
+function exitReview(): void {
+  if (!state) return;
+  state.review = null;
+  render();
+}
+
+function stepReview(dir: 1 | -1): void {
+  if (!state || !state.review) return;
+  const items = itemsInGroup(state.review.group);
+  const next = nextConnected(items, state.review.index, dir);
+  if (next === -1) {
+    exitReview();
+    return;
+  }
+  state.review.index = next;
+  render();
+  focusReviewPane();
+  spotlight(items[next]!.el);
+}
+
+/**
+ * Step from `from` in direction `dir`, wrapping at ends, skipping items whose
+ * element is no longer connected. Returns -1 if no connected item exists.
+ */
+export function nextConnected(
+  items: ReviewableField[],
+  from: number,
+  dir: 1 | -1,
+): number {
+  const n = items.length;
+  if (n === 0) return -1;
+  for (let step = 1; step <= n; step++) {
+    const i = ((from + dir * step) % n + n) % n;
+    if (items[i]!.el.isConnected) return i;
+  }
+  return -1;
+}
+
+function renderReview(): HTMLElement {
+  const s = state!;
+  const { group, index } = s.review!;
+  const items = itemsInGroup(group);
+  const current = items[index]!;
+  const counter = h('div', { class: 'sub' }, [
+    `${index + 1} of ${items.length} · ${truncate(current.label, 60)}`,
+  ]);
+  const help = h('div', { class: 'sub light' }, ['← / → to step · Esc to exit']);
+  const actions = h('div', { class: 'row gap top' }, [
+    btn({ class: 'ghost', text: '← Prev', onClick: () => stepReview(-1) }),
+    btn({ class: 'ghost', text: 'Next →', onClick: () => stepReview(1) }),
+    btn({ class: 'ghost', text: 'Done', onClick: exitReview }),
+  ]);
+
+  const pane = h('div', { class: 'review', tabindex: '0' }, [counter, help, actions]);
+  pane.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      stepReview(1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      stepReview(-1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      exitReview();
+    }
+  });
+  return pane;
+}
+
+/** Move keyboard focus into the review pane so arrow keys land here, not in a page input. */
+function focusReviewPane(): void {
+  if (!state) return;
+  const pane = state.shadow.querySelector('.review') as HTMLElement | null;
+  pane?.focus();
+}
+
+/** Scroll the target into view and draw a transient sky/amber/violet glow on it. */
+const SPOTLIGHT_MS = 1400;
+const SPOTLIGHT_SHADOW =
+  '0 0 0 2px rgba(56,189,248,0.95), 0 0 10px 3px rgba(56,189,248,0.5)';
+function spotlight(el: HTMLElement): void {
+  try {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const style = el.style;
+    const prevShadow = style.boxShadow;
+    const prevTransition = style.transition;
+    style.transition = `box-shadow 400ms ease-out`;
+    style.boxShadow = SPOTLIGHT_SHADOW;
+    setTimeout(() => {
+      try {
+        style.boxShadow = prevShadow;
+        setTimeout(() => {
+          try {
+            style.transition = prevTransition;
+          } catch {
+            /* detached */
+          }
+        }, 400);
+      } catch {
+        /* detached */
+      }
+    }, SPOTLIGHT_MS);
+  } catch {
+    /* cosmetic — never break a review step */
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
 /** The extension's brand mark — matches public/icons/icon.svg (form fields). */
 function brandMark(size: number): SVGElement {
   const ns = 'http://www.w3.org/2000/svg';
@@ -401,7 +609,7 @@ function buildStyle(): HTMLStyleElement {
     .sub { color: #94a3b8; font-size: 12.5px; }
     .sub.light { color: #cbd5e1; }
     .sub strong { color: #cbd5e1; }
-    .chips { flex-wrap: wrap; }
+    .chips { flex-wrap: nowrap; overflow-x: auto; }
     .chip {
       font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
       background: rgba(255,255,255,0.06); color: #cbd5e1; font-weight: 600;
@@ -411,6 +619,16 @@ function buildStyle(): HTMLStyleElement {
     .chip.skip { color: #94a3b8; }
     .chip.fail { color: #fb7185; }
     .chip.ai   { color: #7dd3fc; }
+    button.chip.clickable {
+      border: 1px solid rgba(255,255,255,0.10);
+      font: inherit; font-weight: 600;
+    }
+    button.chip.clickable:hover { background: rgba(255,255,255,0.10); }
+    button.chip.clickable:focus-visible {
+      outline: 2px solid #38bdf8; outline-offset: 2px;
+    }
+    .review { outline: none; }
+    .review:focus-visible { outline: none; }
     .note {
       align-items: flex-start; gap: 7px;
       font-size: 11.5px; color: #94a3b8; line-height: 1.45;
