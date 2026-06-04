@@ -43,7 +43,6 @@ describe('settings schema', () => {
     expect(s.ai.provider).toBe('none');
     expect(s.ai.endpoint).toBe('');
     expect(s.tracking.webhookUrl).toBe('');
-    expect(s.tracking.autoLogOnSubmit).toBe(false);
   });
 
   it('accepts ollama as a provider with a custom endpoint', () => {

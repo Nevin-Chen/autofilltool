@@ -22,6 +22,7 @@ import {
   OLLAMA_DEFAULT_MODEL,
   resolveOriginForPermission,
 } from '@/ai/providers/ollama';
+import { Section } from './Section';
 
 /** Remote-API providers — Ollama is local so it isn't in this table. */
 const REMOTE_PROVIDER_HOSTS: Record<
@@ -68,6 +69,7 @@ export type AISectionProps = {
   /** Provider persisted to storage; marks the matching radio as "(current)". */
   savedProvider?: AiProvider;
   onChange: (next: AiSettings) => void;
+  defaultCollapsed?: boolean;
 };
 
 /** Small "(current)" badge on the provider that's actually saved to storage. */
@@ -79,7 +81,12 @@ function CurrentTag() {
   );
 }
 
-export function AISection({ settings, savedProvider, onChange }: AISectionProps) {
+export function AISection({
+  settings,
+  savedProvider,
+  onChange,
+  defaultCollapsed,
+}: AISectionProps) {
   const [granted, setGranted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [testing, setTesting] = useState(false);
@@ -201,15 +208,18 @@ export function AISection({ settings, savedProvider, onChange }: AISectionProps)
   };
 
   return (
-    <section>
-      <h2 className="text-base font-semibold">AI suggestions (optional)</h2>
-      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-        Adds a <span aria-hidden="true">✨</span> Suggest button next to
-        open-ended textareas. Your API key is stored locally and used only
-        for the requests you trigger.
-      </p>
-
-      <div className="mt-3 space-y-3">
+    <Section
+      title="AI suggestions"
+      collapsible
+      defaultCollapsed={defaultCollapsed}
+      hint={
+        <>
+          Adds a <span aria-hidden="true">✨</span> Suggest button next to
+          open-ended textareas. You must select an AI provider to get suggestions.
+        </>
+      }
+    >
+      <div className="space-y-3">
         <div>
           <span className="mb-1 block text-sm text-slate-700 dark:text-slate-200">
             Provider
@@ -430,7 +440,7 @@ export function AISection({ settings, savedProvider, onChange }: AISectionProps)
           </div>
         )}
       </div>
-    </section>
+    </Section>
   );
 }
 

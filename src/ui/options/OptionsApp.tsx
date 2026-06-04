@@ -12,6 +12,7 @@ import { COUNTRIES, splitPhone, joinPhone } from '@/lib/countries';
 import { TrackingSection } from './TrackingSection';
 import { ResumeSection } from './ResumeSection';
 import { AISection } from './AISection';
+import { Section } from './Section';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -90,14 +91,13 @@ export function OptionsApp() {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">AutoFillTool</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          All data is stored locally in your browser (chrome.storage.local) and
-          never synced. The extension only calls services you configure yourself.
+          All data is stored locally in your browser (chrome.storage.local)
         </p>
       </header>
 
       <form onSubmit={onSave} className="space-y-8">
         {/* ------------------------------------------------ Identity */}
-        <Section title="Identity" hint="Used to fill name and contact fields.">
+        <Section title="Name and contact">
           <Grid>
             <TextField
               label="First name"
@@ -219,7 +219,6 @@ export function OptionsApp() {
         {/* ------------------------------------------------ Work auth */}
         <Section
           title="Work authorization"
-          hint="Leave any field blank to skip it on forms."
         >
           <Grid>
             <TristateField
@@ -253,7 +252,7 @@ export function OptionsApp() {
               }
             />
             <TextField
-              label="Desired salary (free text)"
+              label="Desired salary"
               value={profile.workAuth.desiredSalary}
               onChange={(v) =>
                 updateProfile('workAuth', {
@@ -265,52 +264,6 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        {/* ------------------------------------------------ Behavior */}
-        <Section title="Behavior">
-          <label className="flex items-start gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={settings.forceOverwrite}
-              onChange={(e) =>
-                setSettingsState((prev) => ({
-                  ...prev,
-                  forceOverwrite: e.target.checked,
-                }))
-              }
-            />
-            <span>
-              <span className="font-medium">Force overwrite</span>
-              <span className="block text-slate-500 dark:text-slate-400">
-                By default, fields with existing values are skipped. Enabling
-                this overwrites them.
-              </span>
-            </span>
-          </label>
-
-          <label className="mt-3 flex items-start gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={settings.ui.animateFill}
-              onChange={(e) =>
-                setSettingsState((prev) => ({
-                  ...prev,
-                  ui: { ...prev.ui, animateFill: e.target.checked },
-                }))
-              }
-            />
-            <span>
-              <span className="font-medium">Animate filling fields</span>
-              <span className="block text-slate-500 dark:text-slate-400">
-                Populate detected fields one-by-one top-to-bottom with a brief
-                highlight on each. Honors your system{' '}
-                <em>reduce motion</em> setting. Turn off for instant fill.
-              </span>
-            </span>
-          </label>
-        </Section>
-
         {/* ------------------------------------------------ Resume */}
         <ResumeSection />
 
@@ -319,6 +272,7 @@ export function OptionsApp() {
           settings={settings.ai}
           savedProvider={savedProvider}
           onChange={(ai) => setSettingsState((prev) => ({ ...prev, ai }))}
+          defaultCollapsed
         />
 
         {/* ------------------------------------------------ Tracking */}
@@ -330,13 +284,7 @@ export function OptionsApp() {
               tracking: { ...prev.tracking, webhookUrl },
             }))
           }
-          autoLogOnSubmit={settings.tracking.autoLogOnSubmit}
-          onAutoLogChange={(autoLogOnSubmit) =>
-            setSettingsState((prev) => ({
-              ...prev,
-              tracking: { ...prev.tracking, autoLogOnSubmit },
-            }))
-          }
+          defaultCollapsed
         />
 
         <div className="flex items-center gap-4">
@@ -361,28 +309,13 @@ export function OptionsApp() {
       </form>
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        v0.1.0 · Step 1 of roadmap (skeleton). Filler, adapters, AI, and
-        webhook logging arrive in later steps.
+        v0.12.0
       </footer>
     </main>
   );
 }
 
 /* -------------------------------------------------- tiny presentational bits */
-
-function Section(props: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h2 className="text-base font-semibold">{props.title}</h2>
-      {props.hint && (
-        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          {props.hint}
-        </p>
-      )}
-      <div className="mt-3">{props.children}</div>
-    </section>
-  );
-}
 
 function Grid(props: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{props.children}</div>;

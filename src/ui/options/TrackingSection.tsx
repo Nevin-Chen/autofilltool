@@ -15,6 +15,7 @@ import {
 } from '@/lib/permissions';
 import { WebhookUrlSchema } from '@/tracking/sheets-webhook';
 import { sendToBackground } from '@/lib/messaging';
+import { Section } from './Section';
 
 type Status =
   | { kind: 'idle' }
@@ -25,15 +26,13 @@ type Status =
 export type TrackingSectionProps = {
   url: string;
   onChange: (url: string) => void;
-  autoLogOnSubmit: boolean;
-  onAutoLogChange: (value: boolean) => void;
+  defaultCollapsed?: boolean;
 };
 
 export function TrackingSection({
   url,
   onChange,
-  autoLogOnSubmit,
-  onAutoLogChange,
+  defaultCollapsed,
 }: TrackingSectionProps) {
   const [granted, setGranted] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
@@ -123,15 +122,19 @@ export function TrackingSection({
   };
 
   return (
-    <section>
-      <h2 className="text-base font-semibold">Tracking (optional)</h2>
-      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-        Paste a Google Apps Script web-app URL. When you click <em>Mark
-        submitted</em> on a job page, the extension POSTs a JSON record to
-        this URL. The URL is stored locally and never synced.
-      </p>
-
-      <div className="mt-3 space-y-3">
+    <Section
+      title="Tracking with Google Sheets"
+      collapsible
+      defaultCollapsed={defaultCollapsed}
+      hint={
+        <>
+          Paste a Google Apps Script web-app URL. When you click
+          submit on a job page, the extension POSTs a JSON record to
+          this URL.
+        </>
+      }
+    >
+      <div className="space-y-3">
         <label className="block text-sm">
           <span className="mb-1 block text-slate-700 dark:text-slate-200">
             Webhook URL
@@ -195,28 +198,17 @@ export function TrackingSection({
           </div>
         )}
 
-        <label className="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoLogOnSubmit}
-            onChange={(e) => onAutoLogChange(e.target.checked)}
-            className="mt-0.5"
-          />
-          <span className="text-slate-700 dark:text-slate-200">
-            Log automatically when I submit
-            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
-              Records the application the moment your own submission is confirmed
-              on the page — no “Mark submitted” click. The extension only watches
-              your submit; it never clicks Submit for you.
-            </span>
-          </span>
-        </label>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Once a webhook URL is set, the extension logs each application the
+          moment your own submission is confirmed on the page. It only watches
+          your submit; it never clicks Submit for you.
+        </p>
 
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Need an Apps Script endpoint? See the README for a copy-pasteable
           snippet.
         </p>
       </div>
-    </section>
+    </Section>
   );
 }

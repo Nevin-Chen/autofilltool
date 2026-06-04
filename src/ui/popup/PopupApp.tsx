@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { sendToBackground } from '@/lib/messaging';
-import type { SubmissionRecord } from '@/profile/schema';
+import { getSettings, setSettings } from '@/profile/store';
+import type { SubmissionRecord, Settings } from '@/profile/schema';
 
 type TabInfo = {
   id: number;
@@ -14,6 +15,7 @@ export function PopupApp() {
   const [pong, setPong] = useState<string | null>(null);
   const [pingErr, setPingErr] = useState<string | null>(null);
   const [history, setHistory] = useState<SubmissionRecord[]>([]);
+  const [settings, setSettingsState] = useState<Settings | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -36,6 +38,8 @@ export function PopupApp() {
         else setPingErr(r.error);
         const h = await sendToBackground({ type: 'GET_HISTORY', limit: 5 });
         if (h.ok) setHistory(h.value);
+        const s = await getSettings();
+        setSettingsState(s);
       } catch (err) {
         setPingErr(err instanceof Error ? err.message : String(err));
       }
@@ -44,6 +48,17 @@ export function PopupApp() {
 
   const onOpenOptions = () => {
     chrome.runtime.openOptionsPage();
+  };
+
+  const updateSettings = async (updates: Partial<Settings>) => {
+    if (!settings) return;
+    const next = { ...settings, ...updates };
+    setSettingsState(next);
+    try {
+      await setSettings(next);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    }
   };
 
   return (
@@ -55,13 +70,50 @@ export function PopupApp() {
         </div>
       </header>
 
-      <div className="rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-        On a job application page, use the{' '}
-        <span className="font-medium text-slate-800 dark:text-slate-100">
-          ⚡ Fill this page
-        </span>{' '}
-        button that appears in the corner of the page.
-      </div>
+      {settings && (
+        <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <label className="flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={settings.forceOverwrite}
+              onChange={(e) =>
+                updateSettings({
+                  ...settings,
+                  forceOverwrite: e.target.checked,
+                })
+              }
+            />
+            <span>
+              <span className="font-medium text-slate-800 dark:text-slate-100">
+                Force overwrite
+              </span>
+              <span className="block text-slate-500 dark:text-slate-400">
+                Fill fields with existing values
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={!settings.ui.animateFill}
+              onChange={(e) =>
+                updateSettings({
+                  ...settings,
+                  ui: { ...settings.ui, animateFill: !e.target.checked },
+                })
+              }
+            />
+            <span>
+              <span className="font-medium text-slate-800 dark:text-slate-100">
+                Disable auto-filling animation
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
 
       {history.length > 0 && (
         <div className="mt-4">
