@@ -427,6 +427,7 @@ async function runFill(forceFromMsg?: boolean) {
         adapterId: adapter.id,
         adapterName: adapter.name,
         resume: resumeStatus,
+        autoLogging: !!settings.tracking.webhookUrl,
       },
       reviewItems,
     );
