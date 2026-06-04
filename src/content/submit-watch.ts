@@ -7,7 +7,8 @@
  *   - Full navigation (e.g. Greenhouse): a chrome.storage.session breadcrumb
  *     written at fill time lets the reloaded content script recognise the
  *     confirmation page and log against the original posting metadata.
- * Gated by settings.tracking.autoLogOnSubmit (opt-in); guarded to fire once.
+ * Installed automatically whenever a tracking webhook URL is configured;
+ * guarded to fire once.
  */
 
 import type { PlatformAdapter } from '@/adapters/types';
