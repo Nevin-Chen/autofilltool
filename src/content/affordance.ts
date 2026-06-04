@@ -41,6 +41,13 @@ type State = {
 let state: State | null = null;
 /** Set when the user closes the trigger outright; blocks proactive re-show. */
 let dismissedThisPage = false;
+/**
+ * Bounded re-mount under page-side hydration that yanks the host. Hard cap
+ * (`MAX_MOUNT_ATTEMPTS`) so we never fight a defensive page in a loop.
+ */
+const MAX_MOUNT_ATTEMPTS = 2;
+const REMOUNT_MS = 1000;
+let mountAttempts = 0;
 
 /* ------------------------------------------------------------- public API */
 
@@ -95,6 +102,15 @@ export function showFillTriggerDone(stats: TriggerStats): void {
 export function removeFillTrigger(): void {
   document.getElementById(HOST_ID)?.remove();
   state = null;
+  mountAttempts = 0;
+}
+
+/** Test-only: reset module-level guards between cases. */
+export function __resetAffordanceForTests(): void {
+  document.getElementById(HOST_ID)?.remove();
+  state = null;
+  dismissedThisPage = false;
+  mountAttempts = 0;
 }
 
 /* ------------------------------------------------------------- internals */
@@ -123,6 +139,7 @@ function ensureHost(): State {
   shadow.appendChild(body);
 
   (document.body ?? document.documentElement).appendChild(host);
+  mountAttempts++;
 
   state = {
     host,
@@ -134,7 +151,27 @@ function ensureHost(): State {
     stats: null,
     progress: null,
   };
+  scheduleMountWatchdog(host);
   return state;
+}
+
+/**
+ * One-shot check ~REMOUNT_MS after mount. If the host has been removed by
+ * page hydration and the user hasn't dismissed, do ONE re-mount. The hard cap
+ * in ensureHost prevents a third attempt — if the page is fighting us, we
+ * give up silently and rely on the popup-triggered Fill path.
+ */
+function scheduleMountWatchdog(host: HTMLElement): void {
+  setTimeout(() => {
+    if (dismissedThisPage) return;
+    if (!state) return; // intentionally torn down
+    if (host.isConnected) return; // happy path — page didn't yank us
+    if (mountAttempts >= MAX_MOUNT_ATTEMPTS) return;
+    const detected = state.detected;
+    const onFill = state.onFill;
+    state = null; // force ensureHost to rebuild fresh
+    showFillTrigger({ detected, onFill });
+  }, REMOUNT_MS);
 }
 
 /** Return to the small idle pill (e.g. the × on the results card). */

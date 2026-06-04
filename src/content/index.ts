@@ -18,6 +18,7 @@ import {
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
+  type TriggerStats,
 } from './affordance';
 import { installSuggestButtons, aiConfigured } from './suggest';
 import { extractJobContext } from './job-context';
@@ -32,6 +33,29 @@ import {
   prefersReducedMotion,
 } from './fill-anim';
 
+/**
+ * In an embedded ATS iframe (e.g. job-boards.greenhouse.io inside
+ * spotandtango.com) we can't render a viewport-fixed pill — position:fixed
+ * anchors to the iframe's own viewport. Instead we postMessage the parent
+ * page where parent-stub.ts has installed a listener that mounts the pill
+ * on the real viewport. Pill state messages flow iframe → parent; click
+ * events flow parent → iframe (`autofilltool:fill-request`) and trigger
+ * the same runFill that the local pill click would.
+ */
+const IS_IFRAME = (() => {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true; // cross-origin top can throw — treat as iframe.
+  }
+})();
+
+const PARENT_RETRY_MS = 500;
+const PARENT_MAX_RETRIES = 5;
+let parentAckReceived = false;
+/** Pending click handler the parent will trigger via fill-request postMessage. */
+let pendingParentFillHandler: (() => void) | null = null;
+
 declare global {
   interface Window {
     __autofilltool_loaded__?: boolean;
@@ -44,6 +68,7 @@ if (window.__autofilltool_loaded__) {
 } else {
   window.__autofilltool_loaded__ = true;
   initialize();
+  if (IS_IFRAME) installParentMessageListener();
   void maybeAutoLogOnLoad();
   void maybeShowTrigger();
   log.debug('content script loaded on', location.href);
@@ -64,10 +89,14 @@ async function maybeShowTrigger(): Promise<void> {
       const adapter = pickAdapter(url, document);
       const fields = adapter.detectFields(document);
       if (fields.length > 0) {
-        showFillTrigger({
-          detected: fields.length,
-          onFill: () => void triggerInPageFill(),
-        });
+        if (IS_IFRAME) {
+          notifyParentOfFields(fields.length, () => void triggerInPageFill());
+        } else {
+          showFillTrigger({
+            detected: fields.length,
+            onFill: () => void triggerInPageFill(),
+          });
+        }
         return;
       }
     } catch (err) {
@@ -78,11 +107,76 @@ async function maybeShowTrigger(): Promise<void> {
 
 /** In-page button handler: show the filling state, then run the real fill. */
 async function triggerInPageFill(): Promise<void> {
-  setFillTriggerFilling();
+  pillFilling();
   try {
     await runFill();
   } catch (err) {
     log.warn('in-page fill failed', err);
+  }
+}
+
+/* ----------------------------------------- parent-page relay (iframe only) */
+
+/** Send `iframe-pill-needed` to the parent page with bounded retries until ack. */
+function notifyParentOfFields(detected: number, onFill: () => void): void {
+  pendingParentFillHandler = onFill;
+  parentAckReceived = false;
+  let attempts = 0;
+  const send = (): void => {
+    if (parentAckReceived) return;
+    if (attempts++ >= PARENT_MAX_RETRIES) return;
+    try {
+      window.parent.postMessage(
+        { type: 'autofilltool:iframe-pill-needed', detected },
+        '*',
+      );
+    } catch (err) {
+      log.warn('iframe→parent postMessage failed', err);
+    }
+    setTimeout(send, PARENT_RETRY_MS);
+  };
+  send();
+}
+
+/** Listen for ack + fill-request from the parent page. */
+function installParentMessageListener(): void {
+  window.addEventListener('message', (e) => {
+    if (e.source !== window.parent) return;
+    if (typeof e.data !== 'object' || e.data === null) return;
+    const data = e.data as { type?: unknown };
+    if (typeof data.type !== 'string') return;
+    if (data.type === 'autofilltool:ack') {
+      parentAckReceived = true;
+      return;
+    }
+    if (data.type === 'autofilltool:fill-request') {
+      pendingParentFillHandler?.();
+      return;
+    }
+  });
+}
+
+/** Pill-state setters that route to either the local affordance or the parent. */
+function pillFilling(): void {
+  if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-started' });
+  else setFillTriggerFilling();
+}
+
+function pillProgress(done: number, total: number): void {
+  if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-progress', done, total });
+  else setFillTriggerProgress(done, total);
+}
+
+function pillDone(stats: TriggerStats): void {
+  if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-complete', ...stats });
+  else showFillTriggerDone(stats);
+}
+
+function postToParent(msg: Record<string, unknown>): void {
+  try {
+    window.parent.postMessage(msg, '*');
+  } catch (err) {
+    log.warn('iframe→parent postMessage failed', err);
   }
 }
 
@@ -159,8 +253,8 @@ async function runFill(forceFromMsg?: boolean) {
 
   if (animate) {
     clearFlashes();
-    setFillTriggerFilling();
-    setFillTriggerProgress(0, fields.length);
+    pillFilling();
+    pillProgress(0, fields.length);
   }
 
   const actions: FillAction[] = [];
@@ -182,7 +276,7 @@ async function runFill(forceFromMsg?: boolean) {
       if (action.status === 'filled' && field.el instanceof HTMLElement) {
         applyFlash(field.el);
       }
-      setFillTriggerProgress(i + 1, fields.length);
+      pillProgress(i + 1, fields.length);
       if (i < fields.length - 1) {
         // eslint-disable-next-line no-await-in-loop -- per-field stagger is the feature
         await delay(FILL_ANIM.STAGGER_MS);
@@ -267,10 +361,11 @@ async function runFill(forceFromMsg?: boolean) {
       ).length
     : 0;
 
-  // Drive the unified in-page affordance into its results state. Never block
-  // the response on it.
+  // Drive the unified in-page affordance into its results state — in an
+  // iframe this becomes a postMessage to the parent-stub. Never block the
+  // response on it.
   try {
-    showFillTriggerDone({
+    pillDone({
       filled,
       skipped,
       failed,

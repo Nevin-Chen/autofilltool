@@ -383,3 +383,72 @@ chrome.runtime.onStartup.addListener(() => {
 self.addEventListener('activate', () => {
   log.debug('service worker activated');
 });
+
+/* ----------------------------- parent-stub dynamic injection (Option B) */
+
+/**
+ * When an ATS sub-frame navigation commits in a tab whose top frame is
+ * NOT itself an ATS host (e.g. spotandtango.com embedding job-boards.greenhouse.io
+ * via `#grnhse_iframe`), inject `parent-stub.ts` into the top frame so the
+ * iframe-mounted pill can postMessage into a viewport-fixed parent pill.
+ *
+ * The stub itself is idempotent via a window guard, so re-injection on
+ * repeated commits (e.g. iframe nav within the same tab) is harmless.
+ */
+const ATS_HOST_RE =
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com)$/i;
+
+function isAtsUrl(raw: string | undefined): boolean {
+  if (!raw) return false;
+  try {
+    return ATS_HOST_RE.test(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function getParentStubPath(): string | null {
+  // The crxjs build rewrites content_scripts[*].js paths to hashed assets.
+  // The second content_scripts entry is the parent-stub (with an intentional
+  // never-match URL just to get it bundled). Look it up at runtime.
+  const manifest = chrome.runtime.getManifest();
+  for (const entry of manifest.content_scripts ?? []) {
+    const matches = entry.matches ?? [];
+    if (matches.some((m) => m.includes('aft-parent-stub-bundle-marker'))) {
+      return entry.js?.[0] ?? null;
+    }
+  }
+  return null;
+}
+
+if (
+  typeof chrome !== 'undefined' &&
+  chrome.webNavigation &&
+  typeof chrome.webNavigation.onCommitted?.addListener === 'function'
+) {
+  chrome.webNavigation.onCommitted.addListener(async (details) => {
+    // Only sub-frames where the URL matches an ATS host. parentFrameId 0 is
+    // the most common case (one level of embedding); deeper nesting still
+    // routes through frame 0 of the tab.
+    if (details.frameId === 0) return;
+    if (!isAtsUrl(details.url)) return;
+
+    const stubPath = getParentStubPath();
+    if (!stubPath) {
+      log.warn('parent-stub path not found in manifest; skipping injection');
+      return;
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: details.tabId, frameIds: [0] },
+        files: [stubPath],
+      });
+      log.debug('parent-stub injected into tab', details.tabId);
+    } catch (err) {
+      // Likely no host permission for the parent URL (rare with <all_urls>),
+      // or the tab was closed mid-navigation. Either way: silent fail; the
+      // popup-driven Fill path still works.
+      log.warn('parent-stub injection failed', err);
+    }
+  });
+}
