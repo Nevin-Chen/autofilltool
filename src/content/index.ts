@@ -6,6 +6,7 @@
  */
 
 import { log } from '@/lib/logger';
+import { isExtensionContextValid } from '@/lib/context';
 import { isRequestMessage, type FillActionWire } from '@/types/messages';
 import { pickAdapter } from './detector';
 import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
@@ -15,6 +16,7 @@ import { resumeRecordToFile } from '@/profile/resume';
 import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
+  removeFillTrigger,
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
@@ -108,11 +110,40 @@ async function maybeShowTrigger(): Promise<void> {
 
 /** In-page button handler: show the filling state, then run the real fill. */
 async function triggerInPageFill(): Promise<void> {
+  if (!isExtensionContextValid()) {
+    notifyInvalidContext();
+    return;
+  }
   pillFilling();
   try {
     await runFill();
   } catch (err) {
+    // The most common cause of a thrown runFill is mid-flight context
+    // invalidation (Vite watch rebuild while a page was open). Detect it and
+    // surface a clear "refresh the page" notice instead of leaving the pill
+    // stuck on "Filling…".
+    if (!isExtensionContextValid()) {
+      notifyInvalidContext();
+      return;
+    }
     log.warn('in-page fill failed', err);
+  }
+}
+
+/**
+ * Tear down the stale pill and toast a refresh hint. Cheap try/catches because
+ * once the context is gone, even DOM-only helpers can race with page teardown.
+ */
+function notifyInvalidContext(): void {
+  try {
+    removeFillTrigger();
+  } catch {
+    /* noop */
+  }
+  try {
+    showNoticeToast('AutoFillTool was updated — refresh this page to continue.');
+  } catch {
+    /* noop */
   }
 }
 
@@ -241,6 +272,10 @@ function initialize(): void {
 }
 
 async function runFill(forceFromMsg?: boolean) {
+  if (!isExtensionContextValid()) {
+    notifyInvalidContext();
+    return { ok: false as const, error: 'Extension context invalidated' };
+  }
   const url = new URL(location.href);
   const adapter = pickAdapter(url, document);
   const fields = adapter.detectFields(document);
