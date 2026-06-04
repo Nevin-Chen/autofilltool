@@ -15,6 +15,7 @@ import {
   clearResume as removeResume,
 } from '@/profile/store';
 import type { ResumeRecord } from '@/profile/schema';
+import { Section } from './Section';
 
 const ACCEPTED = [
   'application/pdf',
@@ -91,15 +92,11 @@ export function ResumeSection() {
   };
 
   return (
-    <section>
-      <h2 className="text-base font-semibold">Resume</h2>
-      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-        Stored locally in your browser. Attached to file inputs on application
-        pages when you click Fill. {ACCEPTED_LABEL}, up to{' '}
-        {formatBytes(MAX_BYTES)}.
-      </p>
-
-      <div className="mt-3 space-y-3">
+    <Section
+      title="Resume"
+      hint={`Stored locally in your browser. Attached to file inputs on application pages when you click Fill. ${ACCEPTED_LABEL}, up to ${formatBytes(MAX_BYTES)}.`}
+    >
+      <div className="space-y-3">
         {resume ? (
           <div className="rounded-md border border-slate-200 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
             <div className="font-medium text-slate-800 dark:text-slate-100">
@@ -154,7 +151,7 @@ export function ResumeSection() {
           </div>
         )}
       </div>
-    </section>
+    </Section>
   );
 }
 

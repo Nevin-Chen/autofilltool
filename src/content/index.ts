@@ -185,14 +185,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * On load, handle the full-navigation submit case: if auto-log is on and this
- * looks like a confirmation page following a recent fill, log it. No-op
- * otherwise. Cheap: bails right after the settings check when disabled.
+ * On load, handle the full-navigation submit case: if a webhook is configured
+ * and this looks like a confirmation page following a recent fill, log it.
+ * No-op otherwise. Cheap: bails right after the settings check when disabled.
  */
 async function maybeAutoLogOnLoad(): Promise<void> {
   try {
     const settings = await getSettings();
-    if (!settings.tracking.autoLogOnSubmit) return;
+    if (!settings.tracking.webhookUrl) return;
     const url = new URL(location.href);
     const adapter = pickAdapter(url, document);
     await maybeLogPostNavigation(adapter, document, url, showLoggedToast);
@@ -342,8 +342,9 @@ async function runFill(forceFromMsg?: boolean) {
     log.warn('suggest-button injection failed', err);
   }
 
-  // Opt-in: watch for the user's real submit and auto-log it to history/sheet.
-  if (settings.tracking.autoLogOnSubmit) {
+  // Watch for the user's real submit and auto-log it to history/sheet when a
+  // webhook is configured. No webhook → no auto-log (and no observer overhead).
+  if (settings.tracking.webhookUrl) {
     try {
       installSubmitWatch({ adapter, ctx, onLogged: showLoggedToast });
     } catch (err) {
