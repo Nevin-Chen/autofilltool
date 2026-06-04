@@ -8,6 +8,7 @@ import {
   __getReviewStateForTests,
   __enterReviewForTests,
   __stepReviewForTests,
+  __getDoneNoteForTests,
   type ReviewableField,
   type TriggerStats,
 } from '@/content/affordance';
@@ -156,6 +157,7 @@ describe('chip-as-button review mode', () => {
     adapterId: 'generic',
     adapterName: 'generic',
     resume: 'noResume',
+    autoLogging: false,
   };
 
   beforeEach(() => {
@@ -210,5 +212,43 @@ describe('chip-as-button review mode', () => {
     items[0]!.el.remove();
     __enterReviewForTests('suggest');
     expect(__getReviewStateForTests()).toBeNull();
+  });
+});
+
+describe('post-fill note — Sheets link state', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  const stats = (autoLogging: boolean): TriggerStats => ({
+    filled: 1,
+    skipped: 0,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'generic',
+    adapterName: 'generic',
+    resume: 'noResume',
+    autoLogging,
+  });
+
+  it('shows the auto-log confirmation when Sheets is connected', () => {
+    showFillTriggerDone(stats(true), []);
+    const note = __getDoneNoteForTests();
+    expect(note?.text).toMatch(/auto-logging/i);
+    expect(note?.text).toMatch(/google sheets/i);
+    expect(note?.href).toBeNull();
+  });
+
+  it('shows the connect-Sheet prompt with a README link when not connected', () => {
+    showFillTriggerDone(stats(false), []);
+    const note = __getDoneNoteForTests();
+    expect(note?.text).toMatch(/connect a google sheet/i);
+    expect(note?.href).toBe(
+      'https://github.com/Nevin-Chen/autofilltool#google-sheets-logging',
+    );
   });
 });

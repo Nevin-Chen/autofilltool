@@ -128,6 +128,7 @@ function coerceCompleteStats(data: Record<string, unknown>): TriggerStats | null
     adapterId,
     adapterName: typeof data.adapterName === 'string' ? data.adapterName : adapterId,
     resume,
+    autoLogging: data.autoLogging === true,
   };
 }
 

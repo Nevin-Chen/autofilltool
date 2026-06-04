@@ -17,11 +17,11 @@ export type TriggerStats = {
   filled: number;
   skipped: number;
   failed: number;
-  /** Open-ended fields that still want a human/AI answer (✨ Suggest). */
   suggest: number;
   adapterId: AdapterId;
   adapterName: string;
   resume: TriggerResume;
+  autoLogging: boolean;
 };
 
 /**
@@ -152,6 +152,21 @@ export function __enterReviewForTests(group: ReviewGroup): void {
 /** Test-only: step the review cursor (mirrors an arrow keypress). */
 export function __stepReviewForTests(dir: 1 | -1): void {
   stepReview(dir);
+}
+
+/**
+ * Test-only: read the rendered post-fill note. Returns { text, href } so tests
+ * can assert both the copy variant AND the Sheets-docs link target without
+ * piercing the closed shadow root from outside.
+ */
+export function __getDoneNoteForTests(): { text: string; href: string | null } | null {
+  const noteEl = state?.shadow.querySelector('.note');
+  if (!noteEl) return null;
+  const link = noteEl.querySelector<HTMLAnchorElement>('a.note-link');
+  return {
+    text: (noteEl.textContent ?? '').trim(),
+    href: link?.getAttribute('href') ?? null,
+  };
 }
 
 /* ------------------------------------------------------------- internals */
@@ -316,6 +331,7 @@ function renderDone(): HTMLElement {
     adapterId: 'generic' as AdapterId,
     adapterName: 'generic',
     resume: 'noResume' as TriggerResume,
+    autoLogging: false,
   };
 
   const chips = h('div', { class: 'row gap chips' }, [
@@ -326,21 +342,41 @@ function renderDone(): HTMLElement {
   ]);
 
   const resume = resumeLine(st.resume);
-
-  const note = h('div', { class: 'row note' }, [
-    clockGlyph(),
-    h('span', {}, [
-      "We'll log this application ",
-      h('strong', {}, ['automatically']),
-      ' once you reach the confirmation page — no need to mark it.',
-    ]),
-  ]);
+  const note = autoLogNote(st.autoLogging);
 
   const actions = h('div', { class: 'row gap top' }, [
     btn({ class: 'ghost', text: 'Dismiss', onClick: dismiss }),
   ]);
 
   return frag([chips, ...(resume ? [resume] : []), note, actions]);
+}
+
+const SHEETS_DOCS_URL =
+  'https://github.com/Nevin-Chen/autofilltool#google-sheets-logging';
+
+/**
+ * Two variants — connected users get a passive confirmation, unconnected get
+ * a prompt that links to the README setup section. We never showed the auto-log
+ * promise before checking for a webhook, which was misleading for users without
+ * one configured.
+ */
+function autoLogNote(autoLogging: boolean): HTMLElement {
+  if (autoLogging) {
+    return h('div', { class: 'row note' }, [
+      clockGlyph(),
+      h('span', {}, ['Auto-logging with Google Sheets.']),
+    ]);
+  }
+  const link = document.createElement('a');
+  link.href = SHEETS_DOCS_URL;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'note-link';
+  link.textContent = 'Connect a Google Sheet';
+  return h('div', { class: 'row note' }, [
+    clockGlyph(),
+    h('span', {}, [link, ' to auto-log applications.']),
+  ]);
 }
 
 function resumeLine(state_: TriggerResume): HTMLElement | null {
@@ -594,14 +630,14 @@ function buildStyle(): HTMLStyleElement {
       border-radius: 12px;
       box-shadow: 0 12px 30px rgba(0,0,0,0.28);
       padding: 14px 16px;
-      width: 320px;
+      width: 340px;
       box-sizing: border-box;
       border: 1px solid rgba(255,255,255,0.06);
     }
     .stack > * + * { margin-top: 10px; }
     .row { display: flex; align-items: center; }
     .row.between { justify-content: space-between; }
-    .row.gap > * + * { margin-left: 8px; }
+    .row.gap > * + * { margin-left: 6px; }
     .row.gap-sm > * + * { margin-left: 9px; }
     .row.top { margin-top: 10px; }
     .head { margin-bottom: 2px; }
@@ -609,9 +645,9 @@ function buildStyle(): HTMLStyleElement {
     .sub { color: #94a3b8; font-size: 12.5px; }
     .sub.light { color: #cbd5e1; }
     .sub strong { color: #cbd5e1; }
-    .chips { flex-wrap: nowrap; overflow-x: auto; }
+    .chips { display: flex; justify-content: space-around; }
     .chip {
-      font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+      font-size: 11.5px; padding: 2px 7px; border-radius: 999px;
       background: rgba(255,255,255,0.06); color: #cbd5e1; font-weight: 600;
       white-space: nowrap;
     }
@@ -634,6 +670,10 @@ function buildStyle(): HTMLStyleElement {
       font-size: 11.5px; color: #94a3b8; line-height: 1.45;
     }
     .note strong { color: #cbd5e1; }
+    .note-link {
+      color: #7dd3fc; text-decoration: underline; cursor: pointer;
+    }
+    .note-link:hover { color: #bae6fd; }
     .track {
       height: 5px; border-radius: 999px; background: rgba(255,255,255,0.08);
       overflow: hidden;
