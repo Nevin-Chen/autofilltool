@@ -1,10 +1,3 @@
-/**
- * Translates a Profile into the value the filler should write for each
- * FieldKind. Returns `null` / `undefined` for kinds the user hasn't set —
- * the filler skips empty values, which keeps optional/demographics fields
- * blank unless the user has explicitly opted in.
- */
-
 import type { Profile } from '@/profile/schema';
 import type { FieldKind } from '@/adapters/types';
 
@@ -48,11 +41,11 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.links.other || null;
 
     case 'authorizedToWorkInUS':
-      return profile.workAuth.authorizedToWorkInUS;
+      return yesNo(profile.workAuth.authorizedToWorkInUS);
     case 'requiresSponsorship':
-      return profile.workAuth.requiresSponsorship;
+      return yesNo(profile.workAuth.requiresSponsorship);
     case 'willingToRelocate':
-      return profile.workAuth.willingToRelocate;
+      return yesNo(profile.workAuth.willingToRelocate);
     case 'desiredSalary':
       return profile.workAuth.desiredSalary || null;
 
@@ -71,17 +64,19 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.defaultCoverLetter || null;
 
     case 'openEnded':
-      // Open-ended questions never get a profile value — AI suggestions
-      // handle these in step 5.
       return null;
 
     default: {
-      // Exhaustiveness check.
       const _: never = kind;
       void _;
       return null;
     }
   }
+}
+
+function yesNo(v: boolean | null): string | null {
+  if (v === null) return null;
+  return v ? 'Yes' : 'No';
 }
 
 function joinFullName(profile: Profile): string | null {
