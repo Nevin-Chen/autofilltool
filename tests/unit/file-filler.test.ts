@@ -38,7 +38,6 @@ describe('attachFile', () => {
     input.type = 'file';
     document.body.appendChild(input);
 
-    // Pre-populate with a file.
     const dt = new DataTransfer();
     dt.items.add(new File([new Uint8Array([9])], 'existing.pdf', { type: 'application/pdf' }));
     input.files = dt.files;
@@ -110,6 +109,36 @@ describe('findResumeInput', () => {
     const found = findResumeInput(document);
     expect(found).toBeNull();
   });
+
+  it('does NOT fall back to a cover-letter-labeled input when the resume input is disabled', () => {
+    document.body.innerHTML = `
+      <input type="file" name="resume" disabled />
+      <input type="file" name="cover_letter" aria-label="Cover letter" />
+    `;
+    expect(findResumeInput(document)).toBeNull();
+  });
+
+  it('does NOT fall back to a transcript-labeled input', () => {
+    document.body.innerHTML = `
+      <input type="file" name="transcript" aria-label="Transcript" />
+    `;
+    expect(findResumeInput(document)).toBeNull();
+  });
+
+  it('does NOT fall back to a portfolio-labeled input', () => {
+    document.body.innerHTML = `
+      <input type="file" name="portfolio" aria-label="Portfolio" />
+    `;
+    expect(findResumeInput(document)).toBeNull();
+  });
+
+  it('still returns the lone input when its label is generic', () => {
+    document.body.innerHTML = `
+      <label for="x">Document</label>
+      <input id="x" type="file" name="upload" />
+    `;
+    expect(findResumeInput(document)?.id).toBe('x');
+  });
 });
 
 describe('isFileAlreadyAttached', () => {
@@ -135,7 +164,6 @@ describe('isFileAlreadyAttached', () => {
     document.body.appendChild(original);
     attachFile(original, makeFile('resume.pdf'), { forceOverwrite: false });
 
-    // The page swaps the original input for a fresh one (Greenhouse pattern).
     const swapped = document.createElement('input');
     swapped.type = 'file';
     swapped.id = 'fresh';
@@ -165,5 +193,59 @@ describe('isFileAlreadyAttached', () => {
     attachFile(input, bigger, { forceOverwrite: false });
 
     expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(false);
+  });
+
+  it('returns true when filename appears as visible text near a file input', () => {
+    document.body.innerHTML = `
+      <div class="uploader">
+        <input type="file" name="resume" />
+        <div class="attached">
+          <span>resume.pdf</span>
+          <button type="button">Remove</button>
+        </div>
+      </div>
+    `;
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(true);
+  });
+
+  it('matches the filename stem when only the bare name is shown (no extension)', () => {
+    document.body.innerHTML = `
+      <div class="uploader">
+        <input type="file" name="resume" />
+        <span class="filename">Nevin-Chen-Resume</span>
+      </div>
+    `;
+    expect(
+      isFileAlreadyAttached(document, makeFile('Nevin-Chen-Resume.pdf')),
+    ).toBe(true);
+  });
+
+  it('does NOT match a filename that appears far from any file input', () => {
+    document.body.innerHTML = `
+      <main>
+        <div class="job-description">
+          Looking for someone whose resume.pdf shows experience in...
+        </div>
+      </main>
+      <aside>
+        <input type="file" name="resume" />
+      </aside>
+    `;
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(false);
+  });
+
+  it('does NOT match when no file input exists at all', () => {
+    document.body.innerHTML = `<span>resume.pdf was attached earlier</span>`;
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(false);
+  });
+
+  it('case-insensitive filename match (uploader may title-case)', () => {
+    document.body.innerHTML = `
+      <div>
+        <input type="file" />
+        <span>Resume.PDF</span>
+      </div>
+    `;
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(true);
   });
 });

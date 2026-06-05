@@ -1,18 +1,8 @@
-/**
- * Shared classification + DOM helpers for every platform adapter. Adapters
- * use their own structured selectors first, then fall back to
- * `classifyByHeuristics`. Underscore prefix = internal to adapters/.
- */
-
 import type { FieldKind } from './types';
 import { attachFile } from '@/content/filler';
 
-/* ------------------------------------------------------- context */
-
 export type Context = {
-  /** Best human-readable label we could resolve. */
   label: string;
-  /** Lowercased blob of label+aria+placeholder+name+id (+group legend), for regex matching. */
   haystack: string;
   autocomplete: string;
   type: string;
@@ -27,8 +17,6 @@ export function collectContext(el: HTMLElement): Context {
   const autocomplete = (el.getAttribute('autocomplete') ?? '').trim().toLowerCase();
   const type = (el.getAttribute('type') ?? '').trim().toLowerCase();
 
-  // Radios / checkboxes need the group label (the question) added to the
-  // haystack — the wrapping <label> only carries the option text ("Yes"/"No").
   let groupLabel = '';
   if (
     el instanceof HTMLInputElement &&
@@ -44,20 +32,12 @@ export function collectContext(el: HTMLElement): Context {
   return { label: groupLabel || label, haystack, autocomplete, type };
 }
 
-/* ------------------------------------------------------- classification */
-
 export type Classification = { kind: FieldKind; confidence: number };
 
-/**
- * Classify an element from standard HTML signals. Pure; returns null if no
- * signal is confident enough. Adapters call this AFTER their own selectors.
- */
 export function classifyByHeuristics(el: HTMLElement, ctx: Context): Classification | null {
-  // 1. autocomplete is by far the strongest signal.
   const fromAc = fromAutocomplete(ctx.autocomplete);
   if (fromAc) return { kind: fromAc, confidence: 0.95 };
 
-  // 2. input[type=email|tel|url].
   if (el instanceof HTMLInputElement) {
     if (ctx.type === 'email') return { kind: 'email', confidence: 0.9 };
     if (ctx.type === 'tel') return { kind: 'phone', confidence: 0.9 };
@@ -70,14 +50,12 @@ export function classifyByHeuristics(el: HTMLElement, ctx: Context): Classificat
     }
   }
 
-  // 3. Textareas are open-ended unless they clearly say cover letter.
   if (el instanceof HTMLTextAreaElement) {
     if (/cover\s*letter/.test(ctx.haystack))
       return { kind: 'coverLetter', confidence: 0.85 };
     return { kind: 'openEnded', confidence: 0.5 };
   }
 
-  // 4. Keyword matching on the haystack.
   return fromKeywords(ctx.haystack);
 }
 
@@ -117,13 +95,11 @@ function fromAutocomplete(value: string): FieldKind | null {
   }
 }
 
-/** Ordered keyword rules; first hit wins. Exposed for tests + reuse. */
 export const KEYWORD_RULES: ReadonlyArray<{
   kind: FieldKind;
   re: RegExp;
   confidence: number;
 }> = [
-  // identity
   { kind: 'firstName', re: /\b(first[\s_-]*name|given[\s_-]*name|forename)\b/, confidence: 0.85 },
   { kind: 'lastName', re: /\b(last[\s_-]*name|family[\s_-]*name|surname)\b/, confidence: 0.85 },
   {
@@ -138,7 +114,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(phone|telephone|mobile|cell[\s_-]*phone|contact number)\b/,
     confidence: 0.8,
   },
-  // address
   {
     kind: 'addressLine1',
     re: /\b(street|address[\s_-]*(line[\s_-]*)?1|address\b(?!.*2))\b/,
@@ -157,7 +132,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.85,
   },
   { kind: 'country', re: /\bcountry\b/, confidence: 0.85 },
-  // links
   { kind: 'linkedin', re: /\blinked[\s_-]?in\b/, confidence: 0.9 },
   { kind: 'github', re: /\bgit[\s_-]?hub\b/, confidence: 0.9 },
   { kind: 'twitter', re: /\b(twitter|x\.com|@handle)\b/, confidence: 0.75 },
@@ -166,7 +140,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(portfolio|personal[\s_-]*(site|website)|website|homepage)\b/,
     confidence: 0.7,
   },
-  // work auth
   {
     kind: 'authorizedToWorkInUS',
     re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
@@ -187,7 +160,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(desired|expected|target).*\b(salary|compensation|pay)\b|salary[\s_-]*(expectation|range)/,
     confidence: 0.8,
   },
-  // demographics — only filled if the user explicitly set values
   { kind: 'gender', re: /\b(gender|sex)\b/, confidence: 0.65 },
   { kind: 'pronouns', re: /\bpronoun/, confidence: 0.7 },
   {
@@ -205,8 +177,6 @@ export function fromKeywords(haystack: string): Classification | null {
   }
   return null;
 }
-
-/* ------------------------------------------------------- DOM helpers */
 
 export function isFillable(el: HTMLElement): boolean {
   if (el instanceof HTMLInputElement) {
@@ -233,10 +203,6 @@ export function textOf(node: Element): string {
   return (node.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Best-effort label, tried in order: aria-labelledby, label[for], ancestor
- * <label>, nearby label-ish container element, then aria-label/placeholder/name.
- */
 export function bestLabel(el: HTMLElement): string {
   const doc = el.ownerDocument;
   const labelledBy = el.getAttribute('aria-labelledby');
@@ -332,27 +298,19 @@ export function cssEscape(s: string): string {
   return s.replace(/(["\\#.:;,?!+*~'`()[\]{}<>=|/])/g, '\\$1');
 }
 
-/* ------------------------------------------------------- job description */
-
-/** JD cap for `getJobDescription`; budgeted separately from the résumé in the prompt. */
 export const JOB_DESCRIPTION_CHAR_BUDGET = 3000;
 
-/**
- * Normalise whitespace and clip to the JD budget — collapses inline runs but
- * keeps paragraph breaks, so the prompt sees clean prose.
- */
 export function clipJobDescription(raw: string): string {
   const collapsed = raw
     .split(/\r?\n/)
     .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim()) // collapse inline runs per line
     .join('\n')
-    .replace(/\n{3,}/g, '\n\n') // 3+ newlines → one blank line
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
   if (collapsed.length <= JOB_DESCRIPTION_CHAR_BUDGET) return collapsed;
   return collapsed.slice(0, JOB_DESCRIPTION_CHAR_BUDGET - 1).trimEnd() + '…';
 }
 
-/** First selector matching a node with non-empty text wins; returns clipped text. */
 export function pickJobDescriptionByCss(
   doc: Document,
   selectors: ReadonlyArray<string>,
@@ -367,11 +325,9 @@ export function pickJobDescriptionByCss(
   return '';
 }
 
-/* ------------------------------------------------------- resume slot */
-
 export const RESUME_HINTS = /\b(resume|résumé|cv|curriculum|attach.*resume|upload.*resume)\b/i;
+const NON_RESUME_HINTS = /\b(cover\s*letter|transcript|portfolio|certificat|references?)\b/i;
 
-/** Generic resume-slot finder; adapters can override with a tighter selector. */
 export function findResumeInput(root: Document): HTMLInputElement | null {
   const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="file"]'));
   for (const input of inputs) {
@@ -383,15 +339,14 @@ export function findResumeInput(root: Document): HTMLInputElement | null {
   const enabled = inputs.filter((i) => !i.disabled);
   if (enabled.length === 1) {
     const onlyOne = enabled[0];
-    if (onlyOne) return onlyOne;
+    if (!onlyOne) return null;
+    const ctx = collectContext(onlyOne);
+    if (NON_RESUME_HINTS.test(ctx.haystack)) return null;
+    return onlyOne;
   }
   return null;
 }
 
-/**
- * Pick a slot (via `pickSlot`, default `findResumeInput`) and attach the file
- * via the safe filler. Returns true if it landed. Default fillResume impl.
- */
 export async function attachResumeViaSlot(
   file: File,
   root: Document,
@@ -403,17 +358,9 @@ export async function attachResumeViaSlot(
   return action.status === 'attached';
 }
 
-/* ---------------------------------------------- submission confirmation */
-
-/**
- * Post-submit confirmation copy ("thank you for applying", "application
- * submitted/received", …). Single source of truth shared by every adapter's
- * `detectSubmissionConfirmed` and submit-watch's generic fallback.
- */
 export const SUBMISSION_CONFIRM_RE =
   /(thank you for (your )?appl|application (has been |was )?(submitted|received|complete)|we['’]?(ve| have) received your application|thanks for applying|successfully submitted|your application is complete)/i;
 
-/** True when the page's visible text carries a post-submit confirmation phrase. */
 export function hasSubmissionConfirmText(doc: Document): boolean {
   const text = (doc.body?.textContent ?? '').slice(0, 5000);
   return SUBMISSION_CONFIRM_RE.test(text);

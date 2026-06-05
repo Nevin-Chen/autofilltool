@@ -1,20 +1,6 @@
-/**
- * The only place in the codebase that mutates form elements. All adapters
- * route through here so the safety rules are enforced uniformly:
- *
- *   - Never overwrite a non-empty field unless `forceOverwrite` is true.
- *   - Always use the native value setter so framework state trackers update.
- *   - Dispatch `input`, `change`, `blur` in order.
- *   - For <select>, match by value, then by visible text (case-insensitive).
- *   - For checkboxes/radios, only `click()` if the target state differs from
- *     the current state.
- *   - Refuse to click anything that looks like a submit button.
- */
-
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
 import type { DetectedField } from '@/adapters/types';
 
-/** Buttons/inputs we will never click as part of fill or radio selection. */
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
 
 export type AttachOptions = {
@@ -26,14 +12,12 @@ export type AttachAction = {
   note?: string;
 };
 
-/**
- * True when any `<input type="file">` on the page already holds a file
- * matching `file` by name AND size. Defends against repeat fills on ATSes
- * (notably Greenhouse) that swap the original input for a fresh empty one
- * after attach — the per-slot `files.length` guard in `attachFile` then
- * misses it and we'd re-attach the same résumé to a different input.
- */
 export function isFileAlreadyAttached(root: Document, file: File): boolean {
+  if (anyInputHoldsFile(root, file)) return true;
+  return filenameShownNearFileInput(root, file.name);
+}
+
+function anyInputHoldsFile(root: Document, file: File): boolean {
   const inputs = root.querySelectorAll<HTMLInputElement>('input[type="file"]');
   for (const input of Array.from(inputs)) {
     const files = input.files;
@@ -46,11 +30,42 @@ export function isFileAlreadyAttached(root: Document, file: File): boolean {
   return false;
 }
 
-/**
- * Attach a File to an <input type="file">. `.value` can't be set on file
- * inputs, so build a DataTransfer, assign its files, then dispatch `change`.
- * Skips when the input already has a file unless forceOverwrite is true.
- */
+const FILENAME_SEARCH_DEPTH = 4;
+const FILENAME_CONTAINER_MAX_CHARS = 200;
+const FILENAME_JUMP_MIN = 50;
+const FILENAME_JUMP_RATIO = 4;
+
+function filenameShownNearFileInput(root: Document, filename: string): boolean {
+  if (!filename) return false;
+  const fullLower = filename.toLowerCase();
+  const stemLower = filenameStem(filename).toLowerCase();
+  const matches = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    if (lower.includes(fullLower)) return true;
+    return stemLower.length >= 3 && lower.includes(stemLower);
+  };
+  const inputs = root.querySelectorAll<HTMLInputElement>('input[type="file"]');
+  for (const input of Array.from(inputs)) {
+    let container: Element | null = input.parentElement;
+    let prevLen = 0;
+    for (let depth = 0; depth < FILENAME_SEARCH_DEPTH && container; depth++) {
+      const text = (container.textContent ?? '').trim();
+      const curLen = text.length;
+      if (curLen > FILENAME_CONTAINER_MAX_CHARS) break;
+      if (depth > 0 && curLen > Math.max(FILENAME_JUMP_MIN, prevLen * FILENAME_JUMP_RATIO)) break;
+      if (curLen > 0 && matches(text)) return true;
+      prevLen = curLen;
+      container = container.parentElement;
+    }
+  }
+  return false;
+}
+
+function filenameStem(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 export function attachFile(
   input: HTMLInputElement,
   file: File,
@@ -89,11 +104,9 @@ export type FillAction = {
 
 export type FillOptions = {
   forceOverwrite: boolean;
-  // Skip the built-in post-fill highlight; the animation runner handles it.
   suppressFlash?: boolean;
 };
 
-/** Set a single field; returns an action record for the caller's log. */
 export function fillField(
   field: DetectedField,
   rawValue: string | boolean | null | undefined,
@@ -130,8 +143,6 @@ export function fillField(
     };
   }
 }
-
-/* --------------------------------------------------------- per element type */
 
 type Meta = { label: string; kind: string };
 
@@ -173,7 +184,6 @@ function fillSelect(
   return { ...meta, status: 'filled' };
 }
 
-/** Try value match first, then case-insensitive label match. */
 export function pickSelectOption(el: HTMLSelectElement, want: string): string | null {
   const target = want.trim().toLowerCase();
   for (const opt of Array.from(el.options)) {
@@ -186,8 +196,6 @@ export function pickSelectOption(el: HTMLSelectElement, want: string): string | 
     const text = (opt.textContent ?? '').trim().toLowerCase();
     if (text === target) return opt.value;
   }
-  // Last-ditch: a label that *contains* the target. Conservative cutoff so
-  // we don't match "United States" when the user typed "ate".
   if (target.length >= 3) {
     for (const opt of Array.from(el.options)) {
       const text = (opt.textContent ?? '').trim().toLowerCase();
@@ -213,7 +221,6 @@ function fillCheckbox(
   if (looksLikeSubmit(el)) {
     return { ...meta, status: 'error', note: 'refused: looks like a submit control' };
   }
-  // click() not .checked, so frameworks notice and run follow-up logic.
   el.click();
   if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
@@ -226,7 +233,6 @@ function fillRadio(
   meta: Meta,
 ): FillAction {
   const want = String(rawValue).trim().toLowerCase();
-  // Find sibling radios in the same group.
   const root = el.form ?? el.ownerDocument;
   const name = el.name;
   if (!name) {
@@ -243,7 +249,6 @@ function fillRadio(
       r.getAttribute('aria-label') ?? '',
       labelTextFor(r),
     ].map((s) => s.trim().toLowerCase());
-    // Allow yes/no/true/false interchange.
     const synonyms: Record<string, string[]> = {
       yes: ['yes', 'true', 'y'],
       no: ['no', 'false', 'n'],
@@ -264,8 +269,6 @@ function fillRadio(
   if (!opts.suppressFlash) flashFilled(target);
   return { ...meta, status: 'filled' };
 }
-
-/* ------------------------------------------------------- helpers */
 
 function coerceBool(v: string | boolean | null | undefined): boolean | null {
   if (typeof v === 'boolean') return v;
@@ -301,11 +304,6 @@ function cssEscape(s: string): string {
   return s.replace(/(["\\#.:;,?!+*~'`()[\]{}<>=|/])/g, '\\$1');
 }
 
-/* ------------------------------------------------------- post-fill highlight */
-
-// Transient highlight on fields we actually wrote (FR-010). Presentational
-// Transient sky box-shadow glow on filled fields only; never touches SUBMIT_DENY.
-// Saves/restores inline style; cosmetic failures are swallowed.
 const HIGHLIGHT_HOLD_MS = 1100;
 const HIGHLIGHT_FADE_MS = 450;
 const HIGHLIGHT_SHADOW =
@@ -320,39 +318,23 @@ function flashFilled(el: HTMLElement): void {
     style.boxShadow = HIGHLIGHT_SHADOW;
     setTimeout(() => {
       try {
-        style.boxShadow = prevBoxShadow; // fades out via the transition above
+        style.boxShadow = prevBoxShadow;
         setTimeout(() => {
           try {
-            style.transition = prevTransition; // restore inline exactly as found
+            style.transition = prevTransition;
           } catch {
-            /* element detached — nothing to restore */
           }
         }, HIGHLIGHT_FADE_MS);
       } catch {
-        /* element detached */
       }
     }, HIGHLIGHT_HOLD_MS);
   } catch {
-    /* a cosmetic flash must never break a fill */
   }
 }
 
-/* ------------------------------------------------------- virtualised dropdowns */
-
-/**
- * Fill a Workday-style virtualised dropdown (a `role="combobox"` trigger
- * that opens a portal-mounted `role="listbox"` on click, not a native
- * `<select>`). Flow: click trigger → wait for the listbox (MutationObserver,
- * since it's portal-rendered as a body sibling) → click the option matching
- * the value → fire `change` on the trigger. The wait is bounded (default
- * 1500ms): long enough for React to mount, short enough not to stall a fill.
- */
 export type VirtualizedDropdownOptions = {
-  /** Maximum ms to wait for the listbox popup to appear. Default 1500. */
   timeoutMs?: number;
-  /** Search root; defaults to the trigger's ownerDocument. */
   root?: Document;
-  /** Skip the built-in post-fill highlight; the animation runner handles it. */
   suppressFlash?: boolean;
 };
 
@@ -378,7 +360,7 @@ export async function fillVirtualizedDropdown(
   const timeout = opts.timeoutMs ?? 1500;
 
   try {
-    trigger.click();
+    openCombobox(trigger);
   } catch (err) {
     return {
       label,
@@ -388,18 +370,29 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  const listbox = await waitForListbox(root, timeout);
+  const listbox = await waitForListbox(root, trigger, timeout);
   if (!listbox) {
     return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
   }
 
+  if (trigger instanceof HTMLInputElement && !trigger.disabled && !trigger.readOnly) {
+    setNativeValue(trigger, want);
+    dispatchInputEvents(trigger);
+    const filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
+    if (!filteredOption) {
+      return { label, kind, status: 'skipped', note: `no option matched "${truncate(want, 60)}"` };
+    }
+    selectOption(filteredOption);
+    trigger.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!opts.suppressFlash) flashFilled(trigger);
+    return { label, kind, status: 'filled', note: `selected "${textOfNode(filteredOption)}"` };
+  }
+
   const option = pickListboxOption(listbox, want);
   if (!option) {
-    // Re-click the trigger to close the popup, leaving the page as found.
     try {
       trigger.click();
     } catch {
-      /* ignore */
     }
     return {
       label,
@@ -409,17 +402,70 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  option.click();
+  selectOption(option);
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
   if (!opts.suppressFlash) flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
 }
 
-/**
- * Find a `[role="option"]` whose text contains `want` (case-insensitive).
- * Prefers an exact match over a substring match so "United States" beats
- * "United States of America" when the profile says "United States".
- */
+const FILTERED_OPTION_TIMEOUT_MS = 400;
+
+function openCombobox(trigger: HTMLElement): void {
+  try {
+    trigger.focus();
+  } catch {
+  }
+  dispatchMouse(trigger, 'mousedown');
+  dispatchMouse(trigger, 'mouseup');
+  try {
+    trigger.click();
+  } catch {
+  }
+}
+
+function selectOption(option: HTMLElement): void {
+  dispatchMouse(option, 'mousedown');
+  dispatchMouse(option, 'mouseup');
+  try {
+    option.click();
+  } catch {
+  }
+}
+
+function dispatchMouse(el: HTMLElement, type: 'mousedown' | 'mouseup'): void {
+  try {
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }),
+    );
+  } catch {
+  }
+}
+
+function waitForOption(
+  listbox: Element,
+  want: string,
+  timeoutMs: number,
+): Promise<HTMLElement | null> {
+  const immediate = pickListboxOption(listbox, want);
+  if (immediate) return Promise.resolve(immediate);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: HTMLElement | null) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const observer = new MutationObserver(() => {
+      const hit = pickListboxOption(listbox, want);
+      if (hit) finish(hit);
+    });
+    observer.observe(listbox, { childList: true, subtree: true, characterData: true });
+    const timer = setTimeout(() => finish(null), timeoutMs);
+  });
+}
+
 export function pickListboxOption(
   listbox: Element,
   want: string,
@@ -442,13 +488,20 @@ export function pickListboxOption(
   return exact ?? substr;
 }
 
-/**
- * Resolve to the first `[role="listbox"]` to appear in the document
- * (including any that's already mounted at call time). Resolves to null
- * after `timeoutMs` with nothing found.
- */
-function waitForListbox(root: Document, timeoutMs: number): Promise<Element | null> {
-  const existing = root.querySelector('[role="listbox"]');
+function waitForListbox(
+  root: Document,
+  trigger: HTMLElement,
+  timeoutMs: number,
+): Promise<Element | null> {
+  const ownedId =
+    trigger.getAttribute('aria-controls') ?? trigger.getAttribute('aria-owns');
+  const findByOwned = (): Element | null =>
+    ownedId ? root.getElementById(ownedId) : null;
+  const findFallback = (): Element | null =>
+    root.querySelector('[role="listbox"]');
+  const find = (): Element | null => findByOwned() ?? findFallback();
+
+  const existing = find();
   if (existing) return Promise.resolve(existing);
   return new Promise((resolve) => {
     let done = false;
@@ -460,7 +513,7 @@ function waitForListbox(root: Document, timeoutMs: number): Promise<Element | nu
       resolve(v);
     };
     const observer = new MutationObserver(() => {
-      const found = root.querySelector('[role="listbox"]');
+      const found = find();
       if (found) finish(found);
     });
     observer.observe(root.documentElement, { childList: true, subtree: true });

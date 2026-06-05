@@ -1,14 +1,3 @@
-/**
- * Greenhouse adapter. Two layouts: legacy `boards.greenhouse.io` (server-
- * rendered, stable ids under `form#application-form`) and the new
- * `job-boards.greenhouse.io` Next.js redesign (React inputs keyed by `name`
- * + label text, no form-root id, file input hidden in an uploader widget).
- *
- * Strategy: known `name=` first (both layouts), then `id=` (legacy), then
- * walk + classify every fillable input. Custom domains are matched via DOM
- * markers (`#grnhse_app`/`#grnhse_iframe`/`form#application-form`).
- */
-
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
 import {
   classifyByHeuristics,
@@ -21,7 +10,6 @@ import {
   hasSubmissionConfirmText,
 } from './_shared';
 
-/** Stable canonical fields — matched by `name=` then `id=` (see detectFields). */
 const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: number }> = [
   { field: 'first_name', kind: 'firstName', confidence: 0.99 },
   { field: 'last_name', kind: 'lastName', confidence: 0.99 },
@@ -29,7 +17,6 @@ const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: 
   { field: 'phone', kind: 'phone', confidence: 0.99 },
 ];
 
-/** Common custom-question label substrings → FieldKind. */
 const LABEL_HINTS: ReadonlyArray<{ re: RegExp; kind: FieldKind; confidence: number }> = [
   { re: /linkedin/i, kind: 'linkedin', confidence: 0.95 },
   { re: /github/i, kind: 'github', confidence: 0.95 },
@@ -41,8 +28,6 @@ export const greenhouseAdapter: PlatformAdapter = {
   id: 'greenhouse',
   name: 'Greenhouse',
   matches: (url, doc) => {
-    // URL covers any *.greenhouse.io (incl. iframe sources); DOM markers
-    // catch custom/CNAMEd domains and embed parent pages.
     if (/(^|\.)greenhouse\.io$/.test(url.hostname)) return true;
     return !!(
       doc.querySelector('form#application-form') ||
@@ -56,18 +41,12 @@ export const greenhouseAdapter: PlatformAdapter = {
   detectSubmissionConfirmed,
 };
 
-/**
- * Greenhouse confirms via a server-rendered "thank you / application submitted"
- * page where the application form is gone. Legacy uses a `#application_confirmation`
- * region; otherwise we require the confirmation copy plus the form's absence.
- */
 function detectSubmissionConfirmed(doc: Document, _url: URL): boolean {
   if (doc.getElementById('application_confirmation')) return true;
   const formGone = !doc.querySelector('form#application-form, #grnhse_app form');
   return formGone && hasSubmissionConfirmText(doc);
 }
 
-/** Job description via known containers (legacy `#content` first), else body. */
 function getJobDescription(doc: Document): string {
   const byCss = pickJobDescriptionByCss(doc, [
     '#content .section-wrapper.page-centered',
@@ -76,7 +55,6 @@ function getJobDescription(doc: Document): string {
     'article',
   ]);
   if (byCss) return byCss;
-  // Last-ditch: in an embedded iframe the body essentially is the description.
   if (doc.body) return clipJobDescription(doc.body.textContent ?? '');
   return '';
 }
@@ -85,7 +63,6 @@ function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
-  // Known canonical fields — `name=` first (both layouts), then `id=` (legacy).
   for (const { field, kind, confidence } of KNOWN_FIELDS) {
     let el: HTMLElement | null = root.querySelector<HTMLElement>(
       `input[name="${field}"], select[name="${field}"], textarea[name="${field}"]`,
@@ -101,8 +78,26 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  // Walk + classify every other fillable input (whole doc; the new redesign
-  // has no form-root id, and isFillable already excludes hidden/submit/file).
+  for (const el of Array.from(
+    root.querySelectorAll<HTMLElement>(
+      '[role="combobox"], [aria-haspopup="listbox"]',
+    ),
+  )) {
+    if (seen.has(el)) continue;
+    const ctx = collectContext(el);
+    const hinted = LABEL_HINTS.find((h) => h.re.test(ctx.label) || h.re.test(ctx.haystack));
+    const classified = hinted ?? classifyByHeuristics(el, ctx);
+    if (!classified) continue;
+    out.push({
+      el,
+      kind: classified.kind,
+      label: ctx.label,
+      confidence: classified.confidence,
+      widget: 'virtualizedDropdown',
+    });
+    seen.add(el);
+  }
+
   for (const el of Array.from(
     root.querySelectorAll<HTMLElement>('input, select, textarea'),
   )) {
@@ -125,17 +120,14 @@ function detectFields(root: Document): DetectedField[] {
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
   return attachResumeViaSlot(file, root, (d) => {
-    // name-based (both layouts: resume/resumeFile/cv).
     const byName = d.querySelector<HTMLInputElement>(
       'input[type="file"][name*="resume" i], input[type="file"][name*="cv" i]',
     );
     if (byName && !byName.disabled) return byName;
-    // legacy id.
     const byId = d.getElementById('resume');
     if (byId instanceof HTMLInputElement && byId.type === 'file' && !byId.disabled) {
       return byId;
     }
-    // shared finder — matches the redesign's hidden input via its accept hint.
     return findResumeInput(d);
   });
 }
@@ -146,7 +138,6 @@ function textForLabel(root: Document, forId: string): string {
   return (lbl?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-/** Find a wrapping/sibling label when the input has no `id` (redesign case). */
 function textOfNearbyLabel(el: HTMLElement): string {
   const wrapping = el.closest('label');
   if (wrapping) {
