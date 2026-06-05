@@ -1,26 +1,14 @@
-/**
- * Parent-page stub injected by the background worker into the top frame of
- * any tab that contains an ATS iframe (detected via chrome.webNavigation).
- *
- * The iframe content script (src/content/index.ts) can't render a
- * viewport-fixed pill because position:fixed anchors to the iframe's own
- * viewport, not the user's. This stub lives in the parent page so the
- * pill can sit at the parent's bottom-right and scroll with the user.
- *
- * Trust boundary: every inbound postMessage is validated — the origin
- * MUST be one of the curated ATS hosts and the payload shape MUST match.
- * The stub never auto-detects fields, never imports adapter logic, and
- * never speaks to the network. It is a passive listener that mounts the
- * existing affordance pill and round-trips clicks back to the iframe.
- */
-
 import {
   showFillTrigger,
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
+  setRemoteReviewState,
+  clearRemoteReviewState,
   type TriggerStats,
   type TriggerResume,
+  type ReviewGroup,
+  type RemoteReviewCallbacks,
 } from './affordance';
 import { AdapterIdSchema, type AdapterId } from '@/profile/schema';
 
@@ -32,13 +20,11 @@ declare global {
   }
 }
 
-// Idempotent: a second executeScript on the same tab won't double-listen.
 if (!window[STUB_GUARD]) {
   window[STUB_GUARD] = true;
   install();
 }
 
-/** Hostnames whose postMessages we'll act on. Mirrors the ATS adapter set. */
 const ATS_HOST_RE = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com)$/i;
 
 type IframePillNeededMsg = { type: 'autofilltool:iframe-pill-needed'; detected: number };
@@ -70,7 +56,6 @@ function install(): void {
         if (typeof data.detected !== 'number') return;
         activeSource = e.source;
         activeOrigin = e.origin;
-        // Ack so iframe stops retrying.
         e.source?.postMessage(
           { type: 'autofilltool:ack' },
           { targetOrigin: e.origin },
@@ -78,8 +63,6 @@ function install(): void {
         showFillTrigger({
           detected: data.detected,
           onFill: () => {
-            // Switch parent pill to filling state immediately so the user gets
-            // feedback even before the iframe's own progress event arrives.
             setFillTriggerFilling();
             activeSource?.postMessage(
               { type: 'autofilltool:fill-request' },
@@ -107,11 +90,52 @@ function install(): void {
         if (e.source !== activeSource) return;
         const stats = coerceCompleteStats(data);
         if (!stats) return;
-        showFillTriggerDone(stats);
+        const callbacks: RemoteReviewCallbacks = {
+          onEnter: (group) => sendToIframe({ type: 'autofilltool:review-enter', group }),
+          onStep: (dir) => sendToIframe({ type: 'autofilltool:review-step', dir }),
+          onExit: () => sendToIframe({ type: 'autofilltool:review-exit' }),
+        };
+        showFillTriggerDone(stats, [], { remote: callbacks });
+        return;
+      }
+
+      case 'autofilltool:review-state': {
+        if (e.source !== activeSource) return;
+        const remote = coerceReviewState(data);
+        if (!remote) return;
+        setRemoteReviewState(remote);
+        return;
+      }
+
+      case 'autofilltool:review-empty': {
+        if (e.source !== activeSource) return;
+        clearRemoteReviewState();
         return;
       }
     }
   });
+
+  function sendToIframe(msg: Record<string, unknown>): void {
+    activeSource?.postMessage(msg, { targetOrigin: activeOrigin ?? '*' });
+  }
+}
+
+const REVIEW_GROUPS = new Set<ReviewGroup>(['filled', 'skipped', 'suggest']);
+
+function coerceReviewState(
+  data: Record<string, unknown>,
+):
+  | { group: ReviewGroup; index: number; total: number; label: string }
+  | null {
+  if (typeof data.group !== 'string' || !REVIEW_GROUPS.has(data.group as ReviewGroup)) return null;
+  if (typeof data.index !== 'number' || typeof data.total !== 'number') return null;
+  if (typeof data.label !== 'string') return null;
+  return {
+    group: data.group as ReviewGroup,
+    index: data.index,
+    total: data.total,
+    label: data.label,
+  };
 }
 
 function coerceCompleteStats(data: Record<string, unknown>): TriggerStats | null {

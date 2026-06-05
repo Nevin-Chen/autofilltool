@@ -1,7 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { __resetAffordanceForTests } from '@/content/affordance';
+import {
+  __resetAffordanceForTests,
+  __clickRemoteChipForTests,
+  __getReviewPaneTextForTests,
+  __pressReviewKeyForTests,
+} from '@/content/affordance';
 
-// Auto-installs the parent-stub message listener once at test-file load.
 import '@/content/parent-stub';
 
 const HOST_ID = 'autofilltool-trigger-host';
@@ -125,7 +129,6 @@ describe('parent-stub — postMessage protocol', () => {
       announcer,
     );
 
-    // Imposter tries to drive the pill state — should be ignored.
     expect(() =>
       dispatchMessage(
         {
@@ -167,5 +170,127 @@ describe('parent-stub — postMessage protocol', () => {
         src,
       ),
     ).not.toThrow();
+  });
+});
+
+describe('parent-stub — remote review round-trip', () => {
+  const origin = 'https://job-boards.greenhouse.io';
+
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  function setupCompletedFill(): { src: Window; postMessage: ReturnType<typeof vi.fn> } {
+    const postMessage = vi.fn();
+    const src = { postMessage } as unknown as Window;
+    dispatchMessage(
+      { type: 'autofilltool:iframe-pill-needed', detected: 5 },
+      origin,
+      src,
+    );
+    dispatchMessage(
+      {
+        type: 'autofilltool:fill-complete',
+        filled: 3,
+        skipped: 2,
+        failed: 0,
+        suggest: 0,
+        adapterId: 'greenhouse',
+        adapterName: 'Greenhouse',
+        resume: 'attached',
+        autoLogging: false,
+      },
+      origin,
+      src,
+    );
+    return { src, postMessage };
+  }
+
+  it('chip click posts review-enter to the iframe with the chosen group', () => {
+    const { postMessage } = setupCompletedFill();
+    expect(__clickRemoteChipForTests('skipped')).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'autofilltool:review-enter', group: 'skipped' },
+      { targetOrigin: origin },
+    );
+  });
+
+  it('review-state from iframe updates the rendered pane counter', () => {
+    const { src } = setupCompletedFill();
+    __clickRemoteChipForTests('skipped');
+    dispatchMessage(
+      {
+        type: 'autofilltool:review-state',
+        group: 'skipped',
+        index: 0,
+        total: 2,
+        label: 'Why us?',
+      },
+      origin,
+      src,
+    );
+    expect(__getReviewPaneTextForTests()).toBe('1 of 2 · Why us?');
+  });
+
+  it('arrow key on pane posts review-step with direction', () => {
+    const { postMessage, src } = setupCompletedFill();
+    __clickRemoteChipForTests('skipped');
+    dispatchMessage(
+      {
+        type: 'autofilltool:review-state',
+        group: 'skipped',
+        index: 0,
+        total: 2,
+        label: 'a',
+      },
+      origin,
+      src,
+    );
+    __pressReviewKeyForTests('ArrowRight');
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'autofilltool:review-step', dir: 1 },
+      { targetOrigin: origin },
+    );
+  });
+
+  it('review-empty from iframe drops the pane back to chips view', () => {
+    const { src } = setupCompletedFill();
+    __clickRemoteChipForTests('skipped');
+    dispatchMessage(
+      {
+        type: 'autofilltool:review-state',
+        group: 'skipped',
+        index: 0,
+        total: 2,
+        label: 'a',
+      },
+      origin,
+      src,
+    );
+    expect(__getReviewPaneTextForTests()).not.toBeNull();
+    dispatchMessage({ type: 'autofilltool:review-empty' }, origin, src);
+    expect(__getReviewPaneTextForTests()).toBeNull();
+  });
+
+  it('review-state from a non-active source is ignored', () => {
+    setupCompletedFill();
+    const imposter = { postMessage: vi.fn() } as unknown as Window;
+    __clickRemoteChipForTests('skipped');
+    dispatchMessage(
+      {
+        type: 'autofilltool:review-state',
+        group: 'skipped',
+        index: 0,
+        total: 2,
+        label: 'spoofed',
+      },
+      origin,
+      imposter,
+    );
+    expect(__getReviewPaneTextForTests()).toMatch(/Loading…/);
   });
 });
