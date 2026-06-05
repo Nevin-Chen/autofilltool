@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { attachFile } from '@/content/filler';
+import { attachFile, isFileAlreadyAttached } from '@/content/filler';
 import { findResumeInput } from '@/adapters/generic';
 
 function makeFile(name = 'resume.pdf'): File {
@@ -109,5 +109,61 @@ describe('findResumeInput', () => {
     `;
     const found = findResumeInput(document);
     expect(found).toBeNull();
+  });
+});
+
+describe('isFileAlreadyAttached', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('returns false when no file inputs exist', () => {
+    expect(isFileAlreadyAttached(document, makeFile())).toBe(false);
+  });
+
+  it('returns false when every file input is empty', () => {
+    document.body.innerHTML = `
+      <input type="file" name="resume" />
+      <input type="file" name="cv" />
+    `;
+    expect(isFileAlreadyAttached(document, makeFile())).toBe(false);
+  });
+
+  it('returns true when one input holds a file matching name AND size', () => {
+    const original = document.createElement('input');
+    original.type = 'file';
+    document.body.appendChild(original);
+    attachFile(original, makeFile('resume.pdf'), { forceOverwrite: false });
+
+    // The page swaps the original input for a fresh one (Greenhouse pattern).
+    const swapped = document.createElement('input');
+    swapped.type = 'file';
+    swapped.id = 'fresh';
+    document.body.appendChild(swapped);
+
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(true);
+  });
+
+  it('returns false when the populated input holds a different filename', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    document.body.appendChild(input);
+    attachFile(input, makeFile('cover-letter.pdf'), { forceOverwrite: false });
+
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(false);
+  });
+
+  it('returns false when name matches but size differs (different document)', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    document.body.appendChild(input);
+    const bigger = new File(
+      [new Uint8Array([1, 2, 3, 4, 5, 6])],
+      'resume.pdf',
+      { type: 'application/pdf' },
+    );
+    attachFile(input, bigger, { forceOverwrite: false });
+
+    expect(isFileAlreadyAttached(document, makeFile('resume.pdf'))).toBe(false);
   });
 });

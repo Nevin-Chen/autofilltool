@@ -9,7 +9,12 @@ import { log } from '@/lib/logger';
 import { isExtensionContextValid } from '@/lib/context';
 import { isRequestMessage, type FillActionWire } from '@/types/messages';
 import { pickAdapter } from './detector';
-import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
+import {
+  fillField,
+  fillVirtualizedDropdown,
+  isFileAlreadyAttached,
+  type FillAction,
+} from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -79,33 +84,72 @@ if (window.__autofilltool_loaded__) {
 
 /**
  * Proactively offer the in-page "Fill this page" trigger when the page looks
- * like a job application. Retries a couple of times because ATS forms often
- * render after first paint (SPA hydration); stops as soon as it shows or the
- * page clearly has no form.
+ * like a job application. Starts with a few quick polls because most ATS forms
+ * render shortly after first paint, then falls through to a bounded
+ * MutationObserver pass for late-hydrating React apps (e.g. the new Greenhouse
+ * embed on `job-boards.greenhouse.io/embed/job_app?...`, where the form can
+ * mount well after our last poll). Stops on first success or after the cap.
  */
+const TRIGGER_OBSERVE_MS = 30_000;
+const TRIGGER_OBSERVE_DEBOUNCE_MS = 250;
+
 async function maybeShowTrigger(): Promise<void> {
-  const delays = [0, 800, 2000];
-  for (const delay of delays) {
-    if (delay) await sleep(delay);
+  const tryDetect = (): boolean => {
     try {
       const url = new URL(location.href);
       const adapter = pickAdapter(url, document);
       const fields = adapter.detectFields(document);
-      if (fields.length > 0) {
-        if (IS_IFRAME) {
-          notifyParentOfFields(fields.length, () => void triggerInPageFill());
-        } else {
-          showFillTrigger({
-            detected: fields.length,
-            onFill: () => void triggerInPageFill(),
-          });
-        }
-        return;
+      if (fields.length === 0) return false;
+      if (IS_IFRAME) {
+        notifyParentOfFields(fields.length, () => void triggerInPageFill());
+      } else {
+        showFillTrigger({
+          detected: fields.length,
+          onFill: () => void triggerInPageFill(),
+        });
       }
+      return true;
     } catch (err) {
       log.warn('trigger detection failed', err);
+      return false;
     }
+  };
+
+  for (const delay of [0, 800, 2000]) {
+    if (delay) await sleep(delay);
+    if (tryDetect()) return;
   }
+
+  // Late-hydration fallback: watch document.body for added/removed input-bearing
+  // nodes and re-detect on settle. Bounded by TRIGGER_OBSERVE_MS so a page with
+  // a constant stream of unrelated mutations doesn't keep us observing forever.
+  await observeForTrigger(tryDetect);
+}
+
+function observeForTrigger(tryDetect: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    const body = document.body ?? document.documentElement;
+    let timer: number | null = null;
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      if (timer !== null) clearTimeout(timer);
+      clearTimeout(cap);
+      resolve();
+    };
+    const observer = new MutationObserver(() => {
+      // Debounce: a hydrating React tree fires hundreds of mutations; only
+      // run detection once it settles for TRIGGER_OBSERVE_DEBOUNCE_MS.
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (tryDetect()) finish();
+      }, TRIGGER_OBSERVE_DEBOUNCE_MS) as unknown as number;
+    });
+    observer.observe(body, { childList: true, subtree: true });
+    const cap = setTimeout(finish, TRIGGER_OBSERVE_MS);
+  });
 }
 
 /** In-page button handler: show the filling state, then run the real fill. */
@@ -337,24 +381,38 @@ async function runFill(forceFromMsg?: boolean) {
     'noResume';
   if (resume) {
     if (adapter.fillResume) {
-      try {
-        const file = resumeRecordToFile(resume);
-        const ok = await adapter.fillResume(file, document);
-        resumeStatus = ok ? 'attached' : 'notFound';
+      const file = resumeRecordToFile(resume);
+      // Defend against repeat fills: Greenhouse (and other React-driven ATSes)
+      // can swap the original <input type="file"> for a fresh empty one after
+      // attach, which slips past attachFile's per-slot check and re-attaches
+      // the same résumé. Scan every file input on the page instead.
+      if (isFileAlreadyAttached(document, file)) {
+        resumeStatus = 'skipped';
         actions.push({
           label: 'Resume',
           kind: 'resume',
-          status: ok ? 'filled' : 'skipped',
-          note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+          status: 'skipped',
+          note: 'already attached',
         });
-      } catch (err) {
-        resumeStatus = 'notFound';
-        actions.push({
-          label: 'Resume',
-          kind: 'resume',
-          status: 'error',
-          note: err instanceof Error ? err.message : String(err),
-        });
+      } else {
+        try {
+          const ok = await adapter.fillResume(file, document);
+          resumeStatus = ok ? 'attached' : 'notFound';
+          actions.push({
+            label: 'Resume',
+            kind: 'resume',
+            status: ok ? 'filled' : 'skipped',
+            note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+          });
+        } catch (err) {
+          resumeStatus = 'notFound';
+          actions.push({
+            label: 'Resume',
+            kind: 'resume',
+            status: 'error',
+            note: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     } else {
       resumeStatus = 'noHook';
