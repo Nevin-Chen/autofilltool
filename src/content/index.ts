@@ -1,10 +1,3 @@
-/**
- * Content-script entry point. Loaded via manifest matches (curated ATS list)
- * and re-injected on demand with `allFrames: true` when the user clicks Fill.
- * A window-level guard short-circuits the second pass so the onMessage listener
- * registers once — otherwise we'd respond to every message twice.
- */
-
 import { log } from '@/lib/logger';
 import { isExtensionContextValid } from '@/lib/context';
 import { isRequestMessage, type FillActionWire } from '@/types/messages';
@@ -25,8 +18,11 @@ import {
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
+  nextConnected,
+  spotlight,
   type TriggerStats,
   type ReviewableField,
+  type ReviewGroup,
 } from './affordance';
 import { installSuggestButtons, aiConfigured } from './suggest';
 import { extractJobContext } from './job-context';
@@ -41,27 +37,17 @@ import {
   prefersReducedMotion,
 } from './fill-anim';
 
-/**
- * In an embedded ATS iframe (e.g. job-boards.greenhouse.io inside
- * spotandtango.com) we can't render a viewport-fixed pill — position:fixed
- * anchors to the iframe's own viewport. Instead we postMessage the parent
- * page where parent-stub.ts has installed a listener that mounts the pill
- * on the real viewport. Pill state messages flow iframe → parent; click
- * events flow parent → iframe (`autofilltool:fill-request`) and trigger
- * the same runFill that the local pill click would.
- */
 const IS_IFRAME = (() => {
   try {
     return window.top !== window.self;
   } catch {
-    return true; // cross-origin top can throw — treat as iframe.
+    return true;
   }
 })();
 
 const PARENT_RETRY_MS = 500;
 const PARENT_MAX_RETRIES = 5;
 let parentAckReceived = false;
-/** Pending click handler the parent will trigger via fill-request postMessage. */
 let pendingParentFillHandler: (() => void) | null = null;
 
 declare global {
@@ -70,7 +56,6 @@ declare global {
   }
 }
 
-// Skip re-init on re-injection; the first load's listener stays live.
 if (window.__autofilltool_loaded__) {
   log.debug('content script re-injected; skipping second init on', location.href);
 } else {
@@ -82,14 +67,6 @@ if (window.__autofilltool_loaded__) {
   log.debug('content script loaded on', location.href);
 }
 
-/**
- * Proactively offer the in-page "Fill this page" trigger when the page looks
- * like a job application. Starts with a few quick polls because most ATS forms
- * render shortly after first paint, then falls through to a bounded
- * MutationObserver pass for late-hydrating React apps (e.g. the new Greenhouse
- * embed on `job-boards.greenhouse.io/embed/job_app?...`, where the form can
- * mount well after our last poll). Stops on first success or after the cap.
- */
 const TRIGGER_OBSERVE_MS = 30_000;
 const TRIGGER_OBSERVE_DEBOUNCE_MS = 250;
 
@@ -120,9 +97,6 @@ async function maybeShowTrigger(): Promise<void> {
     if (tryDetect()) return;
   }
 
-  // Late-hydration fallback: watch document.body for added/removed input-bearing
-  // nodes and re-detect on settle. Bounded by TRIGGER_OBSERVE_MS so a page with
-  // a constant stream of unrelated mutations doesn't keep us observing forever.
   await observeForTrigger(tryDetect);
 }
 
@@ -140,8 +114,6 @@ function observeForTrigger(tryDetect: () => boolean): Promise<void> {
       resolve();
     };
     const observer = new MutationObserver(() => {
-      // Debounce: a hydrating React tree fires hundreds of mutations; only
-      // run detection once it settles for TRIGGER_OBSERVE_DEBOUNCE_MS.
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         if (tryDetect()) finish();
@@ -152,7 +124,6 @@ function observeForTrigger(tryDetect: () => boolean): Promise<void> {
   });
 }
 
-/** In-page button handler: show the filling state, then run the real fill. */
 async function triggerInPageFill(): Promise<void> {
   if (!isExtensionContextValid()) {
     notifyInvalidContext();
@@ -162,10 +133,6 @@ async function triggerInPageFill(): Promise<void> {
   try {
     await runFill();
   } catch (err) {
-    // The most common cause of a thrown runFill is mid-flight context
-    // invalidation (Vite watch rebuild while a page was open). Detect it and
-    // surface a clear "refresh the page" notice instead of leaving the pill
-    // stuck on "Filling…".
     if (!isExtensionContextValid()) {
       notifyInvalidContext();
       return;
@@ -174,26 +141,17 @@ async function triggerInPageFill(): Promise<void> {
   }
 }
 
-/**
- * Tear down the stale pill and toast a refresh hint. Cheap try/catches because
- * once the context is gone, even DOM-only helpers can race with page teardown.
- */
 function notifyInvalidContext(): void {
   try {
     removeFillTrigger();
   } catch {
-    /* noop */
   }
   try {
     showNoticeToast('AutoFillTool was updated — refresh this page to continue.');
   } catch {
-    /* noop */
   }
 }
 
-/* ----------------------------------------- parent-page relay (iframe only) */
-
-/** Send `iframe-pill-needed` to the parent page with bounded retries until ack. */
 function notifyParentOfFields(detected: number, onFill: () => void): void {
   pendingParentFillHandler = onFill;
   parentAckReceived = false;
@@ -214,12 +172,15 @@ function notifyParentOfFields(detected: number, onFill: () => void): void {
   send();
 }
 
-/** Listen for ack + fill-request from the parent page. */
+let lastReviewItems: ReviewableField[] = [];
+let iframeReviewState: { group: ReviewGroup; index: number } | null = null;
+const REVIEW_GROUPS: ReadonlyArray<ReviewGroup> = ['filled', 'skipped', 'suggest'];
+
 function installParentMessageListener(): void {
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
     if (typeof e.data !== 'object' || e.data === null) return;
-    const data = e.data as { type?: unknown };
+    const data = e.data as { type?: unknown; group?: unknown; dir?: unknown };
     if (typeof data.type !== 'string') return;
     if (data.type === 'autofilltool:ack') {
       parentAckReceived = true;
@@ -229,10 +190,64 @@ function installParentMessageListener(): void {
       pendingParentFillHandler?.();
       return;
     }
+    if (data.type === 'autofilltool:review-enter') {
+      if (typeof data.group === 'string' && (REVIEW_GROUPS as ReadonlyArray<string>).includes(data.group)) {
+        iframeEnterReview(data.group as ReviewGroup);
+      }
+      return;
+    }
+    if (data.type === 'autofilltool:review-step') {
+      if (data.dir === 1 || data.dir === -1) iframeStepReview(data.dir);
+      return;
+    }
+    if (data.type === 'autofilltool:review-exit') {
+      iframeReviewState = null;
+      return;
+    }
   });
 }
 
-/** Pill-state setters that route to either the local affordance or the parent. */
+function iframeEnterReview(group: ReviewGroup): void {
+  const items = lastReviewItems.filter((i) => i.group === group);
+  const first = nextConnected(items, -1, 1);
+  if (first === -1) {
+    postToParent({ type: 'autofilltool:review-empty' });
+    return;
+  }
+  iframeReviewState = { group, index: first };
+  const item = items[first]!;
+  spotlight(item.el);
+  postToParent({
+    type: 'autofilltool:review-state',
+    group,
+    index: first,
+    total: items.length,
+    label: item.label,
+  });
+}
+
+function iframeStepReview(dir: 1 | -1): void {
+  if (!iframeReviewState) return;
+  const group = iframeReviewState.group;
+  const items = lastReviewItems.filter((i) => i.group === group);
+  const next = nextConnected(items, iframeReviewState.index, dir);
+  if (next === -1) {
+    iframeReviewState = null;
+    postToParent({ type: 'autofilltool:review-empty' });
+    return;
+  }
+  iframeReviewState.index = next;
+  const item = items[next]!;
+  spotlight(item.el);
+  postToParent({
+    type: 'autofilltool:review-state',
+    group,
+    index: next,
+    total: items.length,
+    label: item.label,
+  });
+}
+
 function pillFilling(): void {
   if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-started' });
   else setFillTriggerFilling();
@@ -244,8 +259,6 @@ function pillProgress(done: number, total: number): void {
 }
 
 function pillDone(stats: TriggerStats, items: ReviewableField[]): void {
-  // Items hold live element refs that can't cross the iframe→parent boundary,
-  // so the parent path is counts-only; the iframe loses chip-as-button review.
   if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-complete', ...stats });
   else showFillTriggerDone(stats, items);
 }
@@ -262,11 +275,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * On load, handle the full-navigation submit case: if a webhook is configured
- * and this looks like a confirmation page following a recent fill, log it.
- * No-op otherwise. Cheap: bails right after the settings check when disabled.
- */
 async function maybeAutoLogOnLoad(): Promise<void> {
   try {
     const settings = await getSettings();
@@ -284,7 +292,6 @@ function initialize(): void {
     if (!isRequestMessage(msg)) return false;
 
     if (msg.type === 'PING') {
-      // Background uses this to detect whether we're already injected.
       sendResponse({ ok: true, value: { pong: true, at: new Date().toISOString() } });
       return true;
     }
@@ -297,11 +304,10 @@ function initialize(): void {
           sendResponse({ ok: false, error });
         },
       );
-      return true; // we'll respond async
+      return true;
     }
 
     if (msg.type === 'SHOW_NOTICE') {
-      // Background sends this to the top frame (e.g. "no form detected").
       try {
         showNoticeToast(msg.text);
         sendResponse({ ok: true, value: { shown: true } });
@@ -345,9 +351,7 @@ async function runFill(forceFromMsg?: boolean) {
     const field = fields[i]!;
     const value = valueForField(profile, field.kind);
     let action: FillAction;
-    // Virtualised dropdowns need the async click-popup-click flow; rest are sync.
     if (field.widget === 'virtualizedDropdown') {
-      // eslint-disable-next-line no-await-in-loop -- dropdowns are sequential by design
       action = await fillVirtualizedDropdown(field, value, { suppressFlash: animate });
     } else {
       action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
@@ -362,13 +366,12 @@ async function runFill(forceFromMsg?: boolean) {
     }
 
     if (animate) {
-      if (!isCurrentRun(runId)) break; // superseded by a new fill
+      if (!isCurrentRun(runId)) break;
       if (action.status === 'filled' && field.el instanceof HTMLElement) {
         applyFlash(field.el);
       }
       pillProgress(i + 1, fields.length);
       if (i < fields.length - 1) {
-        // eslint-disable-next-line no-await-in-loop -- per-field stagger is the feature
         await delay(FILL_ANIM.STAGGER_MS);
       }
     }
@@ -376,16 +379,11 @@ async function runFill(forceFromMsg?: boolean) {
 
   if (animate) await delay(FILL_ANIM.SETTLE_MS);
 
-  // Resume attaches after text fields so visibility-toggling listeners settle.
   let resumeStatus: 'attached' | 'skipped' | 'notFound' | 'noResume' | 'noHook' =
     'noResume';
   if (resume) {
     if (adapter.fillResume) {
       const file = resumeRecordToFile(resume);
-      // Defend against repeat fills: Greenhouse (and other React-driven ATSes)
-      // can swap the original <input type="file"> for a fresh empty one after
-      // attach, which slips past attachFile's per-slot check and re-attaches
-      // the same résumé. Scan every file input on the page instead.
       if (isFileAlreadyAttached(document, file)) {
         resumeStatus = 'skipped';
         actions.push({
@@ -432,9 +430,6 @@ async function runFill(forceFromMsg?: boolean) {
 
   const ctx = extractJobContext(document, url);
 
-  // Inject ✨ Suggest buttons next to open-ended textareas (idempotent). Pull
-  // jobDescription from the adapter for prompt context, guarded so a crashed
-  // Readability run doesn't kill suggest setup.
   try {
     try {
       ctx.jobDescription = adapter.getJobDescription(document) || '';
@@ -446,8 +441,6 @@ async function runFill(forceFromMsg?: boolean) {
     log.warn('suggest-button injection failed', err);
   }
 
-  // Watch for the user's real submit and auto-log it to history/sheet when a
-  // webhook is configured. No webhook → no auto-log (and no observer overhead).
   if (settings.tracking.webhookUrl) {
     try {
       installSubmitWatch({ adapter, ctx, onLogged: showLoggedToast });
@@ -456,8 +449,6 @@ async function runFill(forceFromMsg?: boolean) {
     }
   }
 
-  // Open-ended fields that still want a human/AI answer — surfaced as the
-  // "✨ N to Suggest" chip, only when an AI provider is configured.
   const suggestFields = aiConfigured(settings)
     ? fields.filter(
         (f) =>
@@ -472,10 +463,9 @@ async function runFill(forceFromMsg?: boolean) {
     }
   }
 
-  // Drive the unified in-page affordance into its results state — in an
-  // iframe this becomes a postMessage to the parent-stub. Never block the
-  // response on it.
   try {
+    lastReviewItems = reviewItems;
+    iframeReviewState = null;
     pillDone(
       {
         filled,
