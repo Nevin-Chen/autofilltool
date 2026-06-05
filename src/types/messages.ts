@@ -1,29 +1,14 @@
-/**
- * All cross-context messages flow through one discriminated union so the
- * compiler keeps request/response shapes in sync across content scripts, the
- * popup, the options page, and the service worker.
- */
-
 import type { Profile, Settings, SubmissionRecord } from '@/profile/schema';
-
-/* ------------------------------------------------------------ Requests */
 
 export type GetProfileMsg = { type: 'GET_PROFILE' };
 export type GetSettingsMsg = { type: 'GET_SETTINGS' };
 export type PingMsg = { type: 'PING' };
-
-/** Asks the active tab's content script to run a fill pass. */
 export type FillPageMsg = {
   type: 'FILL_PAGE';
   tabId: number;
   options?: { forceOverwrite?: boolean };
 };
 
-/**
- * Records a "submitted this application" click. The worker appends to history
- * and POSTs to the webhook if configured. Only `source`/`status` are required;
- * the worker fills id/timestamp and the rest may be empty.
- */
 export type LogSubmissionMsg = {
   type: 'LOG_SUBMISSION';
   record: {
@@ -38,16 +23,10 @@ export type LogSubmissionMsg = {
   };
 };
 
-/** Reads the recent submission history for the popup. */
 export type GetHistoryMsg = { type: 'GET_HISTORY'; limit?: number };
-
-/** Fires a tiny test payload at the configured webhook for the Options page. */
+export type ClearHistoryMsg = { type: 'CLEAR_HISTORY' };
 export type TestWebhookMsg = { type: 'TEST_WEBHOOK' };
 
-/**
- * Asks a content script (sent to the top frame) to show a transient in-page
- * notice — e.g. "No application form detected". Presentational only.
- */
 export type ShowNoticeMsg = { type: 'SHOW_NOTICE'; text: string };
 
 export type RequestMessage =
@@ -57,10 +36,9 @@ export type RequestMessage =
   | FillPageMsg
   | LogSubmissionMsg
   | GetHistoryMsg
+  | ClearHistoryMsg
   | TestWebhookMsg
   | ShowNoticeMsg;
-
-/* ------------------------------------------------------------ Responses */
 
 export type Ok<T> = { ok: true; value: T };
 export type Err = { ok: false; error: string };
@@ -81,25 +59,20 @@ export type FillPageResponse = Result<{
   skipped: number;
   failed: number;
   total: number;
-  /**
-   * Candidate fields the adapter detected (summed across frames). DISTINCT from
-   * `total` (filled+skipped+… actions, incl. resume). Zero => no form on the
-   * page (US3 s3); >0 with filled=0 is a normal "all pre-filled" completion.
-   */
   fieldsDetected: number;
   actions: FillActionWire[];
 }>;
 export type LogSubmissionResponse = Result<{
   stored: true;
-  posted: boolean; // did we POST to the webhook?
-  webhookError?: string; // if posted=false because the webhook failed
+  posted: boolean;
+  webhookError?: string;
   record: SubmissionRecord;
 }>;
 export type GetHistoryResponse = Result<SubmissionRecord[]>;
+export type ClearHistoryResponse = Result<{ cleared: true }>;
 export type TestWebhookResponse = Result<{ status: number }>;
 export type ShowNoticeResponse = Result<{ shown: boolean }>;
 
-/** Maps each request type to its response type. */
 export interface MessageMap {
   GET_PROFILE: GetProfileResponse;
   GET_SETTINGS: GetSettingsResponse;
@@ -107,13 +80,12 @@ export interface MessageMap {
   FILL_PAGE: FillPageResponse;
   LOG_SUBMISSION: LogSubmissionResponse;
   GET_HISTORY: GetHistoryResponse;
+  CLEAR_HISTORY: ClearHistoryResponse;
   TEST_WEBHOOK: TestWebhookResponse;
   SHOW_NOTICE: ShowNoticeResponse;
 }
 
 export type ResponseFor<M extends RequestMessage> = MessageMap[M['type']];
-
-/* --------------------------------------------------------- Type guards */
 
 export function isRequestMessage(value: unknown): value is RequestMessage {
   if (!value || typeof value !== 'object') return false;
@@ -125,6 +97,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'FILL_PAGE' ||
     t === 'LOG_SUBMISSION' ||
     t === 'GET_HISTORY' ||
+    t === 'CLEAR_HISTORY' ||
     t === 'TEST_WEBHOOK' ||
     t === 'SHOW_NOTICE'
   );
