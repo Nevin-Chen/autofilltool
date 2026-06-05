@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "0.12.0",
+  "version": "1.0.0",
   "description": "Local-first autofill for online job applications. You stay in control of submission.",
   "minimum_chrome_version": "116",
-  "permissions": ["storage", "scripting", "activeTab", "webNavigation"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "webNavigation"
+  ],
   "host_permissions": [
     "https://*.greenhouse.io/*",
     "https://boards.greenhouse.io/*",
@@ -58,25 +63,39 @@
         "https://jobs.ashbyhq.com/*",
         "https://*.myworkdayjobs.com/*"
       ],
-      "js": ["src/content/index.ts"],
+      "js": [
+        "src/content/index.ts"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
     {
-      "matches": ["https://aft-parent-stub-bundle-marker.invalid/*"],
-      "js": ["src/content/parent-stub.ts"],
+      "matches": [
+        "https://aft-parent-stub-bundle-marker.invalid/*"
+      ],
+      "js": [
+        "src/content/parent-stub.ts"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     },
     {
-      "resources": ["pdf.worker.mjs"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "pdf.worker.mjs"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
