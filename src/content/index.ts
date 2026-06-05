@@ -352,7 +352,10 @@ async function runFill(forceFromMsg?: boolean) {
     const value = valueForField(profile, field.kind);
     let action: FillAction;
     if (field.widget === 'virtualizedDropdown') {
-      action = await fillVirtualizedDropdown(field, value, { suppressFlash: animate });
+      action = await fillVirtualizedDropdown(field, value, {
+        forceOverwrite,
+        suppressFlash: animate,
+      });
     } else {
       action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
     }
@@ -417,9 +420,10 @@ async function runFill(forceFromMsg?: boolean) {
     }
   }
 
-  const filled = actions.filter((a) => a.status === 'filled').length;
-  const skipped = actions.filter((a) => a.status === 'skipped').length;
-  const failed = actions.filter(
+  const fieldActions = actions.filter((a) => a.kind !== 'resume');
+  const filled = fieldActions.filter((a) => a.status === 'filled').length;
+  const skipped = fieldActions.filter((a) => a.status === 'skipped').length;
+  const failed = fieldActions.filter(
     (a) => a.status === 'error' || a.status === 'unsupported',
   ).length;
 

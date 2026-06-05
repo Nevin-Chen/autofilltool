@@ -585,8 +585,9 @@ const SPOTLIGHT_SHADOW =
   '0 0 0 2px rgba(56,189,248,0.95), 0 0 10px 3px rgba(56,189,248,0.5)';
 export function spotlight(el: HTMLElement): void {
   try {
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    const style = el.style;
+    const target = visibleAnchor(el);
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const style = target.style;
     const prevShadow = style.boxShadow;
     const prevTransition = style.transition;
     style.transition = `box-shadow 400ms ease-out`;
@@ -605,6 +606,19 @@ export function spotlight(el: HTMLElement): void {
     }, SPOTLIGHT_MS);
   } catch {
   }
+}
+
+const MIN_ANCHOR_WIDTH = 32;
+const MIN_ANCHOR_HEIGHT = 16;
+function visibleAnchor(el: HTMLElement): HTMLElement {
+  let cursor: HTMLElement = el;
+  for (let depth = 0; depth < 5; depth++) {
+    const rect = cursor.getBoundingClientRect();
+    if (rect.width >= MIN_ANCHOR_WIDTH && rect.height >= MIN_ANCHOR_HEIGHT) return cursor;
+    if (!cursor.parentElement) break;
+    cursor = cursor.parentElement;
+  }
+  return cursor;
 }
 
 function truncate(s: string, max: number): string {
@@ -674,7 +688,7 @@ function buildStyle(): HTMLStyleElement {
     .sub { color: #94a3b8; font-size: 12.5px; }
     .sub.light { color: #cbd5e1; }
     .sub strong { color: #cbd5e1; }
-    .chips { display: flex; justify-content: space-around; }
+    .chips { display: flex; flex-wrap: wrap; row-gap: 4px; }
     .chip {
       font-size: 11.5px; padding: 2px 7px; border-radius: 999px;
       background: rgba(255,255,255,0.06); color: #cbd5e1; font-weight: 600;
