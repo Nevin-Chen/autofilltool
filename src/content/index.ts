@@ -9,7 +9,12 @@ import { log } from '@/lib/logger';
 import { isExtensionContextValid } from '@/lib/context';
 import { isRequestMessage, type FillActionWire } from '@/types/messages';
 import { pickAdapter } from './detector';
-import { fillField, fillVirtualizedDropdown, type FillAction } from './filler';
+import {
+  fillField,
+  fillVirtualizedDropdown,
+  isFileAlreadyAttached,
+  type FillAction,
+} from './filler';
 import { valueForField } from './mapping';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -337,24 +342,38 @@ async function runFill(forceFromMsg?: boolean) {
     'noResume';
   if (resume) {
     if (adapter.fillResume) {
-      try {
-        const file = resumeRecordToFile(resume);
-        const ok = await adapter.fillResume(file, document);
-        resumeStatus = ok ? 'attached' : 'notFound';
+      const file = resumeRecordToFile(resume);
+      // Defend against repeat fills: Greenhouse (and other React-driven ATSes)
+      // can swap the original <input type="file"> for a fresh empty one after
+      // attach, which slips past attachFile's per-slot check and re-attaches
+      // the same résumé. Scan every file input on the page instead.
+      if (isFileAlreadyAttached(document, file)) {
+        resumeStatus = 'skipped';
         actions.push({
           label: 'Resume',
           kind: 'resume',
-          status: ok ? 'filled' : 'skipped',
-          note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+          status: 'skipped',
+          note: 'already attached',
         });
-      } catch (err) {
-        resumeStatus = 'notFound';
-        actions.push({
-          label: 'Resume',
-          kind: 'resume',
-          status: 'error',
-          note: err instanceof Error ? err.message : String(err),
-        });
+      } else {
+        try {
+          const ok = await adapter.fillResume(file, document);
+          resumeStatus = ok ? 'attached' : 'notFound';
+          actions.push({
+            label: 'Resume',
+            kind: 'resume',
+            status: ok ? 'filled' : 'skipped',
+            note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+          });
+        } catch (err) {
+          resumeStatus = 'notFound';
+          actions.push({
+            label: 'Resume',
+            kind: 'resume',
+            status: 'error',
+            note: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     } else {
       resumeStatus = 'noHook';
