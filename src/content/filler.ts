@@ -27,6 +27,26 @@ export type AttachAction = {
 };
 
 /**
+ * True when any `<input type="file">` on the page already holds a file
+ * matching `file` by name AND size. Defends against repeat fills on ATSes
+ * (notably Greenhouse) that swap the original input for a fresh empty one
+ * after attach — the per-slot `files.length` guard in `attachFile` then
+ * misses it and we'd re-attach the same résumé to a different input.
+ */
+export function isFileAlreadyAttached(root: Document, file: File): boolean {
+  const inputs = root.querySelectorAll<HTMLInputElement>('input[type="file"]');
+  for (const input of Array.from(inputs)) {
+    const files = input.files;
+    if (!files || files.length === 0) continue;
+    for (let i = 0; i < files.length; i++) {
+      const f = files.item(i);
+      if (f && f.name === file.name && f.size === file.size) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Attach a File to an <input type="file">. `.value` can't be set on file
  * inputs, so build a DataTransfer, assign its files, then dispatch `change`.
  * Skips when the input already has a file unless forceOverwrite is true.

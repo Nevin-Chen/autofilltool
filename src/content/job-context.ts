@@ -65,13 +65,42 @@ function extractCompany(doc: Document, url: URL): string {
   const fromLd = readJobPostingLd(doc);
   if (fromLd?.company) return fromLd.company;
 
-  // OpenGraph site_name is usually the company.
+  // ATS host heuristics run BEFORE og:site_name because embedded ATS iframes
+  // (e.g. Greenhouse mounted inside a company career page) set og:site_name to
+  // generic template text like "Embed". The URL path/subdomain is the
+  // reliable signal in those cases.
+  const fromAts = companyFromAtsUrl(url);
+  if (fromAts) return fromAts;
+
+  // OpenGraph site_name is usually the company on company-owned posting pages.
   const og = metaContent(doc, 'meta[property="og:site_name"]');
   if (og) return og.trim();
 
-  // ATS host heuristics — company is the first path segment (Greenhouse/Lever/
-  // Ashby) or the subdomain (Workday).
+  // Fallback: document title's "Role — Company" pattern.
+  const t = doc.title;
+  const m = t.match(/^(.+?)\s*[|\-–—]\s*(.+)$/);
+  if (m?.[2]) return cleanTitle(m[2]);
+
+  return '';
+}
+
+/**
+ * Pull the company slug out of a known ATS URL: first path segment for
+ * Greenhouse / Lever / Ashby, hostname subdomain for Workday. Returns null on
+ * miss so the caller can fall through to lower-confidence signals.
+ *
+ * Greenhouse special case: the embed-widget posting URL is
+ * `boards.greenhouse.io/embed/job_app?for={company}&token={id}`, where the
+ * first path segment is the literal "embed" and the company lives in the
+ * `for` query param. Without this, the iframe would surface "Embed" as the
+ * company.
+ */
+function companyFromAtsUrl(url: URL): string | null {
   if (url.hostname.endsWith('greenhouse.io')) {
+    if (url.pathname.startsWith('/embed/')) {
+      const forParam = url.searchParams.get('for');
+      return forParam ? titleCase(forParam.replace(/-/g, ' ')) : null;
+    }
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
@@ -87,13 +116,7 @@ function extractCompany(doc: Document, url: URL): string {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
-
-  // Fallback: document title's "Role — Company" pattern.
-  const t = doc.title;
-  const m = t.match(/^(.+?)\s*[|\-–—]\s*(.+)$/);
-  if (m?.[2]) return cleanTitle(m[2]);
-
-  return '';
+  return null;
 }
 
 /* -------------------------------------------------------------- JSON-LD */

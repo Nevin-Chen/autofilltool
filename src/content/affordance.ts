@@ -383,6 +383,8 @@ function resumeLine(state_: TriggerResume): HTMLElement | null {
   switch (state_) {
     case 'attached':
       return h('div', { class: 'sub' }, [chip('ok', 'Resume attached')]);
+    case 'skipped':
+      return h('div', { class: 'sub' }, [chip('ok', 'Resume already attached')]);
     case 'notFound':
       return h('div', { class: 'sub' }, [chip('skip', 'Resume: no slot on this page')]);
     default:
