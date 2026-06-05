@@ -78,12 +78,18 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  for (const el of Array.from(
+  const allCombos = Array.from(
     root.querySelectorAll<HTMLElement>(
       '[role="combobox"], [aria-haspopup="listbox"]',
     ),
-  )) {
+  );
+  const innermost = allCombos.filter(
+    (el) => !allCombos.some((other) => other !== el && el.contains(other)),
+  );
+  for (const el of innermost) {
     if (seen.has(el)) continue;
+
+    if (isInsidePhoneWidget(el)) continue;
     const ctx = collectContext(el);
     const hinted = LABEL_HINTS.find((h) => h.re.test(ctx.label) || h.re.test(ctx.haystack));
     const classified = hinted ?? classifyByHeuristics(el, ctx);
@@ -115,7 +121,44 @@ function detectFields(root: Document): DetectedField[] {
     out.push({ el, kind: classified.kind, label: ctx.label, confidence: classified.confidence });
   }
 
+  return sortByDomOrder(dedupeByKind(out));
+}
+
+function sortByDomOrder(fields: DetectedField[]): DetectedField[] {
+  return [...fields].sort((a, b) => {
+    const pos = a.el.compareDocumentPosition(b.el);
+    if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+}
+
+function dedupeByKind(fields: DetectedField[]): DetectedField[] {
+  const idxByKind = new Map<FieldKind, number>();
+  const out: DetectedField[] = [];
+  for (const f of fields) {
+    if (f.kind === 'openEnded') {
+      out.push(f);
+      continue;
+    }
+    const existingIdx = idxByKind.get(f.kind);
+    if (existingIdx === undefined) {
+      idxByKind.set(f.kind, out.length);
+      out.push(f);
+      continue;
+    }
+    const existing = out[existingIdx]!;
+    if (score(f) > score(existing)) out[existingIdx] = f;
+  }
   return out;
+}
+
+function score(f: DetectedField): number {
+  return (f.widget === 'virtualizedDropdown' ? 1 : 0) + f.confidence;
+}
+
+function isInsidePhoneWidget(el: HTMLElement): boolean {
+  return !!el.closest('[class*="phone-input" i], [class*="iti__"]');
 }
 
 async function fillResume(file: File, root: Document): Promise<boolean> {

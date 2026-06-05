@@ -202,6 +202,185 @@ describe('greenhouseAdapter — new redesign fixture', () => {
     expect(combo?.widget).toBe('virtualizedDropdown');
     expect(combo?.kind).toBe('requiresSponsorship');
   });
+
+  it("returns fields in DOM order (so review-pane navigation goes top-to-bottom)", () => {
+    document.body.innerHTML = `
+      <form>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" />
+        <label for="first_name">First</label>
+        <input type="text" id="first_name" name="first_name" />
+        <label for="addr-country">Country</label>
+        <input role="combobox" type="text" id="addr-country" />
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const ids = fields.map((f) => f.el.id);
+    expect(ids.indexOf('email')).toBeLessThan(ids.indexOf('first_name'));
+    expect(ids.indexOf('first_name')).toBeLessThan(ids.indexOf('addr-country'));
+  });
+
+  it("does not detect the phone-input country-code picker as kind=country", () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="phone-input__country">
+          <div class="select">
+            <div class="select__container">
+              <label id="country-label" for="country">Country</label>
+              <div class="select-shell">
+                <div>
+                  <div class="select__control">
+                    <div class="select__value-container">
+                      <div class="select__input-container">
+                        <input role="combobox" type="text" id="country"
+                               aria-labelledby="country-label" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <input type="tel" name="phone" />
+        <div>
+          <label for="addr-country">Country</label>
+          <input role="combobox" type="text" id="addr-country"
+                 aria-labelledby="addr-country-label" />
+          <label id="addr-country-label" hidden>Country</label>
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const country = fields.filter((f) => f.kind === 'country');
+    expect(country.length, 'exactly one country field (the address one)').toBe(1);
+    expect(country[0]?.el.id).toBe('addr-country');
+  });
+
+  it("deduplicates the same kind across the combobox walk and the input walk (country shouldn't appear as both filled and skipped)", () => {
+    document.body.innerHTML = `
+      <form>
+        <div>
+          <label>Country *</label>
+          <input role="combobox" type="text" name="country_search" />
+          <input type="text" name="country" />
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const country = fields.filter((f) => f.kind === 'country');
+    expect(country.length, 'country should appear exactly once').toBe(1);
+    expect(country[0]?.widget).toBe('virtualizedDropdown');
+  });
+
+  it("deduplicates nested role='combobox' / aria-haspopup wrappers (only innermost wins)", () => {
+    document.body.innerHTML = `
+      <form>
+        <div>
+          <label>Country *</label>
+          <div role="combobox" aria-haspopup="listbox">
+            <div class="select__input-container">
+              <input role="combobox" type="text" name="country" />
+            </div>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const country = fields.filter((f) => f.kind === 'country');
+    expect(country.length, 'should produce exactly one country field').toBe(1);
+    expect(country[0]?.el.tagName.toLowerCase()).toBe('input');
+    expect(country[0]?.widget).toBe('virtualizedDropdown');
+  });
+
+  it("keeps virtualizedDropdown widget when a Yes/No combobox uses a positional <label> (no aria-labelledby)", () => {
+    document.body.innerHTML = `
+      <form>
+        <div>
+          <label>Are you legally authorized to work in the United States?</label>
+          <div class="select__input-container">
+            <input role="combobox" type="text" name="q_auth" />
+          </div>
+        </div>
+        <div>
+          <label>Other question</label>
+          <input type="text" name="other" />
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const combo = fields.find((f) => f.kind === 'authorizedToWorkInUS');
+    expect(combo, 'work-auth combobox must be detected').toBeDefined();
+    expect(combo?.widget).toBe('virtualizedDropdown');
+  });
+
+  it("ignores Google reCAPTCHA's hidden <textarea id='g-recaptcha-response'>", () => {
+    document.body.innerHTML = `
+      <form>
+        <input name="first_name" type="text" />
+        <div>
+          <textarea id="g-recaptcha-response" name="g-recaptcha-response"
+                    style="display: none;"></textarea>
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const captcha = fields.find(
+      (f) => f.el instanceof HTMLTextAreaElement && f.el.id === 'g-recaptcha-response',
+    );
+    expect(captcha, 'reCAPTCHA hidden textarea must not be detected').toBeUndefined();
+  });
+
+  it("does not steal a purely-positional <label> (no for/id) from a sibling field", () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="question">
+          <label>Phone *</label>
+          <input name="phone" type="tel" />
+        </div>
+        <div class="question">
+          <textarea name="extra"></textarea>
+        </div>
+      </form>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const phone = fields.find((f) => f.kind === 'phone');
+    expect(phone?.label).toBe('Phone *');
+
+    const textarea = document.querySelector('textarea')!;
+    const textareaField = fields.find((f) => f.el === textarea);
+    expect(textareaField?.label).not.toBe('Phone *');
+  });
+
+  it("does not steal a sibling field's label for an unlabelled textarea (the 'First Name *' duplication bug)", () => {
+    document.body.innerHTML = `
+      <div>
+        <div>
+          <label id="fn-label">First Name *</label>
+          <input name="first_name" id="first_name" type="text"
+                 aria-labelledby="fn-label" />
+        </div>
+        <div>
+          <textarea name="extra_info"></textarea>
+        </div>
+      </div>
+    `;
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const firstName = fields.find((f) => f.kind === 'firstName');
+    expect(firstName?.label).toBe('First Name *');
+
+    const textarea = document.querySelector('textarea')!;
+    const textareaField = fields.find((f) => f.el === textarea);
+    expect(textareaField?.label).not.toBe('First Name *');
+  });
 });
 
 describe('leverAdapter — fixture', () => {

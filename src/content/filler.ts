@@ -336,6 +336,7 @@ export type VirtualizedDropdownOptions = {
   timeoutMs?: number;
   root?: Document;
   suppressFlash?: boolean;
+  forceOverwrite?: boolean;
 };
 
 export async function fillVirtualizedDropdown(
@@ -354,6 +355,10 @@ export async function fillVirtualizedDropdown(
   }
   if (!(trigger instanceof HTMLElement)) {
     return { label, kind, status: 'unsupported', note: 'trigger is not an HTMLElement' };
+  }
+
+  if (!opts.forceOverwrite && comboboxHasValue(trigger)) {
+    return { label, kind, status: 'skipped', note: 'already filled' };
   }
 
   const root: Document = opts.root ?? trigger.ownerDocument;
@@ -378,14 +383,13 @@ export async function fillVirtualizedDropdown(
   if (trigger instanceof HTMLInputElement && !trigger.disabled && !trigger.readOnly) {
     setNativeValue(trigger, want);
     dispatchInputEvents(trigger);
+
     const filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
-    if (!filteredOption) {
-      return { label, kind, status: 'skipped', note: `no option matched "${truncate(want, 60)}"` };
-    }
-    selectOption(filteredOption);
+    pressEnter(trigger);
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
     if (!opts.suppressFlash) flashFilled(trigger);
-    return { label, kind, status: 'filled', note: `selected "${textOfNode(filteredOption)}"` };
+    const noteText = filteredOption ? textOfNode(filteredOption) : want;
+    return { label, kind, status: 'filled', note: `committed "${noteText}" via Enter` };
   }
 
   const option = pickListboxOption(listbox, want);
@@ -437,6 +441,37 @@ function dispatchMouse(el: HTMLElement, type: 'mousedown' | 'mouseup'): void {
     el.dispatchEvent(
       new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }),
     );
+  } catch {
+  }
+}
+
+function comboboxHasValue(trigger: HTMLElement): boolean {
+  let cursor: HTMLElement | null = trigger;
+  for (let depth = 0; cursor && depth < 4; depth++, cursor = cursor.parentElement) {
+    const dataValue = cursor.getAttribute('data-value');
+    if (dataValue && dataValue.trim()) return true;
+    if (cursor.querySelector('[class*="single-value" i]')) return true;
+    if (cursor.querySelector('[class*="placeholder" i]')) return false;
+  }
+  if (trigger instanceof HTMLInputElement) return false;
+  const text = (trigger.textContent ?? '').trim();
+  if (!text) return false;
+  return !/^(select|choose|pick|please|--|—)\b/i.test(text);
+}
+
+function pressEnter(el: HTMLElement): void {
+  const init: KeyboardEventInit = {
+    key: 'Enter',
+    code: 'Enter',
+    keyCode: 13,
+    which: 13,
+    bubbles: true,
+    cancelable: true,
+  } as KeyboardEventInit;
+  try {
+    el.dispatchEvent(new KeyboardEvent('keydown', init));
+    el.dispatchEvent(new KeyboardEvent('keypress', init));
+    el.dispatchEvent(new KeyboardEvent('keyup', init));
   } catch {
   }
 }

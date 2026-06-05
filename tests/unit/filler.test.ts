@@ -360,7 +360,7 @@ describe('fillVirtualizedDropdown', () => {
     expect(action.note).toMatch(/dropdown popup did not appear/i);
   });
 
-  it('handles react-select: input is the trigger AND search, listbox is a portal referenced by aria-controls, options commit on mousedown', async () => {
+  it('handles react-select: input is trigger AND search, listbox via aria-controls, commits via Enter on the input', async () => {
     const wrapper = document.createElement('div');
     wrapper.className = 'select__input-container';
     const input = document.createElement('input');
@@ -377,23 +377,20 @@ describe('fillVirtualizedDropdown', () => {
     portal.setAttribute('role', 'listbox');
     document.body.appendChild(portal);
 
-    const optionEvents: Array<{ kind: string; type: string }> = [];
-    function addOption(text: string): void {
-      const opt = document.createElement('div');
-      opt.setAttribute('role', 'option');
-      opt.textContent = text;
-      opt.addEventListener('mousedown', () => optionEvents.push({ kind: text, type: 'mousedown' }));
-      opt.addEventListener('click', () => optionEvents.push({ kind: text, type: 'click' }));
-      portal.appendChild(opt);
-    }
-
     input.addEventListener('input', () => {
       portal.innerHTML = '';
-      if (input.value.toLowerCase() === 'no') addOption('No');
+      if (input.value.toLowerCase() === 'no') {
+        const opt = document.createElement('div');
+        opt.setAttribute('role', 'option');
+        opt.textContent = 'No';
+        portal.appendChild(opt);
+      }
     });
 
     let openedViaMousedown = false;
     input.addEventListener('mousedown', () => (openedViaMousedown = true));
+    const keys: string[] = [];
+    input.addEventListener('keydown', (e) => keys.push(e.key));
 
     const field: DetectedField = {
       el: input,
@@ -406,7 +403,133 @@ describe('fillVirtualizedDropdown', () => {
     const action = await fillVirtualizedDropdown(field, 'No');
     expect(action.status).toBe('filled');
     expect(openedViaMousedown).toBe(true);
-    expect(optionEvents.some((e) => e.kind === 'No' && e.type === 'mousedown')).toBe(true);
+    expect(keys).toContain('Enter');
+    expect(action.note).toMatch(/Enter/);
   });
 
+  it("does NOT skip a fresh react-select (placeholder present, no single-value)", async () => {
+    const valueContainer = document.createElement('div');
+    valueContainer.className = 'select__value-container';
+    const placeholder = document.createElement('div');
+    placeholder.className = 'select__placeholder';
+    placeholder.textContent = 'Select an option that best describes you';
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'select__input-container';
+    inputContainer.setAttribute('data-value', '');
+    const input = document.createElement('input');
+    input.setAttribute('role', 'combobox');
+    input.type = 'text';
+    inputContainer.appendChild(input);
+    valueContainer.append(placeholder, inputContainer);
+    document.body.appendChild(valueContainer);
+
+    let triggerOpened = false;
+    input.addEventListener('mousedown', () => (triggerOpened = true));
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'authorizedToWorkInUS',
+      label: 'Authorized?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(field, 'Yes', { timeoutMs: 30 });
+    expect(triggerOpened).toBe(true);
+    expect(action.note).not.toMatch(/already filled/);
+  });
+
+  it("skips re-fill when the combobox already has a value and forceOverwrite is false", async () => {
+    const wrapper = document.createElement('div');
+    const singleValue = document.createElement('div');
+    singleValue.className = 'select__single-value';
+    singleValue.textContent = 'Yes';
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'select__input-container';
+    inputContainer.setAttribute('data-value', 'Yes');
+    const input = document.createElement('input');
+    input.setAttribute('role', 'combobox');
+    input.type = 'text';
+    inputContainer.appendChild(input);
+    wrapper.append(singleValue, inputContainer);
+    document.body.appendChild(wrapper);
+
+    let triggerOpened = false;
+    input.addEventListener('mousedown', () => (triggerOpened = true));
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'authorizedToWorkInUS',
+      label: 'Authorized?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(field, 'No');
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/already filled/);
+    expect(triggerOpened).toBe(false);
+  });
+
+  it("re-fills when forceOverwrite is true even if a value is present", async () => {
+    const wrapper = document.createElement('div');
+    const inputContainer = document.createElement('div');
+    inputContainer.setAttribute('data-value', 'Yes');
+    const input = document.createElement('input');
+    input.setAttribute('role', 'combobox');
+    input.type = 'text';
+    inputContainer.appendChild(input);
+    wrapper.appendChild(inputContainer);
+    document.body.appendChild(wrapper);
+
+    let triggerOpened = false;
+    input.addEventListener('mousedown', () => (triggerOpened = true));
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'authorizedToWorkInUS',
+      label: 'Authorized?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(field, 'No', {
+      forceOverwrite: true,
+      timeoutMs: 30,
+    });
+    expect(triggerOpened).toBe(true);
+    expect(action.note).not.toMatch(/already filled/);
+  });
+
+  it("presses Enter on the trigger as a fallback when no [role=option] surfaces after typing", async () => {
+    const wrapper = document.createElement('div');
+    const input = document.createElement('input');
+    input.id = 'q_auth';
+    input.type = 'text';
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-controls', 'q_auth-listbox');
+    wrapper.appendChild(input);
+    document.body.appendChild(wrapper);
+
+    const portal = document.createElement('div');
+    portal.id = 'q_auth-listbox';
+    portal.setAttribute('role', 'listbox');
+    document.body.appendChild(portal);
+
+    const keys: string[] = [];
+    input.addEventListener('keydown', (e) => keys.push(e.key));
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'authorizedToWorkInUS',
+      label: 'Authorized?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(field, 'Yes', { timeoutMs: 50 });
+    expect(action.status).toBe('filled');
+    expect(action.note).toMatch(/Enter/);
+    expect(keys).toContain('Enter');
+  });
 });
