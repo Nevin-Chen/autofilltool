@@ -37,6 +37,19 @@ export type ReviewableField = {
   el: HTMLElement;
 };
 
+export type RemoteReviewCallbacks = {
+  onEnter: (group: ReviewGroup) => void;
+  onStep: (dir: 1 | -1) => void;
+  onExit: () => void;
+};
+
+export type RemoteReviewState = {
+  group: ReviewGroup;
+  index: number;
+  total: number;
+  label: string;
+};
+
 type Phase = 'idle' | 'filling' | 'done';
 
 type State = {
@@ -47,32 +60,19 @@ type State = {
   detected: number;
   onFill: () => void;
   stats: TriggerStats | null;
-  // Set during animated fill so renderFilling() can show a determinate bar.
   progress: { done: number; total: number } | null;
-  // Reviewable fields collected during the fill (top frame only).
   items: ReviewableField[];
-  // When non-null the pill is in review mode for that group at that index.
   review: { group: ReviewGroup; index: number } | null;
+  remoteCallbacks: RemoteReviewCallbacks | null;
+  remoteReview: RemoteReviewState | null;
 };
 
 let state: State | null = null;
-/** Set when the user closes the trigger outright; blocks proactive re-show. */
 let dismissedThisPage = false;
-/**
- * Bounded re-mount under page-side hydration that yanks the host. Hard cap
- * (`MAX_MOUNT_ATTEMPTS`) so we never fight a defensive page in a loop.
- */
 const MAX_MOUNT_ATTEMPTS = 2;
 const REMOUNT_MS = 1000;
 let mountAttempts = 0;
 
-/* ------------------------------------------------------------- public API */
-
-/**
- * Mount (or refresh) the proactive idle trigger for a detected form — a small
- * pill tucked into the right edge. No-op once the user has dismissed it on this
- * page. Idempotent: updates the field count without duplicating the host.
- */
 export function showFillTrigger(opts: {
   detected: number;
   onFill: () => void;
@@ -85,7 +85,6 @@ export function showFillTrigger(opts: {
   render();
 }
 
-/** Switch the trigger into its filling state (driven by the in-page button). */
 export function setFillTriggerFilling(): void {
   const s = ensureHost();
   s.phase = 'filling';
@@ -93,32 +92,40 @@ export function setFillTriggerFilling(): void {
   render();
 }
 
-/** Update the determinate progress bar during an animated fill. */
 export function setFillTriggerProgress(done: number, total: number): void {
   if (!state) return;
   state.progress = { done, total };
-  // Cheap partial update — avoid full re-render every 130ms.
   const bar = state.shadow.querySelector('.track .fill') as HTMLElement | null;
   const count = state.shadow.querySelector('.count') as HTMLElement | null;
   if (bar && total > 0) bar.style.width = `${Math.max(8, Math.round((done / total) * 100))}%`;
   if (count) count.textContent = `${done} / ${total} fields`;
 }
 
-/**
- * Show the post-fill results. Mounts the surface if it isn't already present
- * (e.g. a popup-triggered fill on a page where the idle trigger was dismissed),
- * so the outcome is always visible. `items` powers chip-as-button review mode
- * and is top-frame-only — iframe-driven completions pass an empty array.
- */
 export function showFillTriggerDone(
   stats: TriggerStats,
   items: ReviewableField[] = [],
+  opts: { remote?: RemoteReviewCallbacks } = {},
 ): void {
   const s = ensureHost();
   s.phase = 'done';
   s.stats = stats;
   s.items = items;
   s.review = null;
+  s.remoteCallbacks = opts.remote ?? null;
+  s.remoteReview = null;
+  render();
+}
+
+export function setRemoteReviewState(state_: RemoteReviewState): void {
+  if (!state) return;
+  state.remoteReview = state_;
+  render();
+  focusReviewPane();
+}
+
+export function clearRemoteReviewState(): void {
+  if (!state) return;
+  state.remoteReview = null;
   render();
 }
 
@@ -128,7 +135,6 @@ export function removeFillTrigger(): void {
   mountAttempts = 0;
 }
 
-/** Test-only: reset module-level guards between cases. */
 export function __resetAffordanceForTests(): void {
   document.getElementById(HOST_ID)?.remove();
   state = null;
@@ -136,7 +142,6 @@ export function __resetAffordanceForTests(): void {
   mountAttempts = 0;
 }
 
-/** Test-only: peek at the review-mode state without piercing the closed shadow. */
 export function __getReviewStateForTests(): {
   group: ReviewGroup;
   index: number;
@@ -144,21 +149,14 @@ export function __getReviewStateForTests(): {
   return state?.review ? { ...state.review } : null;
 }
 
-/** Test-only: enter review mode for a group (mirrors a chip click). */
 export function __enterReviewForTests(group: ReviewGroup): void {
   enterReview(group);
 }
 
-/** Test-only: step the review cursor (mirrors an arrow keypress). */
 export function __stepReviewForTests(dir: 1 | -1): void {
   stepReview(dir);
 }
 
-/**
- * Test-only: read the rendered post-fill note. Returns { text, href } so tests
- * can assert both the copy variant AND the Sheets-docs link target without
- * piercing the closed shadow root from outside.
- */
 export function __getDoneNoteForTests(): { text: string; href: string | null } | null {
   const noteEl = state?.shadow.querySelector('.note');
   if (!noteEl) return null;
@@ -169,7 +167,26 @@ export function __getDoneNoteForTests(): { text: string; href: string | null } |
   };
 }
 
-/* ------------------------------------------------------------- internals */
+export function __clickRemoteChipForTests(group: ReviewGroup): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>(
+    `button.chip.clickable[data-group="${group}"]`,
+  );
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __getReviewPaneTextForTests(): string | null {
+  const counter = state?.shadow.querySelector('.review .sub') as HTMLElement | null;
+  return counter ? (counter.textContent ?? '').trim() : null;
+}
+
+export function __pressReviewKeyForTests(key: 'ArrowLeft' | 'ArrowRight' | 'Escape'): boolean {
+  const pane = state?.shadow.querySelector('.review') as HTMLElement | null;
+  if (!pane) return false;
+  pane.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  return true;
+}
 
 function ensureHost(): State {
   if (state && document.getElementById(HOST_ID)) return state;
@@ -177,9 +194,6 @@ function ensureHost(): State {
 
   const host = document.createElement('div');
   host.id = HOST_ID;
-  // `all: initial` must come first — it resets every property, so the
-  // positioning declarations have to follow it to survive (otherwise the host
-  // falls back to static flow and lands bottom-left instead of bottom-right).
   Object.assign(host.style, {
     all: 'initial',
     position: 'fixed',
@@ -208,31 +222,26 @@ function ensureHost(): State {
     progress: null,
     items: [],
     review: null,
+    remoteCallbacks: null,
+    remoteReview: null,
   };
   scheduleMountWatchdog(host);
   return state;
 }
 
-/**
- * One-shot check ~REMOUNT_MS after mount. If the host has been removed by
- * page hydration and the user hasn't dismissed, do ONE re-mount. The hard cap
- * in ensureHost prevents a third attempt — if the page is fighting us, we
- * give up silently and rely on the popup-triggered Fill path.
- */
 function scheduleMountWatchdog(host: HTMLElement): void {
   setTimeout(() => {
     if (dismissedThisPage) return;
-    if (!state) return; // intentionally torn down
-    if (host.isConnected) return; // happy path — page didn't yank us
+    if (!state) return;
+    if (host.isConnected) return;
     if (mountAttempts >= MAX_MOUNT_ATTEMPTS) return;
     const detected = state.detected;
     const onFill = state.onFill;
-    state = null; // force ensureHost to rebuild fresh
+    state = null;
     showFillTrigger({ detected, onFill });
   }, REMOUNT_MS);
 }
 
-/** Return to the small idle pill (e.g. the × on the results card). */
 function collapse(): void {
   if (!state) return;
   state.phase = 'idle';
@@ -247,8 +256,6 @@ function dismiss(): void {
 function render(): void {
   if (!state) return;
   state.body.innerHTML = '';
-  // Idle is a small pill tucked into the right edge; filling/done is the full
-  // card anchored bottom-right (the host's fixed anchor).
   const idle = state.phase === 'idle';
   state.body.className = idle ? '' : 'card';
   state.body.append(idle ? renderIdlePill() : renderCard());
@@ -256,9 +263,12 @@ function render(): void {
 
 function renderCard(): HTMLElement {
   const s = state!;
-  const inReview = s.phase === 'done' && s.review !== null;
-  const title = inReview
-    ? reviewTitle(s.review!.group)
+  const localReview = s.phase === 'done' && s.review !== null;
+  const remoteReview = s.phase === 'done' && s.remoteReview !== null;
+  const inReview = localReview || remoteReview;
+  const activeGroup = localReview ? s.review!.group : s.remoteReview?.group;
+  const title = inReview && activeGroup
+    ? reviewTitle(activeGroup)
     : s.phase === 'done'
       ? 'Filled'
       : 'AutoFillTool';
@@ -286,7 +296,6 @@ function reviewTitle(g: ReviewGroup): string {
   }
 }
 
-/** Small idle pill — tucked into the right edge; click runs the fill. */
 function renderIdlePill(): HTMLElement {
   const s = state!;
   const tab = document.createElement('button');
@@ -305,7 +314,6 @@ function renderFilling(): HTMLElement {
   const inner = bar.firstElementChild as HTMLElement;
 
   if (s.progress) {
-    // Determinate (animated fill): bar tracks done/total, with a numeric caption.
     const { done, total } = s.progress;
     const pct = total > 0 ? Math.max(8, Math.round((done / total) * 100)) : 8;
     inner.style.width = `${pct}%`;
@@ -313,7 +321,6 @@ function renderFilling(): HTMLElement {
     return frag([label, bar, count]);
   }
 
-  // Indeterminate (toggle off / synchronous fill): nudge forward on next frame.
   inner.style.width = '8%';
   requestAnimationFrame(() => {
     inner.style.width = '92%';
@@ -354,12 +361,6 @@ function renderDone(): HTMLElement {
 const SHEETS_DOCS_URL =
   'https://github.com/Nevin-Chen/autofilltool#google-sheets-logging';
 
-/**
- * Two variants — connected users get a passive confirmation, unconnected get
- * a prompt that links to the README setup section. We never showed the auto-log
- * promise before checking for a webhook, which was misleading for users without
- * one configured.
- */
 function autoLogNote(autoLogging: boolean): HTMLElement {
   if (autoLogging) {
     return h('div', { class: 'row note' }, [
@@ -391,8 +392,6 @@ function resumeLine(state_: TriggerResume): HTMLElement | null {
       return null;
   }
 }
-
-/* --------------------------------------------------------- DOM helpers */
 
 function h(
   tag: string,
@@ -436,25 +435,35 @@ function chip(kind: 'ok' | 'skip' | 'fail' | 'ai', text: string): HTMLElement {
   return h('span', { class: `chip ${kind}` }, [text]);
 }
 
-/**
- * A chip that enters review-mode for `group` when there's at least one
- * connected item in it. Falls back to the static <span> chip otherwise so the
- * count is still shown — but isn't a misleading affordance.
- */
 function reviewChip(
   kind: 'ok' | 'skip' | 'ai',
   group: ReviewGroup,
   text: string,
 ): HTMLElement {
-  const has = itemsInGroup(group).some((i) => i.el.isConnected);
+  const remote = state?.remoteCallbacks ?? null;
+  const has = remote ? remoteCountFor(group) > 0 : itemsInGroup(group).some((i) => i.el.isConnected);
   if (!has) return chip(kind, text);
   const b = document.createElement('button');
   b.type = 'button';
   b.className = `chip ${kind} clickable`;
+  b.setAttribute('data-group', group);
   b.textContent = text;
   b.title = 'Step through these fields';
-  b.addEventListener('click', () => enterReview(group));
+  b.addEventListener('click', () => (remote ? enterRemoteReview(group, remote) : enterReview(group)));
   return b;
+}
+
+function remoteCountFor(group: ReviewGroup): number {
+  const stats = state?.stats;
+  if (!stats) return 0;
+  switch (group) {
+    case 'filled':
+      return stats.filled;
+    case 'skipped':
+      return stats.skipped;
+    case 'suggest':
+      return stats.suggest;
+  }
 }
 
 function itemsInGroup(group: ReviewGroup): ReviewableField[] {
@@ -492,10 +501,25 @@ function stepReview(dir: 1 | -1): void {
   spotlight(items[next]!.el);
 }
 
-/**
- * Step from `from` in direction `dir`, wrapping at ends, skipping items whose
- * element is no longer connected. Returns -1 if no connected item exists.
- */
+function enterRemoteReview(group: ReviewGroup, callbacks: RemoteReviewCallbacks): void {
+  if (!state) return;
+  state.remoteReview = { group, index: 0, total: remoteCountFor(group), label: 'Loading…' };
+  render();
+  focusReviewPane();
+  callbacks.onEnter(group);
+}
+
+function stepRemoteReview(dir: 1 | -1): void {
+  state?.remoteCallbacks?.onStep(dir);
+}
+
+function exitRemoteReview(): void {
+  if (!state) return;
+  state.remoteCallbacks?.onExit();
+  state.remoteReview = null;
+  render();
+}
+
 export function nextConnected(
   items: ReviewableField[],
   from: number,
@@ -512,47 +536,54 @@ export function nextConnected(
 
 function renderReview(): HTMLElement {
   const s = state!;
-  const { group, index } = s.review!;
-  const items = itemsInGroup(group);
-  const current = items[index]!;
+  const remote = s.remoteReview;
+  const display = remote
+    ? { index: remote.index, total: remote.total, label: remote.label }
+    : (() => {
+        const { group, index } = s.review!;
+        const items = itemsInGroup(group);
+        const current = items[index]!;
+        return { index, total: items.length, label: current.label };
+      })();
+
   const counter = h('div', { class: 'sub' }, [
-    `${index + 1} of ${items.length} · ${truncate(current.label, 60)}`,
+    `${display.index + 1} of ${display.total} · ${truncate(display.label, 60)}`,
   ]);
   const help = h('div', { class: 'sub light' }, ['← / → to step · Esc to exit']);
+  const stepFn = remote ? stepRemoteReview : stepReview;
+  const exitFn = remote ? exitRemoteReview : exitReview;
   const actions = h('div', { class: 'row gap top' }, [
-    btn({ class: 'ghost', text: '← Prev', onClick: () => stepReview(-1) }),
-    btn({ class: 'ghost', text: 'Next →', onClick: () => stepReview(1) }),
-    btn({ class: 'ghost', text: 'Done', onClick: exitReview }),
+    btn({ class: 'ghost', text: '← Prev', onClick: () => stepFn(-1) }),
+    btn({ class: 'ghost', text: 'Next →', onClick: () => stepFn(1) }),
+    btn({ class: 'ghost', text: 'Done', onClick: exitFn }),
   ]);
 
   const pane = h('div', { class: 'review', tabindex: '0' }, [counter, help, actions]);
   pane.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      stepReview(1);
+      stepFn(1);
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      stepReview(-1);
+      stepFn(-1);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      exitReview();
+      exitFn();
     }
   });
   return pane;
 }
 
-/** Move keyboard focus into the review pane so arrow keys land here, not in a page input. */
 function focusReviewPane(): void {
   if (!state) return;
   const pane = state.shadow.querySelector('.review') as HTMLElement | null;
   pane?.focus();
 }
 
-/** Scroll the target into view and draw a transient sky/amber/violet glow on it. */
 const SPOTLIGHT_MS = 1400;
 const SPOTLIGHT_SHADOW =
   '0 0 0 2px rgba(56,189,248,0.95), 0 0 10px 3px rgba(56,189,248,0.5)';
-function spotlight(el: HTMLElement): void {
+export function spotlight(el: HTMLElement): void {
   try {
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const style = el.style;
@@ -567,15 +598,12 @@ function spotlight(el: HTMLElement): void {
           try {
             style.transition = prevTransition;
           } catch {
-            /* detached */
           }
         }, 400);
       } catch {
-        /* detached */
       }
     }, SPOTLIGHT_MS);
   } catch {
-    /* cosmetic — never break a review step */
   }
 }
 
@@ -583,7 +611,6 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-/** The extension's brand mark — matches public/icons/icon.svg (form fields). */
 function brandMark(size: number): SVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');

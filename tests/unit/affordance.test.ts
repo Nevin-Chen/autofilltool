@@ -2,6 +2,8 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   showFillTrigger,
   showFillTriggerDone,
+  setRemoteReviewState,
+  clearRemoteReviewState,
   removeFillTrigger,
   nextConnected,
   __resetAffordanceForTests,
@@ -9,6 +11,9 @@ import {
   __enterReviewForTests,
   __stepReviewForTests,
   __getDoneNoteForTests,
+  __clickRemoteChipForTests,
+  __getReviewPaneTextForTests,
+  __pressReviewKeyForTests,
   type ReviewableField,
   type TriggerStats,
 } from '@/content/affordance';
@@ -34,7 +39,6 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
   });
 
   it('anchors the host bottom-right on top-level pages (non-iframe default)', () => {
-    // jsdom defaults to window.top === window — the non-iframe branch.
     showFillTrigger({ detected: 3, onFill: () => {} });
     const host = document.getElementById(HOST_ID)!;
     expect(host.style.bottom).toBe('16px');
@@ -46,8 +50,7 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
     const onFill = vi.fn();
     showFillTrigger({ detected: 7, onFill });
     const host = document.getElementById(HOST_ID)!;
-    // closed shadow root — assert by shape via host title + presence of a button
-    expect(host.shadowRoot).toBeNull(); // closed mode hides shadowRoot
+    expect(host.shadowRoot).toBeNull();
     expect(host.isConnected).toBe(true);
   });
 
@@ -55,15 +58,12 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
     showFillTrigger({ detected: 5, onFill: () => {} });
     expect(document.getElementById(HOST_ID)).not.toBeNull();
 
-    // Simulate page hydration yanking the host shortly after mount.
     document.getElementById(HOST_ID)!.remove();
     expect(document.getElementById(HOST_ID)).toBeNull();
 
-    // Watchdog hasn't fired yet (REMOUNT_MS = 1000).
     vi.advanceTimersByTime(900);
     expect(document.getElementById(HOST_ID)).toBeNull();
 
-    // Watchdog fires past 1000ms; host comes back.
     vi.advanceTimersByTime(200);
     expect(document.getElementById(HOST_ID)).not.toBeNull();
   });
@@ -71,12 +71,10 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
   it('hard cap holds — a SECOND disappearance does NOT trigger a third mount', () => {
     showFillTrigger({ detected: 5, onFill: () => {} });
 
-    // First removal → first re-mount fires.
     document.getElementById(HOST_ID)!.remove();
     vi.advanceTimersByTime(1100);
     expect(document.getElementById(HOST_ID)).not.toBeNull();
 
-    // Second removal — the page yanked the re-mount too. Watchdog must give up.
     document.getElementById(HOST_ID)!.remove();
     vi.advanceTimersByTime(1500);
     expect(document.getElementById(HOST_ID)).toBeNull();
@@ -95,10 +93,8 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
     showFillTrigger({ detected: 5, onFill: () => {} });
     const host = document.getElementById(HOST_ID)!;
 
-    // Page doesn't touch us. Advance past the watchdog.
     vi.advanceTimersByTime(1500);
 
-    // Same node, not a re-creation.
     expect(document.getElementById(HOST_ID)).toBe(host);
   });
 });
@@ -199,7 +195,7 @@ describe('chip-as-button review mode', () => {
   it('skips fields that were detached between fill and review', () => {
     const items = [mkItem('skipped', 'a'), mkItem('skipped', 'b'), mkItem('skipped', 'c')];
     showFillTriggerDone(baseStats, items);
-    items[1]!.el.remove(); // page mutation between fill and review
+    items[1]!.el.remove();
     __enterReviewForTests('skipped');
     expect(__getReviewStateForTests()).toEqual({ group: 'skipped', index: 0 });
     __stepReviewForTests(1);
@@ -250,5 +246,87 @@ describe('post-fill note — Sheets link state', () => {
     expect(note?.href).toBe(
       'https://github.com/Nevin-Chen/autofilltool#google-sheets-logging',
     );
+  });
+});
+
+describe('remote review (iframe-driven)', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  const stats: TriggerStats = {
+    filled: 3,
+    skipped: 2,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'generic',
+    adapterName: 'generic',
+    resume: 'noResume',
+    autoLogging: false,
+  };
+
+  it('chips are clickable based on counts in remote mode (no local items needed)', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    expect(__clickRemoteChipForTests('filled')).toBe(true);
+    expect(remote.onEnter).toHaveBeenCalledWith('filled');
+  });
+
+  it('chip with zero count is NOT clickable', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    expect(__clickRemoteChipForTests('suggest')).toBe(false);
+    expect(remote.onEnter).not.toHaveBeenCalled();
+  });
+
+  it('shows a "Loading…" placeholder until the iframe reports state', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    __clickRemoteChipForTests('skipped');
+    expect(__getReviewPaneTextForTests()).toMatch(/Loading…/);
+  });
+
+  it('setRemoteReviewState updates the rendered counter + label', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    __clickRemoteChipForTests('skipped');
+    setRemoteReviewState({ group: 'skipped', index: 0, total: 2, label: 'Why us?' });
+    expect(__getReviewPaneTextForTests()).toBe('1 of 2 · Why us?');
+    setRemoteReviewState({ group: 'skipped', index: 1, total: 2, label: 'Sponsorship?' });
+    expect(__getReviewPaneTextForTests()).toBe('2 of 2 · Sponsorship?');
+  });
+
+  it('arrow key on the pane fires onStep in remote mode', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    __clickRemoteChipForTests('skipped');
+    setRemoteReviewState({ group: 'skipped', index: 0, total: 2, label: 'a' });
+    __pressReviewKeyForTests('ArrowRight');
+    expect(remote.onStep).toHaveBeenCalledWith(1);
+    __pressReviewKeyForTests('ArrowLeft');
+    expect(remote.onStep).toHaveBeenCalledWith(-1);
+  });
+
+  it('Escape fires onExit AND closes the pane locally', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    __clickRemoteChipForTests('skipped');
+    setRemoteReviewState({ group: 'skipped', index: 0, total: 2, label: 'a' });
+    __pressReviewKeyForTests('Escape');
+    expect(remote.onExit).toHaveBeenCalled();
+    expect(__getReviewPaneTextForTests()).toBeNull(); // back to chips view
+  });
+
+  it('clearRemoteReviewState drops back to chips (iframe signals empty group)', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(stats, [], { remote });
+    __clickRemoteChipForTests('skipped');
+    setRemoteReviewState({ group: 'skipped', index: 0, total: 2, label: 'a' });
+    clearRemoteReviewState();
+    expect(__getReviewPaneTextForTests()).toBeNull();
   });
 });
