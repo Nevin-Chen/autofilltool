@@ -27,20 +27,6 @@ if (!window[STUB_GUARD]) {
 
 const ATS_HOST_RE = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com)$/i;
 
-type IframePillNeededMsg = { type: 'autofilltool:iframe-pill-needed'; detected: number };
-type FillStartedMsg = { type: 'autofilltool:fill-started' };
-type FillProgressMsg = { type: 'autofilltool:fill-progress'; done: number; total: number };
-type FillCompleteMsg = {
-  type: 'autofilltool:fill-complete';
-  filled: number;
-  skipped: number;
-  failed: number;
-  suggest: number;
-  adapterId: string;
-  adapterName: string;
-  resume: string;
-};
-
 function install(): void {
   let activeSource: MessageEventSource | null = null;
   let activeOrigin: string | null = null;
