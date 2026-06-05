@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { sendToBackground } from '@/lib/messaging';
 import { getSettings, setSettings } from '@/profile/store';
 import type { SubmissionRecord, Settings } from '@/profile/schema';
+import { toCsv, csvFilename } from '@/lib/history-export';
 
 type TabInfo = {
   id: number;
@@ -15,6 +16,8 @@ export function PopupApp() {
   const [pong, setPong] = useState<string | null>(null);
   const [pingErr, setPingErr] = useState<string | null>(null);
   const [history, setHistory] = useState<SubmissionRecord[]>([]);
+  const [cursor, setCursor] = useState(0);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const [settings, setSettingsState] = useState<Settings | null>(null);
 
   useEffect(() => {
@@ -36,7 +39,7 @@ export function PopupApp() {
         const r = await sendToBackground({ type: 'PING' });
         if (r.ok) setPong(r.value.at);
         else setPingErr(r.error);
-        const h = await sendToBackground({ type: 'GET_HISTORY', limit: 5 });
+        const h = await sendToBackground({ type: 'GET_HISTORY' });
         if (h.ok) setHistory(h.value);
         const s = await getSettings();
         setSettingsState(s);
@@ -48,6 +51,28 @@ export function PopupApp() {
 
   const onOpenOptions = () => {
     chrome.runtime.openOptionsPage();
+  };
+
+  const onClear = async () => {
+    const r = await sendToBackground({ type: 'CLEAR_HISTORY' });
+    if (r.ok) {
+      setHistory([]);
+      setCursor(0);
+    }
+    setConfirmingClear(false);
+  };
+
+  const onExport = () => {
+    if (history.length === 0) return;
+    const blob = new Blob([toCsv(history)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = csvFilename();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const updateSettings = async (updates: Partial<Settings>) => {
@@ -115,34 +140,125 @@ export function PopupApp() {
         </div>
       )}
 
-      {history.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-            Recent submissions
-          </div>
-          <ul className="space-y-1">
-            {history.map((h) => (
-              <li
-                key={h.id}
-                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"
-                title={h.jobUrl}
+      {history.length > 0 && (() => {
+        const clampedCursor = Math.min(cursor, history.length - 1);
+        const current = history[clampedCursor]!;
+        const atStart = clampedCursor === 0;
+        const atEnd = clampedCursor >= history.length - 1;
+        const commitJump = (raw: string): void => {
+          const n = Number.parseInt(raw, 10);
+          if (!Number.isFinite(n)) return;
+          const clamped = Math.max(1, Math.min(history.length, n));
+          setCursor(clamped - 1);
+        };
+        return (
+          <div className="mt-4">
+            <div className="mb-1 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-1">
+                Recent submissions
+                <span
+                  aria-label="Submissions are auto-logged when you submit an application"
+                  title="auto-logged on submit"
+                  className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 text-[9px] text-slate-500 dark:border-slate-600 dark:text-slate-400"
+                >
+                  i
+                </span>
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCursor((c) => Math.max(0, c - 1))}
+                  disabled={atStart}
+                  aria-label="Previous submission"
+                  className="rounded px-1.5 py-0.5 text-slate-500 enabled:hover:bg-slate-100 disabled:opacity-30 dark:text-slate-400 dark:enabled:hover:bg-slate-800"
+                >
+                  ◄
+                </button>
+                <span className="tabular-nums text-slate-500 dark:text-slate-400">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={clampedCursor + 1}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '');
+                      if (digits === '') return;
+                      commitJump(digits);
+                    }}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+                    }}
+                    aria-label="Jump to submission number"
+                    className="w-8 rounded border border-slate-200 bg-white px-1 py-0 text-center tabular-nums text-slate-700 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  />
+                  {' '}of {history.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCursor((c) => Math.min(history.length - 1, c + 1))}
+                  disabled={atEnd}
+                  aria-label="Next submission"
+                  className="rounded px-1.5 py-0.5 text-slate-500 enabled:hover:bg-slate-100 disabled:opacity-30 dark:text-slate-400 dark:enabled:hover:bg-slate-800"
+                >
+                  ►
+                </button>
+              </div>
+            </div>
+            <div
+              className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"
+              title={current.jobUrl}
+            >
+              <div className="truncate">
+                <span className="font-medium text-slate-800 dark:text-slate-100">
+                  {current.role || '(unknown role)'}
+                </span>{' '}
+                <span className="text-slate-500 dark:text-slate-400">
+                  @ {current.company || '(unknown company)'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                {relativeTime(current.timestamp)} · {current.source} · {current.status}
+              </div>
+            </div>
+            <div className="mt-2 flex justify-end gap-2 text-[11px]">
+              <button
+                type="button"
+                onClick={onExport}
+                className="rounded px-2 py-0.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
               >
-                <div className="truncate">
-                  <span className="font-medium text-slate-800 dark:text-slate-100">
-                    {h.role || '(unknown role)'}
-                  </span>{' '}
-                  <span className="text-slate-500 dark:text-slate-400">
-                    @ {h.company || '(unknown company)'}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                  {relativeTime(h.timestamp)} · {h.source} · {h.status}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                Export CSV
+              </button>
+              {confirmingClear ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClear}
+                    className="rounded bg-rose-50 px-2 py-0.5 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 dark:hover:bg-rose-900/50"
+                  >
+                    Confirm clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingClear(false)}
+                    className="rounded px-2 py-0.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingClear(true)}
+                  className="rounded px-2 py-0.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400">
         <div>

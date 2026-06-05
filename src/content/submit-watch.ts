@@ -1,16 +1,3 @@
-/**
- * Auto-log on real submit. After a fill, watch passively for the user's own
- * submission to succeed, then fire one LOG_SUBMISSION — no pill click needed.
- * Observe-only: we never click, submit, or call preventDefault. Two cases:
- *   - In-page (SPA) confirmation: a MutationObserver + history hook catch the
- *     "thank you" view rendering after the user clicks the page's own Submit.
- *   - Full navigation (e.g. Greenhouse): a chrome.storage.session breadcrumb
- *     written at fill time lets the reloaded content script recognise the
- *     confirmation page and log against the original posting metadata.
- * Installed automatically whenever a tracking webhook URL is configured;
- * guarded to fire once.
- */
-
 import type { PlatformAdapter } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { AdapterIdSchema, type AdapterId } from '@/profile/schema';
@@ -20,7 +7,7 @@ import { sendToBackground } from '@/lib/messaging';
 import { log } from '@/lib/logger';
 
 const BREADCRUMB_KEY = 'autofilltool:lastFill';
-const WATCH_MS = 10 * 60 * 1000; // stop watching / honor a breadcrumb for 10 min
+const WATCH_MS = 10 * 60 * 1000;
 
 type Breadcrumb = {
   jobUrl: string;
@@ -40,17 +27,12 @@ export type LoggedRecord = {
 type WatchArgs = {
   adapter: PlatformAdapter;
   ctx: JobContext;
-  /** Called after a successful auto-log so the UI can show a toast. */
   onLogged?: (record: LoggedRecord) => void;
 };
 
-// Module-level singletons; reset naturally on each fresh content-script load.
 let installed = false;
 let fired = false;
 
-/* --------------------------------------------------------- confirmation */
-
-/** True when the page currently shows a post-submit confirmation. Never throws. */
 export function isSubmissionConfirmed(
   adapter: PlatformAdapter,
   doc: Document,
@@ -66,7 +48,6 @@ export function isSubmissionConfirmed(
   return sharedConfirmed(doc);
 }
 
-/** Adapter-agnostic fallback: a confirmation phrase with no open submit control. */
 export function sharedConfirmed(doc: Document): boolean {
   if (!hasSubmissionConfirmText(doc)) return false;
   return !hasVisibleSubmit(doc);
@@ -88,14 +69,11 @@ function isVisible(el: HTMLElement): boolean {
   const style = view?.getComputedStyle(el);
   if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
   const rect = el.getBoundingClientRect();
-  // jsdom reports 0×0 for everything; treat that as "present" there, visible elsewhere.
   if (view && typeof view.getComputedStyle === 'function' && rect.width === 0 && rect.height === 0) {
     return style ? style.display !== 'none' && style.visibility !== 'hidden' : true;
   }
   return true;
 }
-
-/* ----------------------------------------------------------- logging */
 
 async function doLog(
   source: string,
@@ -114,11 +92,11 @@ async function doLog(
         company: meta.company,
         role: meta.role,
         jobUrl: meta.jobUrl,
-        note: `auto-logged on submit (${source})`,
+        note: 'auto-logged on submit',
       },
     });
     if (res.ok) {
-      log.debug('auto-logged submission', res.value);
+      log.debug('auto-logged submission', source, res.value);
       onLogged?.({
         company: meta.company,
         role: meta.role,
@@ -132,8 +110,6 @@ async function doLog(
     log.warn('auto-log send threw', err);
   }
 }
-
-/* ----------------------------------------------------------- breadcrumb */
 
 async function writeBreadcrumb(args: WatchArgs): Promise<void> {
   try {
@@ -154,7 +130,6 @@ async function clearBreadcrumb(): Promise<void> {
   try {
     await chrome.storage.session.remove(BREADCRUMB_KEY);
   } catch {
-    /* best-effort */
   }
 }
 
@@ -170,13 +145,6 @@ async function readBreadcrumb(): Promise<Breadcrumb | null> {
   }
 }
 
-/* ----------------------------------------------------------- watchers */
-
-/**
- * Arm the in-page watcher after a fill. Records a breadcrumb (for the full-nav
- * case), then fires once when a real submit attempt is followed by a
- * confirmation view. Idempotent across repeated fills on the same page.
- */
 export function installSubmitWatch(args: WatchArgs): void {
   if (installed) return;
   installed = true;
@@ -185,7 +153,6 @@ export function installSubmitWatch(args: WatchArgs): void {
 
   let sawAttempt = false;
 
-  // Passive: only records that the user tried to submit; never intervenes.
   const onAttempt = (e: Event): void => {
     if (e.type === 'submit') {
       sawAttempt = true;
@@ -230,7 +197,6 @@ export function installSubmitWatch(args: WatchArgs): void {
   const observer = new MutationObserver(() => check());
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  // SPA route changes (Lever/Ashby/Workday) that swap views without a reload.
   const onNav = (): void => check();
   const origPush = history.pushState;
   const origReplace = history.replaceState;
@@ -249,11 +215,6 @@ export function installSubmitWatch(args: WatchArgs): void {
   timer = window.setTimeout(teardown, WATCH_MS);
 }
 
-/**
- * Full-navigation case: when the content script loads on what looks like a
- * confirmation page and a recent same-origin breadcrumb exists, auto-log
- * against the original posting metadata. No-op without a breadcrumb.
- */
 export async function maybeLogPostNavigation(
   adapter: PlatformAdapter,
   doc: Document,
@@ -286,7 +247,6 @@ function sameHost(a: string, b: URL): boolean {
   }
 }
 
-/** Test-only: reset the module guards between cases. */
 export function __resetSubmitWatchForTests(): void {
   installed = false;
   fired = false;

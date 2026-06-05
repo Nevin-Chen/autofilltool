@@ -1,10 +1,3 @@
-/**
- * MV3 service worker — the only place that talks to the webhook or AI provider
- * (content scripts share the page origin and get CORS-blocked); also forwards
- * FILL_PAGE to the active tab. Keep lean: workers can be torn down anytime, so
- * all state lives in chrome.storage.local.
- */
-
 import { respondAsync } from '@/lib/messaging';
 import {
   pickTargetFrames,
@@ -18,6 +11,7 @@ import {
   getHistory,
   getResume,
   pushHistory,
+  clearHistory,
 } from '@/profile/store';
 import {
   isRequestMessage,
@@ -66,13 +60,10 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
               : 'Could not access this page.',
         };
       }
-      // ATS frames only, else the top frame (see frames.ts).
       const targets = pickTargetFrames(frames);
       if (targets.length === 0) {
         return { ok: false, error: 'No reachable frames on this tab.' };
       }
-      // Broadcast in parallel. sendMessage throws on a frame with no listener
-      // (sandboxed iframe we couldn't inject); capture as a per-frame error.
       const responses = await Promise.all(
         targets.map(async (f) => {
           try {
@@ -90,9 +81,7 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
         }),
       );
       const merged = mergeFillResponses(responses);
-      // US3 s3: zero candidate fields across all targeted frames => no form.
-      // Surface an in-page toast in the top frame (the popup shows its own
-      // message from `fieldsDetected` too). Fire-and-forget; presentational.
+
       if (merged.ok && merged.value.fieldsDetected === 0) {
         chrome.tabs
           .sendMessage(
@@ -101,7 +90,6 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
             { frameId: 0 },
           )
           .catch(() => {
-            /* top frame may lack a content script; the popup still shows it */
           });
       }
       return merged;
@@ -109,8 +97,12 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
 
     case 'GET_HISTORY': {
       const list = await getHistory();
-      const limit = msg.limit ?? 25;
-      return { ok: true, value: list.slice(0, limit) };
+      return { ok: true, value: msg.limit != null ? list.slice(0, msg.limit) : list };
+    }
+
+    case 'CLEAR_HISTORY': {
+      await clearHistory();
+      return { ok: true, value: { cleared: true } };
     }
 
     case 'TEST_WEBHOOK': {
@@ -123,7 +115,6 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     }
 
     case 'LOG_SUBMISSION': {
-      // Fill id + timestamp, then validate so malformed records never hit storage.
       const candidate = {
         id: msg.record.id ?? crypto.randomUUID(),
         timestamp: msg.record.timestamp ?? new Date().toISOString(),
@@ -164,7 +155,6 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     }
 
     case 'SHOW_NOTICE':
-      // Sent background→content (top frame); the background is never a recipient.
       return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
     default: {
@@ -175,22 +165,11 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
   }
 }
 
-/** A connection error means the frame's listener wasn't ready — safe to retry. */
 function isNotReadyError(err: unknown): boolean {
   const m = err instanceof Error ? err.message : String(err);
   return /Could not establish connection|Receiving end does not exist/i.test(m);
 }
 
-/**
- * Send a message to one frame, retrying briefly while the content script's
- * onMessage listener is still coming up. crxjs injects the content bundle as a
- * module that registers its listener a tick after executeScript resolves, so
- * the very first FILL_PAGE after a fresh inject can race ahead of it and fail
- * with "Could not establish connection" — the symptom where autofill only
- * worked on the second click. Retrying on that specific error closes the race;
- * a frame with genuinely no listener (sandboxed iframe) just exhausts the
- * retries and surfaces as a normal per-frame error.
- */
 async function sendToFrameWithRetry(
   tabId: number,
   message: RequestMessage,
@@ -211,16 +190,6 @@ async function sendToFrameWithRetry(
   throw lastErr;
 }
 
-/**
- * Inject the content script into every frame of `tabId`, then report which
- * frames are reachable. A window-level guard (`__autofilltool_loaded__`) makes
- * re-injection a no-op, so we can call this unconditionally without PING-first.
- *
- * Every frame because ATS forms are iframed on the company's career domain;
- * sendMessage only reaches the top frame unless we pass `frameId`, so the
- * caller needs the full list. activeTab grants the cross-origin inject. The
- * content-script path is read from the live manifest (crxjs hashes it).
- */
 async function ensureContentScriptInAllFrames(
   tabId: number,
 ): Promise<FrameInfo[]> {
@@ -233,8 +202,6 @@ async function ensureContentScriptInAllFrames(
     target: { tabId, allFrames: true },
     files: [contentJs],
   });
-  // Probe each frame for location.href + a DOM ATS hint. Self-contained:
-  // chrome.scripting runs it in an isolated world without our imports.
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     func: () => {
@@ -282,9 +249,6 @@ chrome.runtime.onMessage.addListener(
   }),
 );
 
-/* ------------------------------------------------------- AI streaming */
-
-/** Long-lived port streaming AI suggestions; one per Suggest click, disconnects on cancel/unload. */
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== AI_PORT_NAME) return;
   let aborted = false;
@@ -316,7 +280,7 @@ chrome.runtime.onConnect.addListener((port) => {
             : settings.ai.provider === 'gemini'
               ? 'https://generativelanguage.googleapis.com/'
               : settings.ai.provider === 'ollama'
-                ? // Empty endpoint → localhost default (provider resolves identically).
+                ?
                   resolveOriginForPermission(
                     settings.ai.endpoint || OLLAMA_DEFAULT_BASE,
                   ) ?? ''
@@ -344,19 +308,9 @@ function safePost(port: chrome.runtime.Port, msg: AiBgToClient): void {
   try {
     port.postMessage(msg);
   } catch {
-    // Disconnected mid-stream — ignore; the receiver gave up.
   }
 }
 
-/* ------------------------------------------------------- lifecycle */
-
-/**
- * chrome.storage.session defaults to TRUSTED_CONTEXTS, which excludes content
- * scripts — so submit-watch's breadcrumb writes throw "Access to storage is not
- * allowed from this context." Granting untrusted contexts access (only the
- * service worker may set this) lets the in-page breadcrumb read/write work.
- * The setting is per-session, so re-apply it on every worker startup.
- */
 function allowSessionStorageInContentScripts(): void {
   try {
     void chrome.storage.session
@@ -384,17 +338,6 @@ self.addEventListener('activate', () => {
   log.debug('service worker activated');
 });
 
-/* ----------------------------- parent-stub dynamic injection (Option B) */
-
-/**
- * When an ATS sub-frame navigation commits in a tab whose top frame is
- * NOT itself an ATS host (e.g. spotandtango.com embedding job-boards.greenhouse.io
- * via `#grnhse_iframe`), inject `parent-stub.ts` into the top frame so the
- * iframe-mounted pill can postMessage into a viewport-fixed parent pill.
- *
- * The stub itself is idempotent via a window guard, so re-injection on
- * repeated commits (e.g. iframe nav within the same tab) is harmless.
- */
 const ATS_HOST_RE =
   /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com)$/i;
 
@@ -408,9 +351,6 @@ function isAtsUrl(raw: string | undefined): boolean {
 }
 
 function getParentStubPath(): string | null {
-  // The crxjs build rewrites content_scripts[*].js paths to hashed assets.
-  // The second content_scripts entry is the parent-stub (with an intentional
-  // never-match URL just to get it bundled). Look it up at runtime.
   const manifest = chrome.runtime.getManifest();
   for (const entry of manifest.content_scripts ?? []) {
     const matches = entry.matches ?? [];
@@ -427,9 +367,6 @@ if (
   typeof chrome.webNavigation.onCommitted?.addListener === 'function'
 ) {
   chrome.webNavigation.onCommitted.addListener(async (details) => {
-    // Only sub-frames where the URL matches an ATS host. parentFrameId 0 is
-    // the most common case (one level of embedding); deeper nesting still
-    // routes through frame 0 of the tab.
     if (details.frameId === 0) return;
     if (!isAtsUrl(details.url)) return;
 
@@ -445,9 +382,6 @@ if (
       });
       log.debug('parent-stub injected into tab', details.tabId);
     } catch (err) {
-      // Likely no host permission for the parent URL (rare with <all_urls>),
-      // or the tab was closed mid-navigation. Either way: silent fail; the
-      // popup-driven Fill path still works.
       log.warn('parent-stub injection failed', err);
     }
   });
