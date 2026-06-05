@@ -16,3 +16,4 @@ vite.config.js.timestamp-*.mjs
 .claude/
 claude.md
 claude.local.md
+.serena

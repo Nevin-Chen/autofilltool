@@ -27,7 +27,6 @@ describe('fillField — text inputs', () => {
     const input = document.createElement('input');
     document.body.appendChild(input);
 
-    // Spy the prototype setter — same trick React uses internally.
     let observed: string | null = null;
     const proto = HTMLInputElement.prototype;
     const orig = Object.getOwnPropertyDescriptor(proto, 'value');
@@ -47,7 +46,6 @@ describe('fillField — text inputs', () => {
 
     const action = fillField(mkField(input), 'Ada', { forceOverwrite: false });
 
-    // Restore the original setter regardless of outcome.
     Object.defineProperty(proto, 'value', orig);
 
     expect(action.status).toBe('filled');
@@ -229,8 +227,6 @@ describe('pickSelectOption', () => {
   });
 });
 
-/* -------------------------------------------- virtualised dropdowns (Workday) */
-
 describe('pickListboxOption', () => {
   it('prefers an exact text match over a substring match', () => {
     const ul = document.createElement('ul');
@@ -308,8 +304,6 @@ describe('fillVirtualizedDropdown', () => {
     let triggerClicks = 0;
     trigger.addEventListener('click', () => triggerClicks++);
 
-    // Listbox is already in the DOM (simulating Workday's portal popup
-    // pre-mounted). The trigger click flow still runs end-to-end.
     const ul = document.createElement('ul');
     ul.setAttribute('role', 'listbox');
     ul.innerHTML = `
@@ -354,7 +348,6 @@ describe('fillVirtualizedDropdown', () => {
     const action = await fillVirtualizedDropdown(field, 'France');
     expect(action.status).toBe('skipped');
     expect(action.note).toMatch(/no option matched/i);
-    // Should click trigger twice — once to open, once to close.
     expect(triggerClicks).toBe(2);
   });
 
@@ -366,4 +359,54 @@ describe('fillVirtualizedDropdown', () => {
     expect(action.status).toBe('skipped');
     expect(action.note).toMatch(/dropdown popup did not appear/i);
   });
+
+  it('handles react-select: input is the trigger AND search, listbox is a portal referenced by aria-controls, options commit on mousedown', async () => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'select__input-container';
+    const input = document.createElement('input');
+    input.id = 'question_17768983004';
+    input.type = 'text';
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', 'react-select-question_17768983004-listbox');
+    wrapper.appendChild(input);
+    document.body.appendChild(wrapper);
+
+    const portal = document.createElement('div');
+    portal.id = 'react-select-question_17768983004-listbox';
+    portal.setAttribute('role', 'listbox');
+    document.body.appendChild(portal);
+
+    const optionEvents: Array<{ kind: string; type: string }> = [];
+    function addOption(text: string): void {
+      const opt = document.createElement('div');
+      opt.setAttribute('role', 'option');
+      opt.textContent = text;
+      opt.addEventListener('mousedown', () => optionEvents.push({ kind: text, type: 'mousedown' }));
+      opt.addEventListener('click', () => optionEvents.push({ kind: text, type: 'click' }));
+      portal.appendChild(opt);
+    }
+
+    input.addEventListener('input', () => {
+      portal.innerHTML = '';
+      if (input.value.toLowerCase() === 'no') addOption('No');
+    });
+
+    let openedViaMousedown = false;
+    input.addEventListener('mousedown', () => (openedViaMousedown = true));
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'authorizedToWorkInUS',
+      label: 'Authorized to work?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(field, 'No');
+    expect(action.status).toBe('filled');
+    expect(openedViaMousedown).toBe(true);
+    expect(optionEvents.some((e) => e.kind === 'No' && e.type === 'mousedown')).toBe(true);
+  });
+
 });

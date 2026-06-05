@@ -360,7 +360,7 @@ export async function fillVirtualizedDropdown(
   const timeout = opts.timeoutMs ?? 1500;
 
   try {
-    trigger.click();
+    openCombobox(trigger);
   } catch (err) {
     return {
       label,
@@ -370,9 +370,22 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  const listbox = await waitForListbox(root, timeout);
+  const listbox = await waitForListbox(root, trigger, timeout);
   if (!listbox) {
     return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
+  }
+
+  if (trigger instanceof HTMLInputElement && !trigger.disabled && !trigger.readOnly) {
+    setNativeValue(trigger, want);
+    dispatchInputEvents(trigger);
+    const filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
+    if (!filteredOption) {
+      return { label, kind, status: 'skipped', note: `no option matched "${truncate(want, 60)}"` };
+    }
+    selectOption(filteredOption);
+    trigger.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!opts.suppressFlash) flashFilled(trigger);
+    return { label, kind, status: 'filled', note: `selected "${textOfNode(filteredOption)}"` };
   }
 
   const option = pickListboxOption(listbox, want);
@@ -389,10 +402,68 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  option.click();
+  selectOption(option);
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
   if (!opts.suppressFlash) flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
+}
+
+const FILTERED_OPTION_TIMEOUT_MS = 400;
+
+function openCombobox(trigger: HTMLElement): void {
+  try {
+    trigger.focus();
+  } catch {
+  }
+  dispatchMouse(trigger, 'mousedown');
+  dispatchMouse(trigger, 'mouseup');
+  try {
+    trigger.click();
+  } catch {
+  }
+}
+
+function selectOption(option: HTMLElement): void {
+  dispatchMouse(option, 'mousedown');
+  dispatchMouse(option, 'mouseup');
+  try {
+    option.click();
+  } catch {
+  }
+}
+
+function dispatchMouse(el: HTMLElement, type: 'mousedown' | 'mouseup'): void {
+  try {
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }),
+    );
+  } catch {
+  }
+}
+
+function waitForOption(
+  listbox: Element,
+  want: string,
+  timeoutMs: number,
+): Promise<HTMLElement | null> {
+  const immediate = pickListboxOption(listbox, want);
+  if (immediate) return Promise.resolve(immediate);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: HTMLElement | null) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const observer = new MutationObserver(() => {
+      const hit = pickListboxOption(listbox, want);
+      if (hit) finish(hit);
+    });
+    observer.observe(listbox, { childList: true, subtree: true, characterData: true });
+    const timer = setTimeout(() => finish(null), timeoutMs);
+  });
 }
 
 export function pickListboxOption(
@@ -417,8 +488,20 @@ export function pickListboxOption(
   return exact ?? substr;
 }
 
-function waitForListbox(root: Document, timeoutMs: number): Promise<Element | null> {
-  const existing = root.querySelector('[role="listbox"]');
+function waitForListbox(
+  root: Document,
+  trigger: HTMLElement,
+  timeoutMs: number,
+): Promise<Element | null> {
+  const ownedId =
+    trigger.getAttribute('aria-controls') ?? trigger.getAttribute('aria-owns');
+  const findByOwned = (): Element | null =>
+    ownedId ? root.getElementById(ownedId) : null;
+  const findFallback = (): Element | null =>
+    root.querySelector('[role="listbox"]');
+  const find = (): Element | null => findByOwned() ?? findFallback();
+
+  const existing = find();
   if (existing) return Promise.resolve(existing);
   return new Promise((resolve) => {
     let done = false;
@@ -430,7 +513,7 @@ function waitForListbox(root: Document, timeoutMs: number): Promise<Element | nu
       resolve(v);
     };
     const observer = new MutationObserver(() => {
-      const found = root.querySelector('[role="listbox"]');
+      const found = find();
       if (found) finish(found);
     });
     observer.observe(root.documentElement, { childList: true, subtree: true });

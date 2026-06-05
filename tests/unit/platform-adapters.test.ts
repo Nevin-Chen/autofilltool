@@ -14,12 +14,9 @@ function loadFixture(name: string): string {
   return readFileSync(resolve(__dirname, `../e2e/fixtures/${name}`), 'utf8');
 }
 
-/** Find a detected field by predicate. */
 function find(fields: DetectedField[], pred: (el: HTMLElement) => boolean) {
   return fields.find((f) => pred(f.el));
 }
-
-/* -------------------------------------------------------- matches() */
 
 describe('adapter matches()', () => {
   beforeEach(() => {
@@ -82,8 +79,6 @@ describe('adapter matches()', () => {
   });
 });
 
-/* -------------------------------------------------------- Greenhouse */
-
 describe('greenhouseAdapter — fixture', () => {
   beforeEach(() => {
     document.documentElement.innerHTML = loadFixture('greenhouse-form.html');
@@ -128,8 +123,6 @@ describe('greenhouseAdapter — fixture', () => {
   });
 });
 
-/* -------------- Greenhouse new redesign (job-boards.greenhouse.io) -------- */
-
 describe('greenhouseAdapter — new redesign fixture', () => {
   beforeEach(() => {
     document.documentElement.innerHTML = loadFixture('greenhouse-embed-new.html');
@@ -167,9 +160,49 @@ describe('greenhouseAdapter — new redesign fixture', () => {
     );
     expect(resume?.files?.[0]?.name).toBe('cv.pdf');
   });
-});
 
-/* -------------------------------------------------------- Lever */
+  it('marks Yes/No combobox triggers as virtualizedDropdown so the async filler runs', () => {
+    const wrap = document.createElement('div');
+    const label = document.createElement('label');
+    label.id = 'auth-q';
+    label.textContent = 'Are you legally authorized to work in the United States?';
+    const trigger = document.createElement('button');
+    trigger.setAttribute('role', 'combobox');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-labelledby', 'auth-q');
+    trigger.textContent = 'Select...';
+    wrap.append(label, trigger);
+    document.body.appendChild(wrap);
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const combo = fields.find((f) => f.el === trigger);
+    expect(combo, 'combobox trigger should be detected').toBeDefined();
+    expect(combo?.widget).toBe('virtualizedDropdown');
+    expect(combo?.kind).toBe('authorizedToWorkInUS');
+  });
+
+  it('marks an <input role="combobox"> (react-select) as virtualizedDropdown — not a plain text field', () => {
+    const wrap = document.createElement('div');
+    const label = document.createElement('label');
+    label.id = 'question_17768983004-label';
+    label.textContent = 'Do you require visa sponsorship?';
+    const input = document.createElement('input');
+    input.id = 'question_17768983004';
+    input.type = 'text';
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-labelledby', 'question_17768983004-label');
+    input.setAttribute('aria-controls', 'react-select-question_17768983004-listbox');
+    wrap.append(label, input);
+    document.body.appendChild(wrap);
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const combo = fields.find((f) => f.el === input);
+    expect(combo, 'react-select input should be detected').toBeDefined();
+    expect(combo?.widget).toBe('virtualizedDropdown');
+    expect(combo?.kind).toBe('requiresSponsorship');
+  });
+});
 
 describe('leverAdapter — fixture', () => {
   beforeEach(() => {
@@ -211,8 +244,6 @@ describe('leverAdapter — fixture', () => {
   });
 });
 
-/* -------------------------------------------------------- Ashby */
-
 describe('ashbyAdapter — fixture', () => {
   beforeEach(() => {
     document.documentElement.innerHTML = loadFixture('ashby-form.html');
@@ -243,8 +274,6 @@ describe('ashbyAdapter — fixture', () => {
   });
 });
 
-/* -------------------------------------------------------- Workday */
-
 describe('workdayAdapter — fixture', () => {
   beforeEach(() => {
     document.documentElement.innerHTML = loadFixture('workday-form.html');
@@ -269,7 +298,6 @@ describe('workdayAdapter — fixture', () => {
       expect(f, `missing field for ${automationId}`).toBeDefined();
       expect(f?.kind).toBe(kind);
       expect(f?.confidence).toBeGreaterThanOrEqual(0.85);
-      // Text inputs must NOT be marked as virtualised dropdowns.
       expect(f?.widget).not.toBe('virtualizedDropdown');
     }
   });
@@ -301,8 +329,6 @@ describe('workdayAdapter — fixture', () => {
     expect(text).toMatch(/5\+ years backend/);
   });
 });
-
-/* ----------------------------------------- getJobDescription per adapter */
 
 describe('getJobDescription', () => {
   beforeEach(() => {
@@ -356,7 +382,6 @@ describe('getJobDescription', () => {
   });
 
   it('generic uses Readability when the page looks article-ish', () => {
-    // Readability requires a meaningful amount of prose + structure to fire.
     const body = Array(20)
       .fill(
         '<p>This is a long-form article paragraph describing the role with enough text to satisfy Readability heuristics. The candidate will lead initiatives and ship features.</p>',
