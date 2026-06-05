@@ -22,12 +22,8 @@ export function OptionsApp() {
   const [loaded, setLoaded] = useState(false);
   const [save, setSave] = useState<SaveState>('idle');
   const [error, setError] = useState<string | null>(null);
-  // The provider actually persisted to storage — distinct from the live
-  // `settings.ai.provider`, which reflects an unsaved radio selection. Drives
-  // the "(current)" marker so the user can tell what's saved vs picked.
   const [savedProvider, setSavedProvider] = useState<Settings['ai']['provider']>('none');
 
-  // Initial load from chrome.storage.local.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -47,7 +43,6 @@ export function OptionsApp() {
     e.preventDefault();
     setSave('saving');
     setError(null);
-    // Re-validate at the boundary; this catches anything the UI failed to type-check.
     const pParsed = ProfileSchema.safeParse(profile);
     const sParsed = SettingsSchema.safeParse(settings);
     if (!pParsed.success || !sParsed.success) {
@@ -96,7 +91,6 @@ export function OptionsApp() {
       </header>
 
       <form onSubmit={onSave} className="space-y-8">
-        {/* ------------------------------------------------ Identity */}
         <Section title="Name and contact">
           <Grid>
             <TextField
@@ -134,7 +128,6 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        {/* ------------------------------------------------ Address */}
         <Section title="Address">
           <Grid>
             <TextField
@@ -182,7 +175,6 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        {/* ------------------------------------------------ Links */}
         <Section title="Links">
           <Grid>
             <TextField
@@ -216,7 +208,6 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        {/* ------------------------------------------------ Work auth */}
         <Section
           title="Work authorization"
         >
@@ -264,10 +255,8 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        {/* ------------------------------------------------ Resume */}
         <ResumeSection />
 
-        {/* ------------------------------------------------ AI */}
         <AISection
           settings={settings.ai}
           savedProvider={savedProvider}
@@ -275,7 +264,6 @@ export function OptionsApp() {
           defaultCollapsed
         />
 
-        {/* ------------------------------------------------ Tracking */}
         <TrackingSection
           url={settings.tracking.webhookUrl}
           onChange={(webhookUrl) =>
@@ -309,13 +297,11 @@ export function OptionsApp() {
       </form>
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        v0.12.0
+        v{chrome.runtime.getManifest().version}
       </footer>
     </main>
   );
 }
-
-/* -------------------------------------------------- tiny presentational bits */
 
 function Grid(props: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{props.children}</div>;
@@ -347,7 +333,6 @@ function CountryField(props: {
   value: string;
   onChange: (v: string) => void;
 }) {
-  // Store country name (forms expect "United States"); preserve free-text fallback.
   const known = COUNTRIES.some((c) => c.name === props.value);
   return (
     <label className="block text-sm">
@@ -378,7 +363,6 @@ function PhoneField(props: {
   phone: string;
   onChange: (country: string, phone: string) => void;
 }) {
-  // Seed from saved ISO or inferred +<dial> prefix.
   const { iso, national } = splitPhone(props.phone, props.country);
 
   const setCountry = (nextIso: string) =>
