@@ -255,6 +255,68 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
+        <Section
+          title="Voluntary Self-Identification"
+        >
+          <Grid>
+            <SelectField
+              label="Gender"
+              value={profile.demographics.gender}
+              options={GENDER_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  gender: v,
+                })
+              }
+            />
+            <SelectField
+              label="Are you Hispanic or Latino?"
+              value={profile.demographics.ethnicity}
+              options={HISPANIC_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  ethnicity: v,
+                })
+              }
+            />
+            <SelectField
+              label="Please identify your race"
+              value={profile.demographics.race}
+              options={RACE_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  race: v,
+                })
+              }
+            />
+            <SelectField
+              label="Veteran status"
+              value={profile.demographics.veteranStatus}
+              options={VETERAN_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  veteranStatus: v,
+                })
+              }
+            />
+            <SelectField
+              label="Disability status"
+              value={profile.demographics.disabilityStatus}
+              options={DISABILITY_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  disabilityStatus: v,
+                })
+              }
+            />
+          </Grid>
+        </Section>
+
         <ResumeSection />
 
         <AISection
@@ -422,6 +484,71 @@ function TristateField(props: {
         <option value="">— blank —</option>
         <option value="yes">Yes</option>
         <option value="no">No</option>
+      </select>
+    </label>
+  );
+}
+
+const GENDER_OPTIONS = [
+  'Male',
+  'Female',
+  'Non-binary',
+  'Decline to self-identify',
+];
+
+const HISPANIC_OPTIONS = [
+  'Yes',
+  'No',
+  'Decline to self-identify',
+];
+
+const RACE_OPTIONS = [
+  'American Indian or Alaska Native',
+  'Asian',
+  'Black or African American',
+  'Native Hawaiian or Other Pacific Islander',
+  'White',
+  'Two or More Races',
+  'Decline to self-identify',
+];
+
+const VETERAN_OPTIONS = [
+  'I am not a protected veteran',
+  'I identify as one or more of the classifications of a protected veteran',
+  "I don't wish to answer",
+];
+
+const DISABILITY_OPTIONS = [
+  'Yes, I have a disability (or previously had a disability)',
+  "No, I don't have a disability and have not had one in the past",
+  "I don't wish to answer",
+];
+
+function SelectField(props: {
+  label: string;
+  value: string | null;
+  options: ReadonlyArray<string>;
+  onChange: (v: string) => void;
+}) {
+  const value = props.value ?? '';
+  const known = props.options.includes(value);
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-slate-700 dark:text-slate-200">
+        {props.label}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => props.onChange(e.target.value)}
+        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+      >
+        <option value="">— blank —</option>
+        {!known && value !== '' && <option value={value}>{value}</option>}
+        {props.options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
       </select>
     </label>
   );

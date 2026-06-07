@@ -164,9 +164,10 @@ export const KEYWORD_RULES: ReadonlyArray<{
   { kind: 'pronouns', re: /\bpronoun/, confidence: 0.7 },
   {
     kind: 'ethnicity',
-    re: /\b(ethnicity|race|hispanic|latino|latina|latinx)\b/,
+    re: /\b(hispanic|latino|latina|latinx)\b/,
     confidence: 0.7,
   },
+  { kind: 'race', re: /\brace\b/, confidence: 0.7 },
   { kind: 'veteranStatus', re: /\b(veteran|military)\b/, confidence: 0.7 },
   { kind: 'disabilityStatus', re: /\bdisab(ility|led)\b/, confidence: 0.7 },
 ];

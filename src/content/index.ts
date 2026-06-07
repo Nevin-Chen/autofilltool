@@ -382,6 +382,29 @@ async function runFill(forceFromMsg?: boolean) {
 
   if (animate) await delay(FILL_ANIM.SETTLE_MS);
 
+  const seenEls = new WeakSet<HTMLElement>(fields.map((f) => f.el));
+  const reDetected = adapter.detectFields(document);
+  const newFields = reDetected.filter((f) => !seenEls.has(f.el));
+  for (const field of newFields) {
+    const value = valueForField(profile, field.kind);
+    let action: FillAction;
+    if (field.widget === 'virtualizedDropdown') {
+      action = await fillVirtualizedDropdown(field, value, {
+        forceOverwrite,
+        suppressFlash: animate,
+      });
+    } else {
+      action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
+    }
+    actions.push(action);
+    if (action.status === 'filled') {
+      reviewItems.push({ group: 'filled', label: action.label, el: field.el });
+      if (animate) applyFlash(field.el);
+    } else if (action.status === 'skipped') {
+      reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+    }
+  }
+
   let resumeStatus: 'attached' | 'skipped' | 'notFound' | 'noResume' | 'noHook' =
     'noResume';
   if (resume) {

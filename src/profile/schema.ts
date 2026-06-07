@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-/** Bump on any on-disk shape change needing a runtime migration (./migrations.ts). */
 export const CURRENT_SCHEMA_VERSION = 1 as const;
-
-/* ------------------------------------------------------------------ Profile */
 
 export const AddressSchema = z.object({
   line1: z.string().default(''),
@@ -24,10 +21,6 @@ export const LinksSchema = z.object({
 });
 export type Links = z.infer<typeof LinksSchema>;
 
-/**
- * Work authorization. All fields are nullable because users may want to leave
- * them blank rather than say "no" — that's important on EEO-adjacent questions.
- */
 export const WorkAuthSchema = z.object({
   authorizedToWorkInUS: z.boolean().nullable().default(null),
   requiresSponsorship: z.boolean().nullable().default(null),
@@ -37,24 +30,16 @@ export const WorkAuthSchema = z.object({
 });
 export type WorkAuth = z.infer<typeof WorkAuthSchema>;
 
-/**
- * Demographics — strictly optional, all nullable. We never pre-fill these
- * unless the user has explicitly entered a value.
- */
 export const DemographicsSchema = z.object({
   gender: z.string().nullable().default(null),
   pronouns: z.string().nullable().default(null),
   ethnicity: z.string().nullable().default(null),
+  race: z.string().nullable().default(null),
   veteranStatus: z.string().nullable().default(null),
   disabilityStatus: z.string().nullable().default(null),
 });
 export type Demographics = z.infer<typeof DemographicsSchema>;
 
-/**
- * A canned answer the user has saved for an open-ended question they tend to
- * see repeatedly ("Why this company?" etc.). Matched by `questionPattern` —
- * a substring (case-insensitive) of the question label on the page.
- */
 export const SavedAnswerSchema = z.object({
   id: z.string().uuid(),
   questionPattern: z.string().min(1),
@@ -80,8 +65,6 @@ export const ProfileSchema = z.object({
 });
 export type Profile = z.infer<typeof ProfileSchema>;
 
-/* ----------------------------------------------------------------- Settings */
-
 export const AdapterIdSchema = z.enum([
   'greenhouse',
   'lever',
@@ -100,12 +83,11 @@ export const AiProviderSchema = z.enum([
 ]);
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 
-/** `endpoint` is Ollama-only: a remote host base URL; the fetch appends the chat path. */
 export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),
-  apiKey: z.string().default(''), // stored in chrome.storage.local only, never synced
+  apiKey: z.string().default(''),
   model: z.string().default(''),
-  endpoint: z.string().default(''), // Ollama only; blank → http://localhost:11434
+  endpoint: z.string().default(''),
   cacheResponses: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
@@ -120,7 +102,6 @@ export const TrackingSettingsSchema = z.object({
 });
 export type TrackingSettings = z.infer<typeof TrackingSettingsSchema>;
 
-// Visual behaviour. `animateFill` toggles the design's staggered fill animation.
 export const UiSettingsSchema = z.object({
   animateFill: z.boolean().default(true),
 });
@@ -135,29 +116,21 @@ export const SettingsSchema = z.object({
     'generic',
   ]),
   forceOverwrite: z.boolean().default(false),
-  perSiteAllowlist: z.array(z.string()).default([]), // hostnames
+  perSiteAllowlist: z.array(z.string()).default([]),
   ai: AiSettingsSchema.default({}),
   tracking: TrackingSettingsSchema.default({}),
   ui: UiSettingsSchema.default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-/* --------------------------------------------------------------- Resume */
-
-/**
- * Stored separately from Profile in chrome.storage because of size.
- * `bytesBase64` is the raw file content. Reconstructed into a File at fill time.
- */
 export const ResumeRecordSchema = z.object({
   filename: z.string().min(1),
   mimeType: z.string().min(1),
   size: z.number().int().nonnegative(),
-  bytesBase64: z.string(), // base64 of the file contents
+  bytesBase64: z.string(),
   uploadedAt: z.string().datetime(),
 });
 export type ResumeRecord = z.infer<typeof ResumeRecordSchema>;
-
-/* --------------------------------------------------------------- History */
 
 export const SubmissionStatusSchema = z.enum([
   'filled',
@@ -173,15 +146,12 @@ export const SubmissionRecordSchema = z.object({
   company: z.string().default(''),
   role: z.string().default(''),
   jobUrl: z.string().default(''),
-  source: AdapterIdSchema, // which adapter handled it
+  source: AdapterIdSchema,
   status: SubmissionStatusSchema,
   note: z.string().default(''),
 });
 export type SubmissionRecord = z.infer<typeof SubmissionRecordSchema>;
 
-/* --------------------------------------------------- Envelope on disk */
-
-/** Each storage key holds a versioned envelope; ./store.ts validates + migrates on read. */
 export const ProfileEnvelopeSchema = z.object({
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),
   data: ProfileSchema,
@@ -206,12 +176,6 @@ export const HistoryEnvelopeSchema = z.object({
 });
 export type HistoryEnvelope = z.infer<typeof HistoryEnvelopeSchema>;
 
-/* --------------------------------------------------- Convenience defaults */
-
-/**
- * Builds an empty Profile by feeding `{}` through the schema. Every leaf has
- * `.default(...)`, so this never throws and matches what we want on first run.
- */
 export function emptyProfile(): Profile {
   return ProfileSchema.parse({});
 }

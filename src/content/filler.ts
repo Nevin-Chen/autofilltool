@@ -384,7 +384,21 @@ export async function fillVirtualizedDropdown(
     setNativeValue(trigger, want);
     dispatchInputEvents(trigger);
 
-    const filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
+    let filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
+
+    if (!filteredOption) {
+      const prefix = discriminatingPrefix(want);
+      if (prefix && prefix !== want) {
+        setNativeValue(trigger, prefix);
+        dispatchInputEvents(trigger);
+        filteredOption = await waitForOption(listbox, prefix, FILTERED_OPTION_TIMEOUT_MS);
+        if (!filteredOption) {
+          filteredOption = listbox.querySelector<HTMLElement>(
+            '[role="option"]:not([aria-disabled="true"])',
+          );
+        }
+      }
+    }
     pressEnter(trigger);
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
     if (!opts.suppressFlash) flashFilled(trigger);
@@ -457,6 +471,10 @@ function comboboxHasValue(trigger: HTMLElement): boolean {
   const text = (trigger.textContent ?? '').trim();
   if (!text) return false;
   return !/^(select|choose|pick|please|--|—)\b/i.test(text);
+}
+
+function discriminatingPrefix(value: string): string {
+  return value.trim().slice(0, 4);
 }
 
 function pressEnter(el: HTMLElement): void {
