@@ -183,10 +183,25 @@ export function isFillable(el: HTMLElement): boolean {
     if (el.disabled || el.readOnly) return false;
     const skip = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'file', 'color']);
     if (skip.has(el.type)) return false;
-    return true;
+    return !isVisuallyHidden(el);
   }
-  if (el instanceof HTMLSelectElement) return !el.disabled;
-  if (el instanceof HTMLTextAreaElement) return !el.disabled && !el.readOnly;
+  if (el instanceof HTMLSelectElement) return !el.disabled && !isVisuallyHidden(el);
+  if (el instanceof HTMLTextAreaElement)
+    return !el.disabled && !el.readOnly && !isVisuallyHidden(el);
+  return false;
+}
+
+function isVisuallyHidden(el: HTMLElement): boolean {
+  if (el.getAttribute('aria-hidden') === 'true') return true;
+  const inline = el.style;
+  if (inline.display === 'none') return true;
+  if (inline.visibility === 'hidden') return true;
+  const view = el.ownerDocument.defaultView;
+  if (view && typeof view.getComputedStyle === 'function') {
+    const cs = view.getComputedStyle(el);
+    if (cs.display === 'none') return true;
+    if (cs.visibility === 'hidden') return true;
+  }
   return false;
 }
 
@@ -234,13 +249,8 @@ export function bestLabel(el: HTMLElement): string {
 
   let cursor: HTMLElement | null = el.parentElement;
   for (let depth = 0; cursor && depth < 4; depth++, cursor = cursor.parentElement) {
-    const candidate =
-      cursor.querySelector('label, legend') ??
-      cursor.querySelector('.label, [class*="label" i]');
-    if (candidate instanceof HTMLElement) {
-      const t = textOf(candidate);
-      if (t) return t;
-    }
+    const t = pickUnclaimedLabel(cursor, el);
+    if (t) return t;
   }
 
   const aria = el.getAttribute('aria-label');
@@ -250,6 +260,104 @@ export function bestLabel(el: HTMLElement): string {
   const name = el.getAttribute('name');
   if (name) return name.trim();
   return '';
+}
+
+function pickUnclaimedLabel(scope: HTMLElement, target: HTMLElement): string {
+  const candidates = scope.querySelectorAll<HTMLElement>('label, legend');
+
+  for (const candidate of Array.from(candidates)) {
+    if (isExplicitlyForTarget(candidate, target)) {
+      const t = textOf(candidate);
+      if (t) return t;
+    }
+  }
+
+  const positional = nearestPrecedingLabel(scope, target);
+  if (positional) {
+    const t = textOf(positional);
+    if (t) return t;
+  }
+
+  if (hasOtherFillableField(scope, target)) return '';
+
+  for (const candidate of Array.from(candidates)) {
+    if (labelBelongsToDifferentField(candidate, target)) continue;
+    const t = textOf(candidate);
+    if (t) return t;
+  }
+  const classLabel = scope.querySelector<HTMLElement>('.label, [class*="label" i]');
+  if (classLabel instanceof HTMLElement && !labelBelongsToDifferentField(classLabel, target)) {
+    const t = textOf(classLabel);
+    if (t) return t;
+  }
+  return '';
+}
+
+function nearestPrecedingLabel(scope: HTMLElement, target: HTMLElement): HTMLElement | null {
+  const all = scope.querySelectorAll<HTMLElement>(
+    'label, legend, input, textarea, select',
+  );
+  let lastLabel: HTMLElement | null = null;
+  for (const el of Array.from(all)) {
+    if (el === target) return lastLabel;
+    if (el instanceof HTMLLabelElement || el.tagName === 'LEGEND') {
+      lastLabel = el;
+      continue;
+    }
+    if (el instanceof HTMLInputElement) {
+      const t = (el.type || 'text').toLowerCase();
+      if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'reset' || t === 'image')
+        continue;
+    }
+    lastLabel = null;
+  }
+  return null;
+}
+
+function isExplicitlyForTarget(label: HTMLElement, target: HTMLElement): boolean {
+  if (label instanceof HTMLLabelElement) {
+    const forId = label.getAttribute('for');
+    if (forId && forId === target.id) return true;
+    const wrapped = label.querySelector('input, textarea, select');
+    if (wrapped === target) return true;
+  }
+  const labelId = label.id;
+  if (labelId) {
+    const ariaLabelledBy = target.getAttribute('aria-labelledby');
+    if (ariaLabelledBy && ariaLabelledBy.split(/\s+/).includes(labelId)) return true;
+  }
+  return false;
+}
+
+function hasOtherFillableField(scope: HTMLElement, target: HTMLElement): boolean {
+  const fields = scope.querySelectorAll('input, textarea, select');
+  for (const f of Array.from(fields)) {
+    if (f === target) continue;
+    if (f instanceof HTMLInputElement) {
+      const t = (f.type || 'text').toLowerCase();
+      if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'reset' || t === 'image')
+        continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function labelBelongsToDifferentField(label: HTMLElement, target: HTMLElement): boolean {
+  if (label instanceof HTMLLabelElement) {
+    const forId = label.getAttribute('for');
+    if (forId && forId !== target.id) return true;
+    const wrapped = label.querySelector('input, textarea, select');
+    if (wrapped && wrapped !== target) return true;
+  }
+  const labelId = label.id;
+  if (labelId) {
+    const referrer = label.ownerDocument.querySelector(
+      `[aria-labelledby~="${cssEscape(labelId)}"]`,
+    );
+    if (referrer && referrer !== target) return true;
+  }
+  return false;
 }
 
 export function groupLabelFor(el: HTMLInputElement): string {
