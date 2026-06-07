@@ -11,6 +11,7 @@ export type FieldKind =
   | 'addressLine2'
   | 'city'
   | 'region'
+  | 'cityAndRegion'
   | 'postalCode'
   | 'country'
   | 'linkedin'

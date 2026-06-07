@@ -35,7 +35,86 @@
           <div data-testid="FieldLabel">Why do you want to work at Globex?</div>
           <textarea data-testid="MultilineInput" name="customfield_why"></textarea>
         </div>
+        <div data-testid="FieldEntry" id="entry-name-single">
+          <div data-testid="FieldLabel">Name</div>
+          <input data-testid="InputField" name="customfield_name_single" type="text" />
+        </div>
         <button type="submit">Submit application</button>
+      </form>
+    </div>
+    <div id="ashby-live-form">
+      <form>
+        <div data-field-entry-id="live-name" class="ashby-application-form-field-entry">
+          <label class="ashby-application-form-question-title" for="live-name-input">Name</label>
+          <div>
+            <input id="live-name-input" name="live-name" type="text" />
+          </div>
+        </div>
+        <div data-field-entry-id="live-address-citystate" class="ashby-application-form-field-entry">
+          <label class="ashby-application-form-question-title" for="live-address-citystate-input">Address (Please specify City &amp; State)</label>
+          <div>
+            <input id="live-address-citystate-input" name="live-address-citystate" type="text" />
+          </div>
+        </div>
+        <div data-field-entry-id="live-sponsorship">
+          <fieldset>
+            <label class="ashby-application-form-question-title" for="live-sponsorship">Will you now or in the future require sponsorship for an employment based visa status?</label>
+            <input type="radio" id="live-sponsorship-yes" name="live-sponsorship" />
+            <label for="live-sponsorship-yes">Yes</label>
+            <input type="radio" id="live-sponsorship-no" name="live-sponsorship" />
+            <label for="live-sponsorship-no">No</label>
+          </fieldset>
+        </div>
+        <div data-field-entry-id="live-relocation">
+          <fieldset>
+            <label class="ashby-application-form-question-title" for="live-relocation">Are you willing to relocate?</label>
+            <input type="radio" id="live-relocation-yes" name="live-relocation" />
+            <label for="live-relocation-yes">Yes</label>
+            <input type="radio" id="live-relocation-no" name="live-relocation" />
+            <label for="live-relocation-no">No</label>
+          </fieldset>
+        </div>
+        <div data-field-entry-id="live-commute">
+          <fieldset>
+            <label class="ashby-application-form-question-title" for="live-commute">At this time we don't provide relocation. This is a hybrid role. Are you able to commute to the office 3+ days a week to the location stated in the job description?</label>
+            <input type="radio" id="live-commute-yes" name="live-commute" />
+            <label for="live-commute-yes">Yes</label>
+            <input type="radio" id="live-commute-no" name="live-commute" />
+            <label for="live-commute-no">No</label>
+          </fieldset>
+        </div>
+        <div data-field-entry-id="live-race">
+          <fieldset>
+            <label class="ashby-application-form-question-title" for="live-race">Race</label>
+            <input type="radio" id="live-race-0" name="live-race" />
+            <label for="live-race-0">Hispanic or Latino</label>
+            <input type="radio" id="live-race-1" name="live-race" />
+            <label for="live-race-1">White (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-2" name="live-race" />
+            <label for="live-race-2">Black or African American (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-3" name="live-race" />
+            <label for="live-race-3">Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-4" name="live-race" />
+            <label for="live-race-4">Asian (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-5" name="live-race" />
+            <label for="live-race-5">American Indian or Alaska Native (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-6" name="live-race" />
+            <label for="live-race-6">Two or More Races (Not Hispanic or Latino)</label>
+            <input type="radio" id="live-race-7" name="live-race" />
+            <label for="live-race-7">Decline to self-identify</label>
+          </fieldset>
+        </div>
+        <div data-field-entry-id="live-disability">
+          <fieldset>
+            <label class="ashby-application-form-question-title" for="live-disability">Disability Status</label>
+            <input type="radio" id="live-disability-0" name="live-disability" />
+            <label for="live-disability-0">Yes, I have a disability, or have had one in the past</label>
+            <input type="radio" id="live-disability-1" name="live-disability" />
+            <label for="live-disability-1">No, I don't have a disability and have not had one in the past</label>
+            <input type="radio" id="live-disability-2" name="live-disability" />
+            <label for="live-disability-2">I do not want to answer</label>
+          </fieldset>
+        </div>
       </form>
     </div>
   </body>

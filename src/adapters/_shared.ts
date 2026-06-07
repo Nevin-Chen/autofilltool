@@ -115,6 +115,11 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.8,
   },
   {
+    kind: 'cityAndRegion',
+    re: /\bcity\b.*\b(state|province|region)\b|\b(state|province|region)\b.*\bcity\b/,
+    confidence: 0.85,
+  },
+  {
     kind: 'addressLine1',
     re: /\b(street|address[\s_-]*(line[\s_-]*)?1|address\b(?!.*2))\b/,
     confidence: 0.7,
@@ -152,7 +157,7 @@ export const KEYWORD_RULES: ReadonlyArray<{
   },
   {
     kind: 'willingToRelocate',
-    re: /\b(willing\s+to\s+relocate|open\s+to\s+relocation|relocate)\b/,
+    re: /\b(willing\s+to\s+relocate|open\s+to\s+relocation|relocat(e|ion)|commute)\b/,
     confidence: 0.75,
   },
   {

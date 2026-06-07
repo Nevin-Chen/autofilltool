@@ -24,6 +24,8 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.address.city || null;
     case 'region':
       return profile.address.region || null;
+    case 'cityAndRegion':
+      return joinCityAndRegion(profile);
     case 'postalCode':
       return profile.address.postalCode || null;
     case 'country':
@@ -85,5 +87,12 @@ function joinFullName(profile: Profile): string | null {
   const first = profile.firstName.trim();
   const last = profile.lastName.trim();
   const joined = [first, last].filter(Boolean).join(' ');
+  return joined || null;
+}
+
+function joinCityAndRegion(profile: Profile): string | null {
+  const city = profile.address.city.trim();
+  const region = profile.address.region.trim();
+  const joined = [city, region].filter(Boolean).join(', ');
   return joined || null;
 }

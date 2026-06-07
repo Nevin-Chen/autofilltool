@@ -40,3 +40,26 @@ describe('valueForField — work authorization yes/no coercion', () => {
     expect(valueForField(unset, 'willingToRelocate')).toBeNull();
   });
 });
+
+describe('valueForField — cityAndRegion composition', () => {
+  function withAddress(overrides: Partial<Profile['address']>): Profile {
+    const p = emptyProfile();
+    return { ...p, address: { ...p.address, ...overrides } };
+  }
+
+  it('joins city and region with ", "', () => {
+    const p = withAddress({ city: 'Brooklyn', region: 'NY' });
+    expect(valueForField(p, 'cityAndRegion')).toBe('Brooklyn, NY');
+  });
+
+  it('falls back to whichever side is set when the other is empty', () => {
+    expect(valueForField(withAddress({ city: 'Brooklyn', region: '' }), 'cityAndRegion')).toBe(
+      'Brooklyn',
+    );
+    expect(valueForField(withAddress({ city: '', region: 'NY' }), 'cityAndRegion')).toBe('NY');
+  });
+
+  it('returns null when both city and region are empty', () => {
+    expect(valueForField(withAddress({ city: '', region: '' }), 'cityAndRegion')).toBeNull();
+  });
+});
