@@ -451,6 +451,77 @@ describe('ashbyAdapter — fixture', () => {
     const input = document.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input?.files?.[0]?.name).toBe('cv.pdf');
   });
+
+  it('classifies a single-token "Name" FieldEntry as fullName', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const f = fields.find(
+      (x) => x.el === document.querySelector('input[name="customfield_name_single"]'),
+    );
+    expect(f, 'single-Name field should be detected').toBeDefined();
+    expect(f?.kind).toBe('fullName');
+  });
+
+  it('does not misclassify FieldEntry labels that merely contain "name" (e.g. "Company name") as fullName', () => {
+    document.documentElement.innerHTML = `
+      <div>
+        <div data-testid="FieldEntry">
+          <div data-testid="FieldLabel">Company name</div>
+          <input data-testid="InputField" name="customfield_company" type="text" />
+        </div>
+      </div>
+    `;
+    const fields = ashbyAdapter.detectFields(document);
+    const f = fields.find(
+      (x) => x.el === document.querySelector('input[name="customfield_company"]'),
+    );
+    expect(f?.kind).not.toBe('fullName');
+  });
+
+  it('classifies a [data-field-entry-id] Name input as fullName', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const f = fields.find((x) => x.el === document.getElementById('live-name-input'));
+    expect(f?.kind).toBe('fullName');
+  });
+
+  it('classifies an "Address (City & State)" input as cityAndRegion (not addressLine1)', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const f = fields.find(
+      (x) => x.el === document.getElementById('live-address-citystate-input'),
+    );
+    expect(f?.kind).toBe('cityAndRegion');
+  });
+
+  it('detects radio-group FieldEntries (live DOM): exactly one DetectedField per group, first radio as representative', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const cases: Array<[string, FieldKind, string]> = [
+      ['live-sponsorship-yes', 'requiresSponsorship', 'live-sponsorship'],
+      ['live-relocation-yes', 'willingToRelocate', 'live-relocation'],
+      ['live-race-0', 'race', 'live-race'],
+      ['live-disability-0', 'disabilityStatus', 'live-disability'],
+    ];
+    for (const [repId, kind, name] of cases) {
+      const rep = document.getElementById(repId);
+      const groupFields = fields.filter(
+        (x) =>
+          x.el instanceof HTMLInputElement &&
+          x.el.type === 'radio' &&
+          x.el.name === name,
+      );
+      expect(groupFields.length, `exactly one DetectedField for radio group ${name}`).toBe(1);
+      expect(groupFields[0]?.kind, `kind for ${name}`).toBe(kind);
+      expect(groupFields[0]?.el, `representative radio for ${name}`).toBe(rep);
+    }
+  });
+
+  it('classifies a "we don\'t provide relocation ... able to commute" question as willingToRelocate', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const groupFields = fields.filter(
+      (x) =>
+        x.el instanceof HTMLInputElement && x.el.type === 'radio' && x.el.name === 'live-commute',
+    );
+    expect(groupFields.length).toBe(1);
+    expect(groupFields[0]?.kind).toBe('willingToRelocate');
+  });
 });
 
 describe('workdayAdapter — fixture', () => {

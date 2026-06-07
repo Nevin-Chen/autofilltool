@@ -180,6 +180,124 @@ describe('fillField — checkbox & radio', () => {
     expect(yes.checked).toBe(true);
     expect(no.checked).toBe(false);
   });
+
+  it('falls back to a word-boundary prefix match for verbose EEO radio labels', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="race" id="race-0" />
+      <label for="race-0">Hispanic or Latino</label>
+      <input type="radio" name="race" id="race-1" />
+      <label for="race-1">White (Not Hispanic or Latino)</label>
+      <input type="radio" name="race" id="race-2" />
+      <label for="race-2">Asian (Not Hispanic or Latino)</label>
+      <input type="radio" name="race" id="race-3" />
+      <label for="race-3">American Indian or Alaska Native (Not Hispanic or Latino)</label>
+    `;
+    const r0 = document.getElementById('race-0') as HTMLInputElement;
+    const asian = document.getElementById('race-2') as HTMLInputElement;
+    const a = fillField(mkField(r0, { kind: 'race' }), 'Asian', { forceOverwrite: false });
+    expect(a.status).toBe('filled');
+    expect(asian.checked).toBe(true);
+  });
+
+  it('prefix match resolves "No" against a verbose disability label', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="dis" id="dis-0" />
+      <label for="dis-0">Yes, I have a disability, or have had one in the past</label>
+      <input type="radio" name="dis" id="dis-1" />
+      <label for="dis-1">No, I don't have a disability and have not had one in the past</label>
+      <input type="radio" name="dis" id="dis-2" />
+      <label for="dis-2">I do not want to answer</label>
+    `;
+    const rep = document.getElementById('dis-0') as HTMLInputElement;
+    const no = document.getElementById('dis-1') as HTMLInputElement;
+    const a = fillField(mkField(rep, { kind: 'disabilityStatus' }), 'No', {
+      forceOverwrite: false,
+    });
+    expect(a.status).toBe('filled');
+    expect(no.checked).toBe(true);
+  });
+
+  it('resolves "No" against the live Ashby disability DOM (nested spans, sibling label)', () => {
+    document.body.innerHTML = `
+      <fieldset>
+        <label for="_systemfield_eeoc_disability_status">Disability Status</label>
+        <div class="_option_1258i_34 false">
+          <span class="_container_132c8_28" data-disabled="false">
+            <span class="_circle_132c8_77"></span>
+            <input type="radio" id="dis-0" name="d39__systemfield_eeoc_disability_status" />
+          </span>
+          <label for="dis-0">Yes, I have a disability, or have had one in the past</label>
+        </div>
+        <div class="_option_1258i_34 false">
+          <span class="_container_132c8_28" data-disabled="false">
+            <span class="_circle_132c8_77"></span>
+            <input type="radio" id="dis-1" name="d39__systemfield_eeoc_disability_status" />
+          </span>
+          <label for="dis-1">No, I don't have a disability and have not had one in the past</label>
+        </div>
+        <div class="_option_1258i_34 false">
+          <span class="_container_132c8_28" data-disabled="false">
+            <span class="_circle_132c8_77"></span>
+            <input type="radio" id="dis-2" name="d39__systemfield_eeoc_disability_status" />
+          </span>
+          <label for="dis-2">I do not want to answer</label>
+        </div>
+      </fieldset>
+    `;
+    const rep = document.getElementById('dis-0') as HTMLInputElement;
+    const no = document.getElementById('dis-1') as HTMLInputElement;
+    const a = fillField(mkField(rep, { kind: 'disabilityStatus' }), 'No', {
+      forceOverwrite: false,
+    });
+    expect(a.status).toBe('filled');
+    expect(no.checked).toBe(true);
+  });
+
+  it('resolves "do not wish to answer" to a "I do not want to answer" disability option via synonym fallback', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="dis" id="dis-0" />
+      <label for="dis-0">Yes, I have a disability, or have had one in the past</label>
+      <input type="radio" name="dis" id="dis-1" />
+      <label for="dis-1">No, I don't have a disability and have not had one in the past</label>
+      <input type="radio" name="dis" id="dis-2" />
+      <label for="dis-2">I do not want to answer</label>
+    `;
+    const rep = document.getElementById('dis-0') as HTMLInputElement;
+    const opt = document.getElementById('dis-2') as HTMLInputElement;
+    const a = fillField(mkField(rep, { kind: 'disabilityStatus' }), 'do not wish to answer', {
+      forceOverwrite: false,
+    });
+    expect(a.status).toBe('filled');
+    expect(opt.checked).toBe(true);
+  });
+
+  it('resolves "decline" to a "Decline to self-identify" race option via synonym fallback', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="race" id="race-0" />
+      <label for="race-0">Hispanic or Latino</label>
+      <input type="radio" name="race" id="race-1" />
+      <label for="race-1">Asian (Not Hispanic or Latino)</label>
+      <input type="radio" name="race" id="race-2" />
+      <label for="race-2">Decline to self-identify</label>
+    `;
+    const rep = document.getElementById('race-0') as HTMLInputElement;
+    const opt = document.getElementById('race-2') as HTMLInputElement;
+    const a = fillField(mkField(rep, { kind: 'race' }), 'decline', { forceOverwrite: false });
+    expect(a.status).toBe('filled');
+    expect(opt.checked).toBe(true);
+  });
+
+  it('refuses to pick when a prefix is ambiguous across multiple radios', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="x" id="x-0" />
+      <label for="x-0">American Indian or Alaska Native</label>
+      <input type="radio" name="x" id="x-1" />
+      <label for="x-1">American Samoan</label>
+    `;
+    const rep = document.getElementById('x-0') as HTMLInputElement;
+    const a = fillField(mkField(rep, { kind: 'race' }), 'American', { forceOverwrite: false });
+    expect(a.status).toBe('error');
+  });
 });
 
 describe('safety — submit denylist', () => {

@@ -242,22 +242,43 @@ function fillRadio(
     root.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${cssEscape(name)}"]`),
   );
 
-  const target = group.find((r) => {
-    if (looksLikeSubmit(r)) return false;
-    const candidates = [
-      r.value,
-      r.getAttribute('aria-label') ?? '',
-      labelTextFor(r),
-    ].map((s) => s.trim().toLowerCase());
-    const synonyms: Record<string, string[]> = {
-      yes: ['yes', 'true', 'y'],
-      no: ['no', 'false', 'n'],
-      true: ['yes', 'true', 'y'],
-      false: ['no', 'false', 'n'],
-    };
-    const targets = synonyms[want] ?? [want];
-    return candidates.some((c) => targets.includes(c));
-  });
+  const synonyms: Record<string, string[]> = {
+    yes: ['yes', 'true', 'y'],
+    no: ['no', 'false', 'n'],
+    true: ['yes', 'true', 'y'],
+    false: ['no', 'false', 'n'],
+  };
+  const targets = synonyms[want] ?? [want];
+
+  const candidatesOf = (r: HTMLInputElement) =>
+    [r.value, r.getAttribute('aria-label') ?? '', labelTextFor(r)]
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0);
+
+  const eligible = group.filter((r) => !looksLikeSubmit(r));
+
+  let target = eligible.find((r) =>
+    candidatesOf(r).some((c) => targets.includes(c)),
+  );
+
+  if (!target) {
+    const prefixMatches = eligible.filter((r) =>
+      candidatesOf(r).some((c) =>
+        targets.some((t) => new RegExp(`^${escapeRegExp(t)}\\b`).test(c)),
+      ),
+    );
+    if (prefixMatches.length === 1) target = prefixMatches[0];
+  }
+
+  if (!target) {
+    const phrases = synonymGroupFor(want);
+    if (phrases.length > 0) {
+      const synonymMatches = eligible.filter((r) =>
+        candidatesOf(r).some((c) => phrases.some((p) => c.includes(p))),
+      );
+      if (synonymMatches.length === 1) target = synonymMatches[0];
+    }
+  }
 
   if (!target) {
     return { ...meta, status: 'error', note: `no radio matched "${want}"` };
@@ -284,6 +305,37 @@ export function looksLikeSubmit(el: HTMLElement): boolean {
   const value = el instanceof HTMLInputElement ? el.value : '';
   const aria = el.getAttribute('aria-label') ?? '';
   return SUBMIT_DENY.test(text) || SUBMIT_DENY.test(value) || SUBMIT_DENY.test(aria);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Phrases that mean the same opt-out across EEO forms. Profile-side and
+// option-side wordings rarely match exactly ("do not wish to answer" vs
+// "I do not want to answer" vs "Decline to self-identify"), so we treat any
+// phrase in the group as equivalent for radio resolution.
+const RADIO_SYNONYM_GROUPS: ReadonlyArray<readonly string[]> = [
+  [
+    'decline to self-identify',
+    'decline to answer',
+    'decline',
+    'do not want to answer',
+    "don't want to answer",
+    'do not wish to answer',
+    "don't wish to answer",
+    'prefer not to answer',
+    'prefer not to say',
+    'rather not answer',
+    'rather not say',
+  ],
+];
+
+function synonymGroupFor(want: string): readonly string[] {
+  for (const group of RADIO_SYNONYM_GROUPS) {
+    if (group.some((p) => want.includes(p) || p.includes(want))) return group;
+  }
+  return [];
 }
 
 function labelTextFor(el: HTMLInputElement): string {
