@@ -420,24 +420,25 @@ describe('fillVirtualizedDropdown', () => {
   it('clicks the trigger, finds the option, clicks it, dispatches change', async () => {
     const { field, trigger } = mkComboboxField();
     let triggerClicks = 0;
-    trigger.addEventListener('click', () => triggerClicks++);
-
-    const ul = document.createElement('ul');
-    ul.setAttribute('role', 'listbox');
-    ul.innerHTML = `
-      <li role="option">Canada</li>
-      <li role="option">United States</li>
-    `;
-    document.body.appendChild(ul);
-
     const optionClicks: string[] = [];
-    ul.addEventListener('click', (e) => {
-      if (e.target instanceof HTMLElement) {
-        optionClicks.push(e.target.textContent ?? '');
-      }
-    });
     let changeFired = false;
     trigger.addEventListener('change', () => (changeFired = true));
+    trigger.addEventListener('click', () => {
+      triggerClicks++;
+      if (document.querySelector('[role="listbox"]')) return;
+      const ul = document.createElement('ul');
+      ul.setAttribute('role', 'listbox');
+      ul.innerHTML = `
+        <li role="option">Canada</li>
+        <li role="option">United States</li>
+      `;
+      ul.addEventListener('click', (e) => {
+        if (e.target instanceof HTMLElement) {
+          optionClicks.push(e.target.textContent ?? '');
+        }
+      });
+      document.body.appendChild(ul);
+    });
 
     const action = await fillVirtualizedDropdown(field, 'United States');
     expect(action.status).toBe('filled');
@@ -455,13 +456,15 @@ describe('fillVirtualizedDropdown', () => {
 
   it('returns skipped when no option matches', async () => {
     const { field, trigger } = mkComboboxField();
-    const ul = document.createElement('ul');
-    ul.setAttribute('role', 'listbox');
-    ul.innerHTML = `<li role="option">Canada</li>`;
-    document.body.appendChild(ul);
-
     let triggerClicks = 0;
-    trigger.addEventListener('click', () => triggerClicks++);
+    trigger.addEventListener('click', () => {
+      triggerClicks++;
+      if (document.querySelector('[role="listbox"]')) return;
+      const ul = document.createElement('ul');
+      ul.setAttribute('role', 'listbox');
+      ul.innerHTML = `<li role="option">Canada</li>`;
+      document.body.appendChild(ul);
+    });
 
     const action = await fillVirtualizedDropdown(field, 'France');
     expect(action.status).toBe('skipped');

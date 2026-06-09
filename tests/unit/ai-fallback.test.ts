@@ -7,6 +7,7 @@ import {
 import { genericAdapter } from '@/adapters/generic';
 import { ashbyAdapter } from '@/adapters/ashby';
 import { buildClassifyPrompt, parseClassifyResponse } from '@/ai/client';
+import { harvestComboboxOptions } from '@/content/filler';
 import { emptyProfile } from '@/profile/schema';
 
 describe('isCompliancePattern', () => {
@@ -420,5 +421,142 @@ describe('buildClassifyPrompt — preference mode', () => {
       { mode: 'strict' },
     );
     expect(prompt.user).toMatch(/or "SKIP"/);
+  });
+});
+
+describe('harvestComboboxOptions', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function installLazyListbox(
+    trigger: HTMLElement,
+    optionTexts: string[],
+  ): void {
+    trigger.addEventListener('mousedown', () => {
+      if (document.querySelector('[role="listbox"]')) return;
+      const lb = document.createElement('div');
+      lb.setAttribute('role', 'listbox');
+      for (const t of optionTexts) {
+        const opt = document.createElement('div');
+        opt.setAttribute('role', 'option');
+        opt.textContent = t;
+        lb.appendChild(opt);
+      }
+      document.body.appendChild(lb);
+    });
+    trigger.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key !== 'Escape') return;
+      document.querySelector('[role="listbox"]')?.remove();
+    });
+  }
+
+  it('opens the popup, reads option text, then closes via Escape', async () => {
+    document.body.innerHTML =
+      `<div role="combobox" id="t" aria-haspopup="listbox" tabindex="0"></div>`;
+    const trigger = document.getElementById('t') as HTMLElement;
+    installLazyListbox(trigger, ['Yes', 'No']);
+
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 200 });
+    expect(out).toEqual(['Yes', 'No']);
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('skips aria-disabled options and dedupes', async () => {
+    document.body.innerHTML =
+      `<div role="combobox" id="t" aria-haspopup="listbox" tabindex="0"></div>`;
+    const trigger = document.getElementById('t') as HTMLElement;
+    trigger.addEventListener('mousedown', () => {
+      if (document.querySelector('[role="listbox"]')) return;
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<div role="listbox">
+           <div role="option" aria-disabled="true">Select...</div>
+           <div role="option">Yes</div>
+           <div role="option">Yes</div>
+           <div role="option">No</div>
+         </div>`,
+      );
+    });
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 200 });
+    expect(out).toEqual(['Yes', 'No']);
+  });
+
+  it('caps the result at maxOptions for huge virtualised lists', async () => {
+    document.body.innerHTML =
+      `<div role="combobox" id="t" aria-haspopup="listbox" tabindex="0"></div>`;
+    const trigger = document.getElementById('t') as HTMLElement;
+    const many = Array.from({ length: 120 }, (_, i) => `Country ${i}`);
+    installLazyListbox(trigger, many);
+
+    const out = await harvestComboboxOptions(trigger, {
+      timeoutMs: 200,
+      maxOptions: 50,
+    });
+    expect(out.length).toBe(50);
+    expect(out[0]).toBe('Country 0');
+    expect(out[49]).toBe('Country 49');
+  });
+
+  it('returns an empty list when the popup never appears', async () => {
+    document.body.innerHTML =
+      `<div role="combobox" id="t" aria-haspopup="listbox" tabindex="0"></div>`;
+    const trigger = document.getElementById('t') as HTMLElement;
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 80 });
+    expect(out).toEqual([]);
+  });
+
+  it('opens via ArrowDown when only the input is the trigger', async () => {
+    document.body.innerHTML =
+      `<input id="t" role="combobox" aria-haspopup="true" tabindex="0" />`;
+    const trigger = document.getElementById('t') as HTMLElement;
+    trigger.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key !== 'ArrowDown') return;
+      if (document.querySelector('[role="listbox"]')) return;
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<div role="listbox">
+           <div role="option">1-2 years</div>
+           <div role="option">3-5 years</div>
+         </div>`,
+      );
+    });
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 200 });
+    expect(out).toEqual(['1-2 years', '3-5 years']);
+  });
+
+  it('does not read a stale listbox left over from a previous combobox', async () => {
+    document.body.innerHTML = `
+      <input id="t" role="combobox" aria-haspopup="true" tabindex="0" />
+      <div role="listbox" id="stale">
+        <div role="option">Afghanistan+93</div>
+        <div role="option">United States+1</div>
+      </div>
+    `;
+    const trigger = document.getElementById('t') as HTMLElement;
+    trigger.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key !== 'ArrowDown') return;
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<div role="listbox" id="fresh">
+           <div role="option">1-2 years</div>
+           <div role="option">3-5 years</div>
+         </div>`,
+      );
+    });
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 200 });
+    expect(out).toEqual(['1-2 years', '3-5 years']);
+  });
+
+  it('returns [] when ONLY a stale listbox is present and no new one opens', async () => {
+    document.body.innerHTML = `
+      <input id="t" role="combobox" aria-haspopup="true" tabindex="0" />
+      <div role="listbox" id="stale">
+        <div role="option">Stale Option</div>
+      </div>
+    `;
+    const trigger = document.getElementById('t') as HTMLElement;
+    const out = await harvestComboboxOptions(trigger, { timeoutMs: 80 });
+    expect(out).toEqual([]);
   });
 });
