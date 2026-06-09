@@ -7,6 +7,7 @@ import {
 import { genericAdapter } from '@/adapters/generic';
 import { ashbyAdapter } from '@/adapters/ashby';
 import { buildClassifyPrompt, parseClassifyResponse } from '@/ai/client';
+import { resolveAiOption } from '@/content/ai-fallback';
 import { harvestComboboxOptions } from '@/content/filler';
 import { emptyProfile } from '@/profile/schema';
 
@@ -558,5 +559,45 @@ describe('harvestComboboxOptions', () => {
     const trigger = document.getElementById('t') as HTMLElement;
     const out = await harvestComboboxOptions(trigger, { timeoutMs: 80 });
     expect(out).toEqual([]);
+  });
+});
+
+describe('resolveAiOption', () => {
+  const yesNo = ['Yes', 'No'];
+  const race = [
+    'Hispanic or Latino',
+    'White (Not Hispanic or Latino)',
+    'Asian (Not Hispanic or Latino)',
+    'Decline to self-identify',
+  ];
+
+  it('exact match (case-insensitive)', () => {
+    expect(resolveAiOption('Yes', yesNo)).toBe('Yes');
+    expect(resolveAiOption('yes', yesNo)).toBe('Yes');
+    expect(resolveAiOption('Hispanic or Latino', race)).toBe('Hispanic or Latino');
+  });
+
+  it('extracts an option from an AI response with extra commentary', () => {
+    expect(
+      resolveAiOption('Hispanic or Latino - based on the profile', race),
+    ).toBe('Hispanic or Latino');
+  });
+
+  it('returns null when the AI response ambiguously contains multiple options', () => {
+    expect(
+      resolveAiOption(
+        'Not Hispanic or Latino, but Asian (Not Hispanic or Latino)',
+        race,
+      ),
+    ).toBeNull();
+  });
+
+  it('prefix-matches a single option (AI returns "Asian", option is verbose)', () => {
+    expect(resolveAiOption('Asian', race)).toBe('Asian (Not Hispanic or Latino)');
+  });
+
+  it('returns null when nothing matches', () => {
+    expect(resolveAiOption('Klingon', race)).toBeNull();
+    expect(resolveAiOption('', yesNo)).toBeNull();
   });
 });
