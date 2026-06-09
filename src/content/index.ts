@@ -1,16 +1,28 @@
 import { log } from '@/lib/logger';
 import { isExtensionContextValid } from '@/lib/context';
-import { isRequestMessage, type FillActionWire } from '@/types/messages';
+import {
+  isRequestMessage,
+  type FillActionWire,
+  type AiClassifyResponse,
+} from '@/types/messages';
 import { pickAdapter } from './detector';
 import {
   fillField,
   fillVirtualizedDropdown,
+  harvestComboboxOptions,
   isFileAlreadyAttached,
+  markThinking,
+  clearThinking,
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
+import { isCompliancePattern, unclassifiedFromDetected } from '@/adapters/_shared';
+import type { UnclassifiedField } from '@/adapters/types';
+import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
+import { sendToBackground } from '@/lib/messaging';
+import { resolveAiOption } from './ai-fallback';
 import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
@@ -18,6 +30,7 @@ import {
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
+  setAiFallbackProgress,
   nextConnected,
   spotlight,
   type TriggerStats,
@@ -174,7 +187,7 @@ function notifyParentOfFields(detected: number, onFill: () => void): void {
 
 let lastReviewItems: ReviewableField[] = [];
 let iframeReviewState: { group: ReviewGroup; index: number } | null = null;
-const REVIEW_GROUPS: ReadonlyArray<ReviewGroup> = ['filled', 'skipped', 'suggest'];
+const REVIEW_GROUPS: ReadonlyArray<ReviewGroup> = ['filled', 'skipped', 'suggest', 'ai'];
 
 function installParentMessageListener(): void {
   window.addEventListener('message', (e) => {
@@ -223,6 +236,7 @@ function iframeEnterReview(group: ReviewGroup): void {
     index: first,
     total: items.length,
     label: item.label,
+    ...(item.note ? { note: item.note } : {}),
   });
 }
 
@@ -245,6 +259,7 @@ function iframeStepReview(dir: 1 | -1): void {
     index: next,
     total: items.length,
     label: item.label,
+    ...(item.note ? { note: item.note } : {}),
   });
 }
 
@@ -261,6 +276,57 @@ function pillProgress(done: number, total: number): void {
 function pillDone(stats: TriggerStats, items: ReviewableField[]): void {
   if (IS_IFRAME) postToParent({ type: 'autofilltool:fill-complete', ...stats });
   else showFillTriggerDone(stats, items);
+}
+
+function pillAiFallback(
+  filled: number,
+  pending: number,
+  newItems: ReviewableField[] = [],
+): void {
+  let filledFromSkippedCount = 0;
+  if (newItems.length > 0) {
+    const seenAi = new WeakSet<HTMLElement>(
+      lastReviewItems
+        .filter(
+          (i): i is ReviewableField & { el: HTMLElement } =>
+            i.group === 'ai' && i.el instanceof HTMLElement,
+        )
+        .map((i) => i.el),
+    );
+    const pushedFilledEls: HTMLElement[] = [];
+    for (const item of newItems) {
+      if (item.el instanceof HTMLElement && !seenAi.has(item.el)) {
+        lastReviewItems.push(item);
+        seenAi.add(item.el);
+        if (!item.note) pushedFilledEls.push(item.el);
+      }
+    }
+    if (pushedFilledEls.length > 0) {
+      const filledEls = new WeakSet<HTMLElement>(pushedFilledEls);
+      const before = lastReviewItems.length;
+      lastReviewItems = lastReviewItems.filter(
+        (i) =>
+          !(
+            i.group === 'skipped' &&
+            i.el instanceof HTMLElement &&
+            filledEls.has(i.el)
+          ),
+      );
+      filledFromSkippedCount = before - lastReviewItems.length;
+    }
+  }
+  if (IS_IFRAME) {
+    postToParent({
+      type: 'autofilltool:ai-fallback-progress',
+      filled,
+      pending,
+      ...(filledFromSkippedCount > 0
+        ? { skippedRemoved: filledFromSkippedCount }
+        : {}),
+    });
+  } else {
+    setAiFallbackProgress(filled, pending, newItems);
+  }
 }
 
 function postToParent(msg: Record<string, unknown>): void {
@@ -347,6 +413,7 @@ async function runFill(forceFromMsg?: boolean) {
 
   const actions: FillAction[] = [];
   const reviewItems: ReviewableField[] = [];
+  const skippedForAi: UnclassifiedField[] = [];
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;
     const value = valueForField(profile, field.kind);
@@ -365,6 +432,10 @@ async function runFill(forceFromMsg?: boolean) {
         reviewItems.push({ group: 'filled', label: action.label, el: field.el });
       } else if (action.status === 'skipped') {
         reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+        if (action.note === 'no value in profile') {
+          const u = unclassifiedFromDetected(field);
+          if (u) skippedForAi.push(u);
+        }
       }
     }
 
@@ -402,6 +473,10 @@ async function runFill(forceFromMsg?: boolean) {
       if (animate) applyFlash(field.el);
     } else if (action.status === 'skipped') {
       reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+      if (action.note === 'no value in profile') {
+        const u = unclassifiedFromDetected(field);
+        if (u) skippedForAi.push(u);
+      }
     }
   }
 
@@ -483,10 +558,14 @@ async function runFill(forceFromMsg?: boolean) {
           f.el instanceof HTMLTextAreaElement,
       )
     : [];
-  const suggestCount = suggestFields.length;
-  for (const f of suggestFields) {
-    if (f.el instanceof HTMLElement) {
-      reviewItems.push({ group: 'suggest', label: f.label, el: f.el });
+  const aiOwnsTextareas =
+    aiConfigured(settings) && settings.ai.fallbackClassifier;
+  const suggestCount = aiOwnsTextareas ? 0 : suggestFields.length;
+  if (!aiOwnsTextareas) {
+    for (const f of suggestFields) {
+      if (f.el instanceof HTMLElement) {
+        reviewItems.push({ group: 'suggest', label: f.label, el: f.el });
+      }
     }
   }
 
@@ -514,6 +593,66 @@ async function runFill(forceFromMsg?: boolean) {
     `fill via ${adapter.id}: ${filled} filled / ${skipped} skipped / ${failed} failed / resume=${resumeStatus}`,
   );
 
+  if (settings.ai.fallbackClassifier && aiConfigured(settings) && adapter.detectAll) {
+    try {
+      const detection = adapter.detectAll(document);
+      const classifiedEls = new WeakSet<HTMLElement>(
+        skippedForAi.map((u) => u.el),
+      );
+      const seen = new WeakSet<HTMLElement>();
+      const queue: Array<UnclassifiedField & { wasClassified: boolean }> = [];
+      const preSkipped: ReviewableField[] = [];
+      const candidates: UnclassifiedField[] = [
+        ...skippedForAi,
+        ...detection.unclassified,
+      ];
+      for (const u of candidates) {
+        if (!(u.el instanceof HTMLElement)) continue;
+        if (seen.has(u.el)) continue;
+        seen.add(u.el);
+        if (
+          !settings.ai.fallbackIncludeCompliance &&
+          isCompliancePattern(u.label)
+        ) {
+          preSkipped.push({
+            group: 'ai',
+            label: u.label,
+            el: u.el,
+            note: 'Skipped: compliance/EEO question. Turn on "Include compliance questions" in Options to let the AI answer.',
+          });
+          continue;
+        }
+        if (u.fieldType === 'textarea' && !settings.ai.autoFillSuggestFields) {
+          preSkipped.push({
+            group: 'ai',
+            label: u.label,
+            el: u.el,
+            note: 'Skipped: long-form field. Click ✨ Suggest to draft this one, or turn on "Auto-fill Suggest text fields" in the popup.',
+          });
+          continue;
+        }
+        queue.push({ ...u, wasClassified: classifiedEls.has(u.el) });
+      }
+      queue.sort((a, b) => {
+        const at = a.fieldType === 'textarea' ? 1 : 0;
+        const bt = b.fieldType === 'textarea' ? 1 : 0;
+        return at - bt;
+      });
+      if (queue.length + preSkipped.length > 0) {
+        void runAiFallbackQueue(
+          queue,
+          preSkipped,
+          runId,
+          animate,
+          forceOverwrite,
+          ctx,
+        );
+      }
+    } catch (err) {
+      log.warn('AI fallback detection failed', err);
+    }
+  }
+
   return {
     ok: true as const,
     value: {
@@ -527,3 +666,191 @@ async function runFill(forceFromMsg?: boolean) {
     },
   };
 }
+
+async function runAiFallbackQueue(
+  queue: Array<UnclassifiedField & { wasClassified: boolean }>,
+  preSkipped: ReviewableField[],
+  runId: number,
+  animate: boolean,
+  forceOverwrite: boolean,
+  ctx: JobContext,
+): Promise<void> {
+  const total = queue.length;
+  const denominator = total + preSkipped.length;
+  let filledByAi = 0;
+  pillAiFallback(filledByAi, denominator, preSkipped);
+  if (preSkipped.length > 0) pillAiFallback(filledByAi, total);
+  let connectionFailed = false;
+
+  let i = 0;
+  for (; i < queue.length; i++) {
+    if (animate && !isCurrentRun(runId)) break;
+    const u = queue[i]!;
+    const thinkingEl = u.el instanceof HTMLElement ? u.el : null;
+    if (thinkingEl) {
+      try {
+        spotlight(thinkingEl);
+      } catch (err) {
+        log.warn('AI fallback spotlight failed', err);
+      }
+      markThinking(thinkingEl);
+    }
+
+    try {
+      if (
+        u.fieldType === 'combobox' &&
+        (!u.options || u.options.length === 0) &&
+        u.el instanceof HTMLElement
+      ) {
+        try {
+          const harvested = await harvestComboboxOptions(u.el);
+          if (harvested.length > 0) u.options = harvested;
+        } catch (err) {
+          log.warn('combobox option harvest failed', err);
+        }
+      }
+
+      let resp: AiClassifyResponse;
+      try {
+        const request: {
+          question: string;
+          fieldType: typeof u.fieldType;
+          options?: string[];
+          jobDescription?: string;
+          job?: { company?: string; role?: string; jobUrl?: string };
+          wasClassified?: boolean;
+        } = {
+          question: u.label,
+          fieldType: u.fieldType,
+          wasClassified: u.wasClassified,
+        };
+        if (u.options) request.options = u.options;
+        if (u.fieldType === 'textarea') {
+          if (ctx.jobDescription) request.jobDescription = ctx.jobDescription;
+          if (ctx.company || ctx.role || ctx.jobUrl) {
+            request.job = {
+              ...(ctx.company ? { company: ctx.company } : {}),
+              ...(ctx.role ? { role: ctx.role } : {}),
+              ...(ctx.jobUrl ? { jobUrl: ctx.jobUrl } : {}),
+            };
+          }
+        }
+        resp = (await sendToBackground({
+          type: 'AI_CLASSIFY',
+          request,
+        })) as AiClassifyResponse;
+      } catch (err) {
+        log.warn('AI_CLASSIFY request failed', err);
+        connectionFailed = true;
+        break;
+      }
+
+      if (!resp.ok) {
+        log.warn('AI_CLASSIFY background error', resp.error);
+        if (i === 0) {
+          connectionFailed = true;
+          break;
+        }
+        pillAiFallback(filledByAi, total - i - 1, [
+          { group: 'ai', label: u.label, el: u.el, note: 'AI request failed for this question.' },
+        ]);
+        continue;
+      }
+      let value = resp.value.value;
+      if (!value) {
+        pillAiFallback(filledByAi, total - i - 1, [
+          { group: 'ai', label: u.label, el: u.el, note: 'AI returned no answer. The model didn\'t have enough context — fill it in manually.' },
+        ]);
+        continue;
+      }
+
+      if (
+        (u.fieldType === 'radio' ||
+          u.fieldType === 'select' ||
+          u.fieldType === 'combobox') &&
+        u.options &&
+        u.options.length > 0
+      ) {
+        const resolved = resolveAiOption(value, u.options);
+        if (!resolved) {
+          log.debug(
+            `AI fallback: model answered "${value}" but no option matched for "${u.label}"`,
+          );
+          pillAiFallback(filledByAi, total - i - 1, [
+            {
+              group: 'ai',
+              label: u.label,
+              el: u.el,
+              note: `AI suggested "${value}" but it didn't match any option. Pick one manually.`,
+            },
+          ]);
+          continue;
+        }
+        value = resolved;
+      }
+
+      try {
+        const fakeField = {
+          el: u.el,
+          kind: 'openEnded' as const,
+          label: u.label,
+          confidence: 0.6,
+        };
+        let action: FillAction;
+        if (u.fieldType === 'combobox') {
+          action = await fillVirtualizedDropdown(fakeField, value, {
+            forceOverwrite,
+            suppressFlash: true,
+          });
+        } else {
+          action = fillField(fakeField, value, {
+            forceOverwrite,
+            suppressFlash: true,
+          });
+        }
+        if (action.status === 'filled') {
+          filledByAi++;
+          if (animate && u.el instanceof HTMLElement) applyFlash(u.el);
+          pillAiFallback(filledByAi, total - i - 1, [
+            { group: 'ai', label: u.label, el: u.el },
+          ]);
+          continue;
+        }
+      } catch (err) {
+        log.warn('AI fallback fill failed', err);
+      }
+
+      pillAiFallback(filledByAi, total - i - 1, [
+        {
+          group: 'ai',
+          label: u.label,
+          el: u.el,
+          note: 'AI returned an answer but the field rejected it — fill it in manually.',
+        },
+      ]);
+    } finally {
+      if (thinkingEl) clearThinking(thinkingEl);
+    }
+  }
+
+  if (connectionFailed) {
+    const unreachable: ReviewableField[] = [];
+    for (let j = i; j < queue.length; j++) {
+      const u = queue[j]!;
+      if (u.el instanceof HTMLElement) {
+        unreachable.push({
+          group: 'ai',
+          label: u.label,
+          el: u.el,
+          note: 'Skipped: AI provider unreachable.',
+        });
+      }
+    }
+    pillAiFallback(filledByAi, 0, unreachable);
+    try {
+      showNoticeToast('AI fallback unavailable — provider unreachable');
+    } catch {
+    }
+  }
+}
+
