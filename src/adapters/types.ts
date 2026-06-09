@@ -40,11 +40,26 @@ export type DetectedField = {
   widget?: 'native' | 'virtualizedDropdown';
 };
 
+export type UnclassifiedFieldType = 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
+
+export type UnclassifiedField = {
+  el: HTMLElement;
+  label: string;
+  fieldType: UnclassifiedFieldType;
+  options?: string[];
+};
+
+export type DetectionResult = {
+  classified: DetectedField[];
+  unclassified: UnclassifiedField[];
+};
+
 export interface PlatformAdapter {
   readonly id: AdapterId;
   readonly name: string;
   matches(url: URL, document: Document): boolean;
   detectFields(root: Document): DetectedField[];
+  detectAll?(root: Document): DetectionResult;
   fillResume?(file: File, root: Document): Promise<boolean>;
   getJobDescription(doc: Document): string;
   detectSubmissionConfirmed?(doc: Document, url: URL): boolean;

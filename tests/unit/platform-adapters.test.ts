@@ -123,6 +123,40 @@ describe('greenhouseAdapter — fixture', () => {
     expect(github?.label).toMatch(/GitHub/i);
   });
 
+  it('keeps BOTH visa-sponsorship questions when both classify as requiresSponsorship (dedupe by kind+label, not kind alone)', () => {
+    document.body.innerHTML = '';
+    const make = (id: string, labelText: string): void => {
+      const wrap = document.createElement('div');
+      wrap.className = 'field-wrapper';
+      wrap.innerHTML = `
+        <div class="select">
+          <label id="${id}-label" for="${id}">${labelText}</label>
+          <input
+            id="${id}"
+            type="text"
+            role="combobox"
+            aria-labelledby="${id}-label"
+            aria-autocomplete="list"
+            aria-haspopup="true"
+            value=""
+          />
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    };
+    make('question_a', 'Do you require visa sponsorship?');
+    make(
+      'question_b',
+      "Will you now or will you in the future require employment visa sponsorship to work in the country in which the job you're applying for is located?",
+    );
+
+    const fields = greenhouseAdapter.detectFields(document);
+    const matched = fields.filter((f) => f.kind === 'requiresSponsorship');
+    expect(matched.length, 'both visa questions must survive dedupe').toBe(2);
+    expect(matched.find((f) => f.el.id === 'question_a')).toBeDefined();
+    expect(matched.find((f) => f.el.id === 'question_b')).toBeDefined();
+  });
+
   it('finds the work-auth radio group via the fieldset legend', () => {
     const fields = greenhouseAdapter.detectFields(document);
     const auth = fields.filter((f) => f.kind === 'authorizedToWorkInUS');
@@ -372,6 +406,41 @@ describe('greenhouseAdapter — new redesign fixture', () => {
     const textarea = document.querySelector('textarea')!;
     const textareaField = fields.find((f) => f.el === textarea);
     expect(textareaField?.label).not.toBe('Phone *');
+  });
+
+  it('keeps dedupe losers out of the AI fallback unclassified set', () => {
+    document.body.innerHTML = `
+      <form>
+        <div>
+          <label for="country-native">Country *</label>
+          <select id="country-native" name="country">
+            <option value="">Select...</option>
+            <option value="us">United States</option>
+            <option value="ca">Canada</option>
+          </select>
+        </div>
+        <div>
+          <label>Country *</label>
+          <div class="select__input-container">
+            <input role="combobox" type="text" name="country" />
+          </div>
+        </div>
+      </form>
+    `;
+
+    const result = greenhouseAdapter.detectAll!(document);
+    const country = result.classified.filter((f) => f.kind === 'country');
+    expect(country.length, 'dedupe still wins for the fill set').toBe(1);
+    expect(country[0]?.widget).toBe('virtualizedDropdown');
+
+    const native = document.getElementById('country-native');
+    const unclassifiedHasNative = result.unclassified.some(
+      (u) => u.el === native,
+    );
+    expect(
+      unclassifiedHasNative,
+      'native <select> dropped by dedupe must not appear as unclassified',
+    ).toBe(false);
   });
 
   it("does not steal a sibling field's label for an unlabelled textarea (the 'First Name *' duplication bug)", () => {
