@@ -6,6 +6,9 @@ import {
 } from '@/adapters/_shared';
 import { genericAdapter } from '@/adapters/generic';
 import { ashbyAdapter } from '@/adapters/ashby';
+import { buildClassifyPrompt, parseClassifyResponse } from '@/ai/client';
+import { emptyProfile } from '@/profile/schema';
+
 describe('isCompliancePattern', () => {
   it('flags EEO and immigration variants the broad regex covers', () => {
     const cases = [
@@ -264,5 +267,158 @@ describe('unclassifiedFromDetected', () => {
         confidence: 0.9,
       }),
     ).toBeNull();
+  });
+});
+
+describe('buildClassifyPrompt', () => {
+  it('lists options verbatim for radio fields and instructs the model to pick one', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Favorite color?',
+        fieldType: 'radio',
+        options: ['Blue', 'Green'],
+      },
+      emptyProfile(),
+    );
+    expect(prompt.user).toContain('Favorite color?');
+    expect(prompt.user).toContain('Available options');
+    expect(prompt.user).toContain('- Blue');
+    expect(prompt.user).toContain('- Green');
+    expect(prompt.user).toMatch(/exact text of one option|verbatim/i);
+  });
+
+  it('omits the options block for free-form text fields', () => {
+    const prompt = buildClassifyPrompt(
+      { question: 'Name?', fieldType: 'text' },
+      emptyProfile(),
+    );
+    expect(prompt.user).not.toContain('Available options');
+    expect(prompt.user).toMatch(/single short value/i);
+  });
+
+  it('forbids fabrication and instructs SKIP when profile is missing the answer', () => {
+    const prompt = buildClassifyPrompt(
+      { question: 'Anything', fieldType: 'text' },
+      emptyProfile(),
+    );
+    expect(prompt.system).toMatch(/SKIP/);
+    expect(prompt.system).toMatch(/Never fabricate|do not invent|reply SKIP/i);
+  });
+});
+describe('parseClassifyResponse', () => {
+  it('returns the first non-empty line', () => {
+    expect(parseClassifyResponse('United States\n\nextra commentary')).toBe('United States');
+  });
+
+  it('strips surrounding quotes', () => {
+    expect(parseClassifyResponse('"United States"')).toBe('United States');
+    expect(parseClassifyResponse("'Yes'")).toBe('Yes');
+  });
+
+  it('returns null when the model replies SKIP', () => {
+    expect(parseClassifyResponse('SKIP')).toBeNull();
+    expect(parseClassifyResponse('skip')).toBeNull();
+    expect(parseClassifyResponse('  SKIP\nbecause profile lacks it')).toBeNull();
+  });
+
+  it('returns null for empty input', () => {
+    expect(parseClassifyResponse('')).toBeNull();
+    expect(parseClassifyResponse('\n\n  ')).toBeNull();
+  });
+
+  it('keeps newlines for textarea field type so multi-paragraph answers survive', () => {
+    const multi = 'Para one with some detail.\n\nPara two answering the question.';
+    expect(parseClassifyResponse(multi, 'textarea')).toBe(multi);
+  });
+
+  it('strips a single pair of wrapping quotes on textareas', () => {
+    expect(
+      parseClassifyResponse('"line one\nline two"', 'textarea'),
+    ).toBe('line one\nline two');
+  });
+
+  it('returns null when textarea reply is just SKIP', () => {
+    expect(parseClassifyResponse('SKIP', 'textarea')).toBeNull();
+    expect(parseClassifyResponse('  skip.  ', 'textarea')).toBeNull();
+  });
+
+  it('extracts the option from a multi-line response when options are given', () => {
+    const opts = ['Immediately', '1-2 weeks', '1 month', '2+ months'];
+    expect(
+      parseClassifyResponse(
+        "Based on your profile, here's the reasonable answer:\nImmediately",
+        'select',
+        opts,
+      ),
+    ).toBe('Immediately');
+  });
+
+  it('picks up an option mentioned later in the response (whole-word, single match)', () => {
+    const opts = ['Yes', 'No'];
+    expect(parseClassifyResponse('I would answer: Yes', 'radio', opts)).toBe('Yes');
+  });
+
+  it('still returns a non-option preamble if no option matches anywhere', () => {
+    const opts = ['Immediately', '1 month'];
+    expect(
+      parseClassifyResponse('No information given in the profile.', 'select', opts),
+    ).toBe('No information given in the profile.');
+  });
+});
+describe('buildClassifyPrompt — preference mode', () => {
+  it('relaxes SKIP for option-bound preference questions', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'When is the earliest you would want to start?',
+        fieldType: 'select',
+        options: ['Immediately', '1-2 weeks', '1 month', '2+ months'],
+      },
+      emptyProfile(),
+      { mode: 'preference' },
+    );
+    expect(prompt.system).toMatch(/reasonable|sensible default|most plausible|standard candidate/i);
+    expect(prompt.system).toMatch(/fabricate/i);
+    expect(prompt.user).toMatch(/exact text of one option/i);
+  });
+
+  it('strict mode keeps the original SKIP-on-silent instruction', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Anything',
+        fieldType: 'text',
+      },
+      emptyProfile(),
+      { mode: 'strict' },
+    );
+    expect(prompt.system).toMatch(/If the profile does not contain enough information/i);
+  });
+
+  it('preference mode options block omits the SKIP escape hatch', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Start date?',
+        fieldType: 'select',
+        options: ['Immediately', '1 month'],
+      },
+      emptyProfile(),
+      { mode: 'preference' },
+    );
+    expect(prompt.user).toMatch(/MUST return one of these verbatim\)/);
+    expect(prompt.user).not.toMatch(/or "SKIP"/);
+    const hint = prompt.user.split('\n').pop() ?? '';
+    expect(hint).not.toMatch(/reply with the single word: SKIP/);
+  });
+
+  it('strict mode options block keeps the SKIP escape hatch', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Start date?',
+        fieldType: 'select',
+        options: ['Immediately', '1 month'],
+      },
+      emptyProfile(),
+      { mode: 'strict' },
+    );
+    expect(prompt.user).toMatch(/or "SKIP"/);
   });
 });
