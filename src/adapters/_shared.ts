@@ -1,4 +1,4 @@
-import type { FieldKind } from './types';
+import type { FieldKind, DetectedField, UnclassifiedField } from './types';
 import { attachFile } from '@/content/filler';
 
 export type Context = {
@@ -478,4 +478,174 @@ export const SUBMISSION_CONFIRM_RE =
 export function hasSubmissionConfirmText(doc: Document): boolean {
   const text = (doc.body?.textContent ?? '').slice(0, 5000);
   return SUBMISSION_CONFIRM_RE.test(text);
+}
+
+export const COMPLIANCE_PATTERN =
+  /race|ethnic|hispanic|latino|disab|veteran|military|sponsor|visa|work[- ]?auth|authoriz(ed|ation)?\s+to\s+work|h-?1b|green card|citizen/i;
+
+export function isCompliancePattern(label: string): boolean {
+  return COMPLIANCE_PATTERN.test(label);
+}
+
+export function findUnclassifiedFields(
+  root: Document,
+  classified: DetectedField[],
+): UnclassifiedField[] {
+  const claimed = new WeakSet<HTMLElement>();
+  const claimedRadioNames = new Set<string>();
+  for (const f of classified) {
+    claimed.add(f.el);
+    if (f.el instanceof HTMLInputElement && f.el.type === 'radio' && f.el.name) {
+      claimedRadioNames.add(f.el.name);
+    }
+  }
+
+  const out: UnclassifiedField[] = [];
+  const seenRadioGroups = new Set<string>();
+
+  const allCombos = Array.from(
+    root.querySelectorAll<HTMLElement>('[role="combobox"], [aria-haspopup="listbox"]'),
+  );
+  const innermostCombos = allCombos.filter(
+    (el) => !allCombos.some((other) => other !== el && el.contains(other)),
+  );
+  for (const trigger of innermostCombos) {
+    if (claimed.has(trigger)) continue;
+    if (!isVisibleForUnclassifiedDetection(trigger)) continue;
+    const label = bestLabel(trigger);
+    if (!label) continue;
+    if (isWidgetSubcontrolLabel(label)) {
+      claimed.add(trigger);
+      continue;
+    }
+    out.push({ el: trigger, label, fieldType: 'combobox' });
+    claimed.add(trigger);
+  }
+
+  const elements = root.querySelectorAll<HTMLElement>('input, select, textarea');
+  for (const el of Array.from(elements)) {
+    if (claimed.has(el)) continue;
+    if (!isFillable(el)) continue;
+
+    if (el instanceof HTMLInputElement && el.type === 'radio') {
+      const name = el.name;
+      if (!name) continue;
+      if (claimedRadioNames.has(name)) continue;
+      if (seenRadioGroups.has(name)) continue;
+      seenRadioGroups.add(name);
+      const groupOptions = collectRadioGroupOptions(root, name);
+      const label = bestLabel(el);
+      if (!label) continue;
+      out.push({ el, label, fieldType: 'radio', options: groupOptions });
+      continue;
+    }
+
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') continue;
+
+    const label = bestLabel(el);
+    if (!label) continue;
+
+    if (el instanceof HTMLTextAreaElement) {
+      out.push({ el, label, fieldType: 'textarea' });
+      continue;
+    }
+    if (el instanceof HTMLSelectElement) {
+      const options = Array.from(el.options)
+        .map((o) => (o.textContent ?? '').trim())
+        .filter((t) => t.length > 0);
+      out.push({ el, label, fieldType: 'select', options });
+      continue;
+    }
+    if (el instanceof HTMLInputElement) {
+      const skipTypes = new Set(['email', 'tel', 'url', 'number', 'date', 'password']);
+      if (skipTypes.has(el.type)) continue;
+      out.push({ el, label, fieldType: 'text' });
+    }
+  }
+
+  return out;
+}
+
+export function unclassifiedFromDetected(field: DetectedField): UnclassifiedField | null {
+  const { el, label } = field;
+  if (!label) return null;
+  if (field.widget === 'virtualizedDropdown') {
+    return { el, label, fieldType: 'combobox' };
+  }
+  if (el instanceof HTMLSelectElement) {
+    const options = Array.from(el.options)
+      .map((o) => (o.textContent ?? '').trim())
+      .filter((t) => t.length > 0);
+    return { el, label, fieldType: 'select', options };
+  }
+  if (el instanceof HTMLTextAreaElement) {
+    return { el, label, fieldType: 'textarea' };
+  }
+  if (el instanceof HTMLInputElement) {
+    if (el.type === 'radio') {
+      const name = el.name;
+      if (!name) return null;
+      const options = collectRadioGroupOptions(el.ownerDocument, name);
+      return { el, label, fieldType: 'radio', options };
+    }
+    if (el.type === 'checkbox') return null;
+    const skipTypes = new Set([
+      'email', 'tel', 'url', 'number', 'date', 'password', 'file', 'hidden',
+    ]);
+    if (skipTypes.has(el.type)) return null;
+    return { el, label, fieldType: 'text' };
+  }
+  const role = el.getAttribute('role');
+  if (role === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox') {
+    return { el, label, fieldType: 'combobox' };
+  }
+  return null;
+}
+
+function collectRadioGroupOptions(root: Document, name: string): string[] {
+  const radios = Array.from(
+    root.querySelectorAll<HTMLInputElement>(
+      `input[type="radio"][name="${cssEscape(name)}"]`,
+    ),
+  );
+  const labels: string[] = [];
+  for (const r of radios) {
+    const id = r.id;
+    let labelText = '';
+    if (id) {
+      const lbl = r.ownerDocument.querySelector<HTMLLabelElement>(
+        `label[for="${cssEscape(id)}"]`,
+      );
+      if (lbl) labelText = textOf(lbl);
+    }
+    if (!labelText) {
+      const wrap = r.closest('label');
+      if (wrap) labelText = textOf(wrap);
+    }
+    if (!labelText) labelText = r.value || '';
+    if (labelText) labels.push(labelText);
+  }
+  return labels;
+}
+
+const WIDGET_SUBCONTROL_LABEL_RE = /^(search|filter|find|query)$/i;
+
+function isWidgetSubcontrolLabel(label: string): boolean {
+  return WIDGET_SUBCONTROL_LABEL_RE.test(label.trim());
+}
+
+function isVisibleForUnclassifiedDetection(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement) return isFillable(el);
+  if (el.getAttribute('aria-hidden') === 'true') return false;
+  if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
+  return true;
+}
+
+export function defaultDetectAll(
+  adapter: { detectFields: (root: Document) => DetectedField[] },
+  root: Document,
+): import('./types').DetectionResult {
+  const classified = adapter.detectFields(root);
+  const unclassified = findUnclassifiedFields(root, classified);
+  return { classified, unclassified };
 }
