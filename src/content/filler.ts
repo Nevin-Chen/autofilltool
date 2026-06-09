@@ -384,6 +384,56 @@ function flashFilled(el: HTMLElement): void {
   }
 }
 
+const THINKING_PULSE_DURATION_MS = 1400;
+const THINKING_KEYFRAMES_ID = '__autofilltool_thinking_keyframes';
+const thinkingPrev = new WeakMap<
+  HTMLElement,
+  { boxShadow: string; transition: string; animation: string }
+>();
+
+function ensureThinkingKeyframes(doc: Document): void {
+  if (doc.getElementById(THINKING_KEYFRAMES_ID)) return;
+  const style = doc.createElement('style');
+  style.id = THINKING_KEYFRAMES_ID;
+  style.textContent = `
+    @keyframes __autofilltool_thinking_pulse {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(245,158,11,0.85), 0 0 6px 1px rgba(245,158,11,0.30); }
+      50%      { box-shadow: 0 0 0 3px rgba(245,158,11,0.95), 0 0 14px 4px rgba(245,158,11,0.55); }
+    }
+  `;
+  (doc.head ?? doc.documentElement).appendChild(style);
+}
+
+export function markThinking(el: HTMLElement): void {
+  try {
+    ensureThinkingKeyframes(el.ownerDocument);
+    if (!thinkingPrev.has(el)) {
+      thinkingPrev.set(el, {
+        boxShadow: el.style.boxShadow,
+        transition: el.style.transition,
+        animation: el.style.animation,
+      });
+    }
+    el.style.animation = `__autofilltool_thinking_pulse ${THINKING_PULSE_DURATION_MS}ms ease-in-out infinite`;
+  } catch {
+  }
+}
+
+export function clearThinking(el: HTMLElement): void {
+  try {
+    const prev = thinkingPrev.get(el);
+    if (prev) {
+      el.style.animation = prev.animation;
+      el.style.transition = prev.transition;
+      el.style.boxShadow = prev.boxShadow;
+      thinkingPrev.delete(el);
+    } else {
+      el.style.animation = '';
+    }
+  } catch {
+  }
+}
+
 export type VirtualizedDropdownOptions = {
   timeoutMs?: number;
   root?: Document;
