@@ -21,6 +21,7 @@ export type OllamaStreamParams = {
   system: string;
   user: string;
   maxTokens: number;
+  temperature?: number;
   endpoint?: string;
   fetchImpl?: typeof fetch;
 };
@@ -35,6 +36,7 @@ export function streamOllama(params: OllamaStreamParams) {
     system: params.system,
     user: params.user,
     maxTokens: params.maxTokens,
+    ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
     ...(params.fetchImpl ? { fetchImpl: params.fetchImpl } : {}),
   });
 }
