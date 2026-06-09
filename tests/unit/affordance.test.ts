@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   showFillTrigger,
   showFillTriggerDone,
+  setAiFallbackProgress,
   setRemoteReviewState,
   clearRemoteReviewState,
   removeFillTrigger,
@@ -13,6 +14,9 @@ import {
   __getDoneNoteForTests,
   __clickRemoteChipForTests,
   __getReviewPaneTextForTests,
+  __getAiAnswerTextForTests,
+  __getReviewPaneAllTextForTests,
+  __getChipTextForTests,
   __pressReviewKeyForTests,
   type ReviewableField,
   type TriggerStats,
@@ -328,5 +332,178 @@ describe('remote review (iframe-driven)', () => {
     setRemoteReviewState({ group: 'skipped', index: 0, total: 2, label: 'a' });
     clearRemoteReviewState();
     expect(__getReviewPaneTextForTests()).toBeNull();
+  });
+});
+
+describe('AI chip — skip-reason notes', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  const baseStats: TriggerStats = {
+    filled: 0,
+    skipped: 0,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'generic',
+    adapterName: 'generic',
+    resume: 'noResume',
+    autoLogging: false,
+  };
+
+  function mkInput(label: string): HTMLInputElement {
+    const el = document.createElement('input');
+    el.setAttribute('aria-label', label);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('local AI review pane shows a skipped item\'s note instead of "(field is empty)"', () => {
+    showFillTriggerDone(baseStats, []);
+    const el = mkInput('Visa sponsorship?');
+    setAiFallbackProgress(0, 0, [
+      {
+        group: 'ai',
+        label: 'Visa sponsorship?',
+        el,
+        note: 'Skipped: compliance/EEO question. Turn on "Include compliance questions" in Options.',
+      },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toMatch(/compliance\/EEO question/);
+    expect(__getAiAnswerTextForTests()).not.toMatch(/field is empty/);
+  });
+
+  it('AI-filled item is moved out of "skipped" group and the skip count ticks down', () => {
+    const el = mkInput('What city are you in?');
+    showFillTriggerDone(
+      { ...baseStats, skipped: 2 },
+      [
+        { group: 'skipped', label: 'What city are you in?', el },
+        { group: 'skipped', label: 'Some other empty field', el: mkInput('other') },
+      ],
+    );
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'What city are you in?', el },
+    ]);
+    __enterReviewForTests('skipped');
+    const state = __getReviewStateForTests();
+    expect(state).toEqual({ group: 'skipped', index: 0 });
+    __stepReviewForTests(1);
+    expect(__getReviewStateForTests()).toEqual({ group: 'skipped', index: 0 });
+  });
+
+  it('skipped chip is HIDDEN while the AI fallback is in flight (aiPending > 0)', () => {
+    const el = mkInput('Address?');
+    showFillTriggerDone(
+      { ...baseStats, skipped: 1 },
+      [{ group: 'skipped', label: 'Address?', el }],
+    );
+    expect(__getChipTextForTests('skip')).toMatch(/1 skipped/);
+    setAiFallbackProgress(0, 1);
+    expect(__getChipTextForTests('skip')).toBeNull();
+    setAiFallbackProgress(0, 0);
+    expect(__getChipTextForTests('skip')).toMatch(/1 skipped/);
+  });
+
+  it('skipped chip review pane defensively excludes AI-filled items at render time', () => {
+    const aiFilledEl = mkInput('What is the address?');
+    const stillEmptyEl = mkInput('Some other empty field');
+    showFillTriggerDone(
+      { ...baseStats, skipped: 2 },
+      [
+        { group: 'skipped', label: 'What is the address?', el: aiFilledEl },
+        { group: 'skipped', label: 'Some other empty field', el: stillEmptyEl },
+      ],
+    );
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'What is the address?', el: aiFilledEl },
+    ]);
+    expect(__getChipTextForTests('skip')).toMatch(/1 skipped/);
+    __enterReviewForTests('skipped');
+    expect(__getReviewStateForTests()).toEqual({ group: 'skipped', index: 0 });
+  });
+
+  it('AI skip (note-bearing) leaves the original "skipped" entry alone', () => {
+    const el = mkInput('Address?');
+    showFillTriggerDone(
+      { ...baseStats, skipped: 1 },
+      [{ group: 'skipped', label: 'Address?', el }],
+    );
+    setAiFallbackProgress(0, 0, [
+      { group: 'ai', label: 'Address?', el, note: 'AI returned no answer.' },
+    ]);
+    __enterReviewForTests('skipped');
+    const state = __getReviewStateForTests();
+    expect(state).toEqual({ group: 'skipped', index: 0 });
+  });
+
+  it('AI chip review pane lists a textarea once even when it is in BOTH "suggest" and "ai" groups', () => {
+    const el = mkInput('Why us?');
+    showFillTriggerDone(baseStats, [
+      { group: 'suggest', label: 'Why us?', el },
+    ]);
+    setAiFallbackProgress(0, 0, [
+      { group: 'ai', label: 'Why us?', el, note: 'AI returned no answer.' },
+    ]);
+    __enterReviewForTests('ai');
+    const first = __getReviewStateForTests();
+    expect(first).toEqual({ group: 'ai', index: 0 });
+    __stepReviewForTests(1);
+    expect(__getReviewStateForTests()).toEqual({ group: 'ai', index: 0 });
+  });
+
+  it('an element that is already in the "skipped" group still enters "ai" with its note', () => {
+    const el = mkInput('Visa sponsorship?');
+    showFillTriggerDone(baseStats, [
+      { group: 'skipped', label: 'Visa sponsorship?', el },
+    ]);
+    setAiFallbackProgress(0, 0, [
+      {
+        group: 'ai',
+        label: 'Visa sponsorship?',
+        el,
+        note: 'Skipped: compliance/EEO question.',
+      },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toMatch(/compliance\/EEO question/);
+  });
+
+  it('local AI review pane shows the AI-returned-null note for unanswered fields', () => {
+    showFillTriggerDone(baseStats, []);
+    const el = mkInput('Address from which you plan on working?');
+    setAiFallbackProgress(0, 0, [
+      {
+        group: 'ai',
+        label: 'Address from which you plan on working?',
+        el,
+        note: "AI returned no answer. The model didn't have enough context — fill it in manually.",
+      },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toMatch(/AI returned no answer/);
+  });
+
+  it('remote review pane renders the note from setRemoteReviewState', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone(
+      { ...baseStats, filled: 0, skipped: 1 },
+      [],
+      { remote },
+    );
+    __clickRemoteChipForTests('skipped');
+    setRemoteReviewState({
+      group: 'skipped',
+      index: 0,
+      total: 1,
+      label: 'Visa sponsorship?',
+      note: 'Skipped: compliance/EEO question.',
+    });
+    expect(__getReviewPaneAllTextForTests()).toMatch(/compliance\/EEO question/);
   });
 });
