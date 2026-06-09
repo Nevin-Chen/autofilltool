@@ -7,7 +7,7 @@ import { ashbyAdapter } from '@/adapters/ashby';
 import { workdayAdapter } from '@/adapters/workday';
 import { genericAdapter } from '@/adapters/generic';
 import { pickAdapter } from '@/content/detector';
-import { JOB_DESCRIPTION_CHAR_BUDGET } from '@/adapters/_shared';
+import { JOB_DESCRIPTION_CHAR_BUDGET, fromKeywords, normalize } from '@/adapters/_shared';
 import type { FieldKind, DetectedField } from '@/adapters/types';
 
 function loadFixture(name: string): string {
@@ -76,6 +76,21 @@ describe('adapter matches()', () => {
     expect(pickAdapter(new URL('https://jobs.lever.co/x'), document).id).toBe('lever');
     expect(pickAdapter(new URL('https://jobs.ashbyhq.com/x'), document).id).toBe('ashby');
     expect(pickAdapter(new URL('https://example.com/'), document).id).toBe('generic');
+  });
+});
+
+describe('fromKeywords — rule precedence under collisions', () => {
+  it.each<[string, FieldKind]>([
+    [
+      "Will you now or will you in the future require employment visa sponsorship to work in the country in which the job you're applying for is located?",
+      'requiresSponsorship',
+    ],
+    [
+      'What is the address from which you plan on working? If you would need to relocate, please type "relocating".',
+      'addressLine1',
+    ],
+  ])('%s → %s', (label, kind) => {
+    expect(fromKeywords(normalize(label))?.kind).toBe(kind);
   });
 });
 

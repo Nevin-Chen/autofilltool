@@ -120,14 +120,24 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.85,
   },
   {
-    kind: 'addressLine1',
-    re: /\b(street|address[\s_-]*(line[\s_-]*)?1|address\b(?!.*2))\b/,
-    confidence: 0.7,
+    kind: 'authorizedToWorkInUS',
+    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
+    confidence: 0.8,
+  },
+  {
+    kind: 'requiresSponsorship',
+    re: /\b(require|need|request).*\b(sponsor|sponsorship|visa)\b/,
+    confidence: 0.8,
   },
   {
     kind: 'addressLine2',
     re: /\b(address[\s_-]*(line[\s_-]*)?2|apt|apartment|suite|unit)\b/,
     confidence: 0.75,
+  },
+  {
+    kind: 'addressLine1',
+    re: /\b(street|address[\s_-]*(line[\s_-]*)?1|address)\b/,
+    confidence: 0.7,
   },
   { kind: 'city', re: /\b(city|town|locality)\b/, confidence: 0.8 },
   { kind: 'region', re: /\b(state|province|region|county)\b/, confidence: 0.75 },
@@ -144,16 +154,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     kind: 'portfolio',
     re: /\b(portfolio|personal[\s_-]*(site|website)|website|homepage)\b/,
     confidence: 0.7,
-  },
-  {
-    kind: 'authorizedToWorkInUS',
-    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
-    confidence: 0.8,
-  },
-  {
-    kind: 'requiresSponsorship',
-    re: /\b(require|need|request).*\b(sponsor|sponsorship|visa)\b/,
-    confidence: 0.8,
   },
   {
     kind: 'willingToRelocate',
