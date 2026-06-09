@@ -20,7 +20,7 @@ import {
 } from '@/types/messages';
 import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema';
 import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
-import { dispatch as dispatchAi } from '@/ai/client';
+import { dispatch as dispatchAi, classifyField } from '@/ai/client';
 import {
   OLLAMA_DEFAULT_BASE,
   resolveOriginForPermission,
@@ -157,8 +157,23 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     case 'SHOW_NOTICE':
       return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
-    case 'AI_CLASSIFY':
-      return { ok: true, value: { value: null } };
+    case 'AI_CLASSIFY': {
+      try {
+        const [settings, profile] = await Promise.all([getSettings(), getProfile()]);
+        if (!settings.ai.fallbackClassifier) {
+          return { ok: true, value: { value: null } };
+        }
+        const resume =
+          msg.request.fieldType === 'textarea' ? await getResume() : null;
+        const value = await classifyField(msg.request, settings.ai, profile, resume);
+        return { ok: true, value: { value } };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
 
     default: {
       const _: never = msg;
