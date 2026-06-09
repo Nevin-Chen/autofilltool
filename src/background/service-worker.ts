@@ -157,6 +157,9 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     case 'SHOW_NOTICE':
       return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
+    case 'AI_CLASSIFY':
+      return { ok: true, value: { value: null } };
+
     default: {
       const _: never = msg;
       void _;
