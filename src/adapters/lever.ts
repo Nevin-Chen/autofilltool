@@ -1,10 +1,3 @@
-/**
- * Lever adapter. Forms at `jobs.lever.co/<company>/<posting>/apply` use
- * predictable input `name`s: `name`, `email`, `phone`, `resume` (file), and
- * `urls[LinkedIn|GitHub|Portfolio|Other]`. Custom questions live in
- * `.application-question` blocks, handled by the shared classifier.
- */
-
 import type { PlatformAdapter, DetectedField, FieldKind } from './types';
 import {
   classifyByHeuristics,
@@ -17,7 +10,6 @@ import {
   hasSubmissionConfirmText,
 } from './_shared';
 
-/** Exact-name matches for the canonical Lever fields. */
 const NAME_MAP: ReadonlyArray<{ name: string; kind: FieldKind; confidence: number }> = [
   { name: 'name', kind: 'fullName', confidence: 0.99 },
   { name: 'email', kind: 'email', confidence: 0.99 },
@@ -33,7 +25,6 @@ export const leverAdapter: PlatformAdapter = {
   name: 'Lever',
   matches: (url, doc) => {
     if (/(^|\.)lever\.co$/.test(url.hostname)) return true;
-    // CNAMEd forms: sniff Lever's characteristic markup.
     return !!doc.querySelector('form[action*="lever.co"], .lever-job-listing-page');
   },
   detectFields,
@@ -42,11 +33,6 @@ export const leverAdapter: PlatformAdapter = {
   detectSubmissionConfirmed,
 };
 
-/**
- * Lever redirects to a `/thanks` (or `/confirmation`) route after a successful
- * apply and renders a "thank you" page with the application form gone. Match
- * the route, else require the confirmation copy with no apply form present.
- */
 function detectSubmissionConfirmed(doc: Document, url: URL): boolean {
   if (/\/(thanks|confirmation)\b/i.test(url.pathname)) return true;
   if (doc.querySelector('.application-confirmation, [data-qa="confirmation"]')) return true;
@@ -56,7 +42,6 @@ function detectSubmissionConfirmed(doc: Document, url: URL): boolean {
   return formGone && hasSubmissionConfirmText(doc);
 }
 
-/** JD from the listing's `.posting-page .content` and related blocks; falls back to main/body. */
 function getJobDescription(doc: Document): string {
   const byCss = pickJobDescriptionByCss(doc, [
     '.posting-page .content',
@@ -74,7 +59,6 @@ function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
-  // 1. Canonical name-attribute fields.
   for (const { name, kind, confidence } of NAME_MAP) {
     const el = root.querySelector<HTMLElement>(`[name="${cssAttrEscape(name)}"]`);
     if (el instanceof HTMLElement && isFillable(el)) {
@@ -84,7 +68,6 @@ function detectFields(root: Document): DetectedField[] {
     }
   }
 
-  // 2. Custom questions — shared classifier handles them.
   const scope =
     root.querySelector('form[action*="lever.co"], form[action*="/apply"]') ?? root;
   for (const el of Array.from(scope.querySelectorAll<HTMLElement>('input, select, textarea'))) {
@@ -101,14 +84,12 @@ function detectFields(root: Document): DetectedField[] {
 
 async function fillResume(file: File, root: Document): Promise<boolean> {
   return attachResumeViaSlot(file, root, (d) => {
-    // name="resume" file input inside the drag-drop wrapper.
     const byName = d.querySelector<HTMLInputElement>('input[type="file"][name="resume"]');
     if (byName && !byName.disabled) return byName;
     return findResumeInput(d);
   });
 }
 
-/** Escape characters that would break a CSS attribute selector value. */
 function cssAttrEscape(s: string): string {
   return s.replace(/(["\\])/g, '\\$1');
 }

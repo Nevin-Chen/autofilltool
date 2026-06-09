@@ -1,9 +1,3 @@
-/**
- * Google Gemini via its OpenAI-compatible /chat/completions endpoint — a thin
- * wrapper over streamChatCompletions. Recommended default because Gemini has a
- * real free tier (no card); `gemini-2.5-flash` is the free default, overridable.
- */
-
 import { streamChatCompletions } from './openai-compat';
 
 export const GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash';

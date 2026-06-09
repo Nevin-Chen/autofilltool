@@ -8,14 +8,12 @@
 import { parseSSE } from '../sse';
 
 export type ChatCompatParams = {
-  /** Full URL ending in /chat/completions */
   endpoint: string;
   apiKey: string;
   model: string;
   system: string;
   user: string;
   maxTokens: number;
-  /** Override fetch (for tests). */
   fetchImpl?: typeof fetch;
 };
 
