@@ -1,9 +1,3 @@
-/**
- * Provider-agnostic AI client. `dispatch()` picks the provider and yields text
- * chunks via an async iterator; only the background worker calls it. Providers
- * are pure: prompt + key in, chunks out — no storage, no Profile knowledge.
- */
-
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
@@ -11,18 +5,13 @@ import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
 import { extractResumeText } from './resume-text';
 
-export { extractResumeText }; // re-export so existing test imports keep working
+export { extractResumeText };
 
 export type SuggestRequest = {
-  /** The question text the user is being asked to answer. */
   question: string;
-  /** The label that introduces the question on the page (e.g. "Why us?"). */
   label?: string;
-  /** Loose page context the adapter or content script extracted. */
   job?: { company?: string; role?: string; jobUrl?: string };
-  /** JD text from the adapter's `getJobDescription` (~3000 chars). Optional: may be empty. */
   jobDescription?: string;
-  /** Any character ceiling visible on the page (e.g. textarea maxLength). */
   maxChars?: number;
 };
 
@@ -31,10 +20,6 @@ export type StreamEvent =
   | { kind: 'done' }
   | { kind: 'error'; message: string };
 
-/**
- * Routes to the configured provider. Yields a `delta` per chunk, then a
- * single `done`. On failure yields one `error` and stops.
- */
 export async function* dispatch(
   req: SuggestRequest,
   settings: AiSettings,
@@ -48,7 +33,6 @@ export async function* dispatch(
     };
     return;
   }
-  // Ollama runs locally without auth; every other provider needs the key.
   if (settings.provider !== 'ollama' && !settings.apiKey) {
     yield {
       kind: 'error',
@@ -118,18 +102,10 @@ export async function* dispatch(
   }
 }
 
-/* ------------------------------------------------------- prompt building */
-
 export type BuiltPrompt = { system: string; user: string };
 
-/** Defensive JD cap; adapters already clip to ~3000 in `clipJobDescription`. */
 const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
 
-/**
- * Build the provider prompt (exposed for tests). Async because résumé text may
- * need PDF/DOCX parsing. System = writing-assistant role + constraints; user =
- * question + label + job context + JD + profile summary + résumé excerpt.
- */
 export async function buildPrompt(
   req: SuggestRequest,
   profile: Profile,
@@ -177,7 +153,6 @@ export async function buildPrompt(
   return { system, user: userParts.filter(Boolean).join('\n') };
 }
 
-/** Short bulleted summary of the parts of Profile that help an LLM write. */
 export function summarizeProfile(profile: Profile): string {
   const lines: string[] = [];
   const name =
@@ -208,7 +183,6 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1).trimEnd() + '…';
 }
 
-/** Rough cap on output tokens given a character budget; ~4 chars/token. */
 function estimateTokens(maxChars: number | undefined): number {
   if (!maxChars) return 800;
   return Math.max(64, Math.min(2048, Math.round(maxChars / 3)));

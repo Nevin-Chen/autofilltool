@@ -16,13 +16,12 @@ export const OLLAMA_DEFAULT_BASE = 'http://localhost:11434';
 const CHAT_PATH = '/v1/chat/completions';
 
 export type OllamaStreamParams = {
-  /** Optional API key (or proxy token). When empty, sent as `Bearer ollama`. */
   apiKey: string;
   model: string;
   system: string;
   user: string;
   maxTokens: number;
-  /** Base URL — http(s)://host[:port][/prefix]. Empty → localhost default. */
+  temperature?: number;
   endpoint?: string;
   fetchImpl?: typeof fetch;
 };
@@ -37,15 +36,11 @@ export function streamOllama(params: OllamaStreamParams) {
     system: params.system,
     user: params.user,
     maxTokens: params.maxTokens,
+    ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
     ...(params.fetchImpl ? { fetchImpl: params.fetchImpl } : {}),
   });
 }
 
-/**
- * Base URL → full /chat/completions URL. Blank → localhost default; already
- * ends in `/chat/completions` → verbatim; else append CHAT_PATH (no double
- * slash). Exported for testing.
- */
 export function resolveEndpoint(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return `${OLLAMA_DEFAULT_BASE}${CHAT_PATH}`;
@@ -54,10 +49,6 @@ export function resolveEndpoint(raw: string): string {
   return `${noTrailing}${CHAT_PATH}`;
 }
 
-/**
- * Origin (trailing slash, for requestOriginPermission) needed for the
- * configured endpoint, or the default. `null` if unparseable.
- */
 export function resolveOriginForPermission(raw: string): string | null {
   const trimmed = (raw || OLLAMA_DEFAULT_BASE).trim();
   try {
