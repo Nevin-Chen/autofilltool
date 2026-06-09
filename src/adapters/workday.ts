@@ -8,6 +8,7 @@ import {
   clipJobDescription,
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
+  defaultDetectAll,
 } from './_shared';
 
 const AUTOMATION_ID_MAP: ReadonlyArray<{
@@ -42,7 +43,7 @@ function kindFromAutomationId(
   }
   for (const { id, kind, confidence } of AUTOMATION_ID_MAP) {
     if (lower.includes(id.toLowerCase())) {
-      return { kind, confidence: Math.max(0.7, confidence - 0.1) };
+      return { kind, confidence: Math.max(0.7, confidence - 0.1) }; // substring → lower confidence
     }
   }
   return null;
@@ -63,6 +64,7 @@ export const workdayAdapter: PlatformAdapter = {
     return !!doc.querySelector('[data-automation-id]');
   },
   detectFields,
+  detectAll: (root) => defaultDetectAll({ detectFields }, root),
   fillResume,
   getJobDescription,
   detectSubmissionConfirmed,

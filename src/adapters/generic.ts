@@ -7,6 +7,7 @@ import {
   isFillable,
   attachResumeViaSlot,
   findResumeInput,
+  defaultDetectAll,
 } from './_shared';
 
 export { findResumeInput };
@@ -16,6 +17,7 @@ export const genericAdapter: PlatformAdapter = {
   name: 'Generic form',
   matches: () => true,
   detectFields,
+  detectAll: (root) => defaultDetectAll({ detectFields }, root),
   fillResume: (file, root) => attachResumeViaSlot(file, root),
   getJobDescription,
 };

@@ -8,6 +8,7 @@ import {
   clipJobDescription,
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
+  defaultDetectAll,
 } from './_shared';
 
 const NAME_MAP: ReadonlyArray<{ name: string; kind: FieldKind; confidence: number }> = [
@@ -28,6 +29,7 @@ export const leverAdapter: PlatformAdapter = {
     return !!doc.querySelector('form[action*="lever.co"], .lever-job-listing-page');
   },
   detectFields,
+  detectAll: (root) => defaultDetectAll({ detectFields }, root),
   fillResume,
   getJobDescription,
   detectSubmissionConfirmed,

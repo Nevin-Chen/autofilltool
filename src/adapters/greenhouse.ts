@@ -8,6 +8,7 @@ import {
   clipJobDescription,
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
+  findUnclassifiedFields,
 } from './_shared';
 
 const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: number }> = [
@@ -36,6 +37,13 @@ export const greenhouseAdapter: PlatformAdapter = {
     );
   },
   detectFields,
+  detectAll: (root) => {
+    const raw = detectFieldsRaw(root);
+    return {
+      classified: sortByDomOrder(dedupeByKind(raw)),
+      unclassified: findUnclassifiedFields(root, raw),
+    };
+  },
   fillResume,
   getJobDescription,
   detectSubmissionConfirmed,
@@ -60,6 +68,10 @@ function getJobDescription(doc: Document): string {
 }
 
 function detectFields(root: Document): DetectedField[] {
+  return sortByDomOrder(dedupeByKind(detectFieldsRaw(root)));
+}
+
+function detectFieldsRaw(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
 
@@ -121,7 +133,7 @@ function detectFields(root: Document): DetectedField[] {
     out.push({ el, kind: classified.kind, label: ctx.label, confidence: classified.confidence });
   }
 
-  return sortByDomOrder(dedupeByKind(out));
+  return out;
 }
 
 function sortByDomOrder(fields: DetectedField[]): DetectedField[] {
@@ -134,16 +146,17 @@ function sortByDomOrder(fields: DetectedField[]): DetectedField[] {
 }
 
 function dedupeByKind(fields: DetectedField[]): DetectedField[] {
-  const idxByKind = new Map<FieldKind, number>();
+  const idxByKey = new Map<string, number>();
   const out: DetectedField[] = [];
   for (const f of fields) {
     if (f.kind === 'openEnded') {
       out.push(f);
       continue;
     }
-    const existingIdx = idxByKind.get(f.kind);
+    const key = `${f.kind}::${normalizeDedupeLabel(f.label)}`;
+    const existingIdx = idxByKey.get(key);
     if (existingIdx === undefined) {
-      idxByKind.set(f.kind, out.length);
+      idxByKey.set(key, out.length);
       out.push(f);
       continue;
     }
@@ -151,6 +164,10 @@ function dedupeByKind(fields: DetectedField[]): DetectedField[] {
     if (score(f) > score(existing)) out[existingIdx] = f;
   }
   return out;
+}
+
+function normalizeDedupeLabel(label: string): string {
+  return label.toLowerCase().replace(/[*\s]+/g, ' ').trim();
 }
 
 function score(f: DetectedField): number {
