@@ -18,23 +18,21 @@ export type TriggerStats = {
   skipped: number;
   failed: number;
   suggest: number;
+  ai?: number;
+  aiPending?: number;
   adapterId: AdapterId;
   adapterName: string;
   resume: TriggerResume;
   autoLogging: boolean;
 };
 
-/**
- * Groups the user can step through after a fill. "filled" = double-check sweep,
- * "skipped" = manual TODOs, "suggest" = open-ended fields awaiting AI.
- */
-export type ReviewGroup = 'filled' | 'skipped' | 'suggest';
+export type ReviewGroup = 'filled' | 'skipped' | 'suggest' | 'ai';
 
 export type ReviewableField = {
   group: ReviewGroup;
   label: string;
-  /** Live ref on the page — checked with isConnected before scroll/highlight. */
   el: HTMLElement;
+  note?: string;
 };
 
 export type RemoteReviewCallbacks = {
@@ -48,6 +46,7 @@ export type RemoteReviewState = {
   index: number;
   total: number;
   label: string;
+  note?: string;
 };
 
 type Phase = 'idle' | 'filling' | 'done';
@@ -65,6 +64,7 @@ type State = {
   review: { group: ReviewGroup; index: number } | null;
   remoteCallbacks: RemoteReviewCallbacks | null;
   remoteReview: RemoteReviewState | null;
+  aiQueueOriginal: number;
 };
 
 let state: State | null = null;
@@ -113,6 +113,7 @@ export function showFillTriggerDone(
   s.review = null;
   s.remoteCallbacks = opts.remote ?? null;
   s.remoteReview = null;
+  s.aiQueueOriginal = 0;
   render();
 }
 
@@ -121,6 +122,62 @@ export function setRemoteReviewState(state_: RemoteReviewState): void {
   state.remoteReview = state_;
   render();
   focusReviewPane();
+}
+
+export function setAiFallbackProgress(
+  filled: number,
+  pending: number,
+  newAiItems: ReviewableField[] = [],
+  opts: { decrementSkippedBy?: number } = {},
+): void {
+  if (!state || state.phase !== 'done' || !state.stats) return;
+  state.stats = { ...state.stats, ai: filled, aiPending: pending };
+  state.aiQueueOriginal = Math.max(state.aiQueueOriginal, filled + pending);
+
+  if (newAiItems.length > 0) {
+    const existingAiEls = new WeakSet<HTMLElement>(
+      state.items.filter((i) => i.group === 'ai').map((i) => i.el),
+    );
+    const pushedFilledEls: HTMLElement[] = [];
+    for (const item of newAiItems) {
+      if (item.el instanceof HTMLElement && !existingAiEls.has(item.el)) {
+        state.items.push(item);
+        existingAiEls.add(item.el);
+        if (!item.note) pushedFilledEls.push(item.el);
+      }
+    }
+    if (pushedFilledEls.length > 0) {
+      const filledEls = new WeakSet<HTMLElement>(pushedFilledEls);
+      let removed = 0;
+      state.items = state.items.filter((i) => {
+        if (
+          i.group === 'skipped' &&
+          i.el instanceof HTMLElement &&
+          filledEls.has(i.el)
+        ) {
+          removed++;
+          return false;
+        }
+        return true;
+      });
+      if (removed > 0) {
+        state.stats = {
+          ...state.stats,
+          skipped: Math.max(0, state.stats.skipped - removed),
+        };
+      }
+    }
+  }
+
+  const explicitDecrement = opts.decrementSkippedBy;
+  if (typeof explicitDecrement === 'number' && explicitDecrement > 0) {
+    state.stats = {
+      ...state.stats,
+      skipped: Math.max(0, state.stats.skipped - explicitDecrement),
+    };
+  }
+
+  render();
 }
 
 export function clearRemoteReviewState(): void {
@@ -181,6 +238,23 @@ export function __getReviewPaneTextForTests(): string | null {
   return counter ? (counter.textContent ?? '').trim() : null;
 }
 
+export function __getAiAnswerTextForTests(): string | null {
+  const box = state?.shadow.querySelector('.review .ai-a') as HTMLElement | null;
+  return box ? (box.textContent ?? '').trim() : null;
+}
+
+export function __getChipTextForTests(
+  kind: 'ok' | 'skip' | 'fail' | 'ai',
+): string | null {
+  const el = state?.shadow.querySelector(`.chip.${kind}`) as HTMLElement | null;
+  return el ? (el.textContent ?? '').trim() : null;
+}
+
+export function __getReviewPaneAllTextForTests(): string | null {
+  const pane = state?.shadow.querySelector('.review') as HTMLElement | null;
+  return pane ? (pane.textContent ?? '').trim() : null;
+}
+
 export function __pressReviewKeyForTests(key: 'ArrowLeft' | 'ArrowRight' | 'Escape'): boolean {
   const pane = state?.shadow.querySelector('.review') as HTMLElement | null;
   if (!pane) return false;
@@ -224,6 +298,7 @@ function ensureHost(): State {
     review: null,
     remoteCallbacks: null,
     remoteReview: null,
+    aiQueueOriginal: 0,
   };
   scheduleMountWatchdog(host);
   return state;
@@ -293,6 +368,8 @@ function reviewTitle(g: ReviewGroup): string {
       return 'Reviewing skipped';
     case 'suggest':
       return 'Reviewing to Suggest';
+    case 'ai':
+      return 'Reviewing AI fills';
   }
 }
 
@@ -341,12 +418,24 @@ function renderDone(): HTMLElement {
     autoLogging: false,
   };
 
+  const aiInFlight = (st.aiPending ?? 0) > 0;
+  const remoteForCounts = s.remoteCallbacks ?? null;
+  const skippedDisplayCount = remoteForCounts
+    ? st.skipped
+    : reviewItemsFor('skipped').filter((i) => i.el.isConnected).length;
+  const showSkippedChip = !aiInFlight && skippedDisplayCount > 0;
+
   const chips = h('div', { class: 'row gap chips' }, [
     reviewChip('ok', 'filled', `✓ ${st.filled} filled`),
-    ...(st.skipped > 0 ? [reviewChip('skip', 'skipped', `${st.skipped} skipped`)] : []),
+    ...(showSkippedChip
+      ? [reviewChip('skip', 'skipped', `${skippedDisplayCount} skipped`)]
+      : []),
     ...(st.failed > 0 ? [chip('fail', `${st.failed} failed`)] : []),
-    ...(st.suggest > 0 ? [reviewChip('ai', 'suggest', `✨ ${st.suggest} to Suggest`)] : []),
   ]);
+  const aiChipEl = renderAiReviewChip();
+  const aiRow = aiChipEl
+    ? h('div', { class: 'row gap chips ai-row' }, [aiChipEl])
+    : null;
 
   const resume = resumeLine(st.resume);
   const note = autoLogNote(st.autoLogging);
@@ -355,7 +444,124 @@ function renderDone(): HTMLElement {
     btn({ class: 'ghost', text: 'Dismiss', onClick: dismiss }),
   ]);
 
-  return frag([chips, ...(resume ? [resume] : []), note, actions]);
+  return frag([
+    chips,
+    ...(aiRow ? [aiRow] : []),
+    ...(resume ? [resume] : []),
+    note,
+    actions,
+  ]);
+}
+
+function renderAiReviewChip(): HTMLElement | null {
+  const s = state!;
+  const st = s.stats;
+  if (!st) return null;
+  const aiFilled = st.ai ?? 0;
+  const aiPending = st.aiPending ?? 0;
+  const suggestPending = st.suggest ?? 0;
+  const aiTotal = Math.max(s.aiQueueOriginal, aiFilled + aiPending);
+  const total = aiTotal + suggestPending;
+  if (total === 0) return null;
+
+  const remote = s.remoteCallbacks ?? null;
+  const reviewable = remote
+    ? aiFilled + suggestPending
+    : reviewItemsFor('ai').filter((i) => i.el.isConnected).length;
+  const inFlight = aiPending > 0;
+  const inReview = s.review?.group === 'ai';
+  const reviewIndex = inReview ? s.review!.index : null;
+  const tone = inFlight ? 'amber' : 'ai';
+
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `chip ai ai-chip clickable tone-${tone}${inReview ? ' active' : ''}${inFlight ? ' pending' : ''}`;
+  b.setAttribute('data-group', 'ai');
+  b.title = inFlight ? 'AI is drafting answers…' : 'Step through AI fields';
+
+  const label = h('span', { class: 'ai-chip-label' }, []);
+  if (inFlight) label.append(buildThinkingDots('amber'));
+  else label.append(document.createTextNode('🤖'));
+  const countText = `${aiFilled}/${total} AI${inFlight ? '…' : ''}`;
+  label.append(h('span', { class: 'ai-chip-count' }, [countText]));
+  b.append(label);
+
+  const dots = renderAiQueueDots(reviewIndex);
+  if (dots) b.append(dots);
+
+  b.addEventListener('click', () => {
+    if (reviewable === 0) return;
+    if (remote) enterRemoteReview('ai', remote);
+    else enterReview('ai');
+  });
+  return b;
+}
+
+function renderAiQueueDots(currentIndex: number | null): HTMLElement | null {
+  const s = state!;
+  const filled = s.stats?.ai ?? 0;
+  const pending = s.stats?.aiPending ?? 0;
+  const suggestPending = s.stats?.suggest ?? 0;
+  const aiTotal = Math.max(s.aiQueueOriginal, filled + pending);
+  const processed = Math.max(0, aiTotal - pending);
+  const total = aiTotal + suggestPending;
+  if (total === 0) return null;
+
+  const live = aiItems();
+  const wrap = h('div', { class: 'queue-dots' }, []);
+  for (let i = 0; i < total; i++) {
+    const isAiSlot = i < aiTotal;
+    const isCurrent = currentIndex !== null && i === currentIndex;
+
+    let kind: 'answered' | 'failed' | 'thinking' | 'pending' | 'suggest';
+    let item: ReviewableField | null = null;
+    if (isAiSlot) {
+      if (i < filled) {
+        kind = 'answered';
+        item = live[i] ?? null;
+      } else if (i < processed) {
+        kind = 'failed';
+      } else if (i === processed && pending > 0) {
+        kind = 'thinking';
+      } else {
+        kind = 'pending';
+      }
+    } else {
+      kind = 'suggest';
+      const sIdx = filled + (i - aiTotal);
+      item = live[sIdx] ?? null;
+    }
+
+    const dotClass = `dot ${kind}${isCurrent ? ' current' : ''}`;
+    if (item) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = dotClass;
+      dot.title = item.label;
+      dot.setAttribute('data-i', String(i));
+      dot.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (!state) return;
+        if (state.review?.group !== 'ai') enterReview('ai');
+        if (state.review) state.review.index = i;
+        render();
+        focusReviewPane();
+        spotlight(item.el);
+      });
+      wrap.append(dot);
+    } else {
+      const d = document.createElement('span');
+      d.className = dotClass;
+      wrap.append(d);
+    }
+  }
+  return wrap;
+}
+
+function buildThinkingDots(tone: 'amber' | 'sky' = 'sky'): HTMLElement {
+  const wrap = h('span', { class: `aft-dots tone-${tone}` }, []);
+  for (let i = 0; i < 3; i++) wrap.append(h('span', {}, []));
+  return wrap;
 }
 
 const SHEETS_DOCS_URL =
@@ -404,7 +610,6 @@ function h(
   return el;
 }
 
-/** Wrap children without an extra styled box (the card itself is the box). */
 function frag(children: Array<Node>): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'stack';
@@ -441,7 +646,9 @@ function reviewChip(
   text: string,
 ): HTMLElement {
   const remote = state?.remoteCallbacks ?? null;
-  const has = remote ? remoteCountFor(group) > 0 : itemsInGroup(group).some((i) => i.el.isConnected);
+  const has = remote
+    ? remoteCountFor(group) > 0
+    : reviewItemsFor(group).some((i) => i.el.isConnected);
   if (!has) return chip(kind, text);
   const b = document.createElement('button');
   b.type = 'button';
@@ -463,18 +670,16 @@ function remoteCountFor(group: ReviewGroup): number {
       return stats.skipped;
     case 'suggest':
       return stats.suggest;
+    case 'ai':
+      return stats.ai ?? 0;
   }
-}
-
-function itemsInGroup(group: ReviewGroup): ReviewableField[] {
-  return (state?.items ?? []).filter((i) => i.group === group);
 }
 
 function enterReview(group: ReviewGroup): void {
   if (!state) return;
-  const items = itemsInGroup(group);
+  const items = reviewItemsFor(group);
   const first = nextConnected(items, -1, 1);
-  if (first === -1) return; // nothing live to review
+  if (first === -1) return;
   state.review = { group, index: first };
   render();
   focusReviewPane();
@@ -489,7 +694,7 @@ function exitReview(): void {
 
 function stepReview(dir: 1 | -1): void {
   if (!state || !state.review) return;
-  const items = itemsInGroup(state.review.group);
+  const items = reviewItemsFor(state.review.group);
   const next = nextConnected(items, state.review.index, dir);
   if (next === -1) {
     exitReview();
@@ -499,6 +704,50 @@ function stepReview(dir: 1 | -1): void {
   render();
   focusReviewPane();
   spotlight(items[next]!.el);
+}
+
+function reviewItemsFor(group: ReviewGroup): ReviewableField[] {
+  const all = state?.items ?? [];
+  if (group === 'ai') {
+    const union = all.filter((i) => i.group === 'ai' || i.group === 'suggest');
+    const aiEls = new WeakSet<HTMLElement>(
+      union.filter((i) => i.group === 'ai').map((i) => i.el),
+    );
+    return union.filter((i) => i.group === 'ai' || !aiEls.has(i.el));
+  }
+  if (group === 'skipped') {
+    const aiFilledEls = new WeakSet<HTMLElement>(
+      all
+        .filter(
+          (i): i is ReviewableField & { el: HTMLElement } =>
+            i.group === 'ai' && !i.note && i.el instanceof HTMLElement,
+        )
+        .map((i) => i.el),
+    );
+    return all.filter(
+      (i) =>
+        i.group === 'skipped' &&
+        (!(i.el instanceof HTMLElement) || !aiFilledEls.has(i.el)),
+    );
+  }
+  return all.filter((i) => i.group === group);
+}
+
+function aiItems(): ReviewableField[] {
+  return reviewItemsFor('ai').filter((i) => i.el.isConnected);
+}
+
+function readFieldValue(el: HTMLElement): string {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    return el.value ?? '';
+  }
+  if (el instanceof HTMLSelectElement) {
+    const opt = el.options[el.selectedIndex];
+    return opt?.text ?? el.value ?? '';
+  }
+  const aria = el.getAttribute('aria-label-value');
+  if (aria) return aria;
+  return (el.textContent ?? '').trim();
 }
 
 function enterRemoteReview(group: ReviewGroup, callbacks: RemoteReviewCallbacks): void {
@@ -537,41 +786,125 @@ export function nextConnected(
 function renderReview(): HTMLElement {
   const s = state!;
   const remote = s.remoteReview;
+  const group: ReviewGroup = remote
+    ? remote.group
+    : s.review!.group;
+  const stepFn = remote ? stepRemoteReview : stepReview;
+  const exitFn = remote ? exitRemoteReview : exitReview;
+
+  const installKeyboard = (pane: HTMLElement): void => {
+    pane.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepFn(1);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        stepFn(-1);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        exitFn();
+      }
+    });
+  };
+
+  if (group === 'ai' && !remote) {
+    return renderAiReviewPane(stepFn, exitFn, installKeyboard);
+  }
+
   const display = remote
-    ? { index: remote.index, total: remote.total, label: remote.label }
+    ? { index: remote.index, total: remote.total, label: remote.label, note: remote.note }
     : (() => {
-        const { group, index } = s.review!;
-        const items = itemsInGroup(group);
+        const { group: g, index } = s.review!;
+        const items = reviewItemsFor(g);
         const current = items[index]!;
-        return { index, total: items.length, label: current.label };
+        return { index, total: items.length, label: current.label, note: current.note };
       })();
 
   const counter = h('div', { class: 'sub' }, [
     `${display.index + 1} of ${display.total} · ${truncate(display.label, 60)}`,
   ]);
+  const noteEl = display.note
+    ? h('div', { class: 'sub light' }, [display.note])
+    : null;
   const help = h('div', { class: 'sub light' }, ['← / → to step · Esc to exit']);
-  const stepFn = remote ? stepRemoteReview : stepReview;
-  const exitFn = remote ? exitRemoteReview : exitReview;
   const actions = h('div', { class: 'row gap top' }, [
     btn({ class: 'ghost', text: '← Prev', onClick: () => stepFn(-1) }),
     btn({ class: 'ghost', text: 'Next →', onClick: () => stepFn(1) }),
     btn({ class: 'ghost', text: 'Done', onClick: exitFn }),
   ]);
 
-  const pane = h('div', { class: 'review', tabindex: '0' }, [counter, help, actions]);
-  pane.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      stepFn(1);
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      stepFn(-1);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      exitFn();
-    }
-  });
+  const children: HTMLElement[] = [counter];
+  if (noteEl) children.push(noteEl);
+  children.push(help, actions);
+  const pane = h('div', { class: 'review', tabindex: '0' }, children);
+  installKeyboard(pane);
   return pane;
+}
+
+function renderAiReviewPane(
+  stepFn: (dir: 1 | -1) => void,
+  exitFn: () => void,
+  installKeyboard: (pane: HTMLElement) => void,
+): HTMLElement {
+  const s = state!;
+  const { index } = s.review!;
+  const items = reviewItemsFor('ai');
+  const current = items[index]!;
+  const isSuggestKind = current.group === 'suggest';
+
+  const counter = h('div', { class: 'sub uppercase eyebrow' }, [
+    `Question ${index + 1} of ${items.length}`,
+  ]);
+
+  const label = h('div', { class: 'ai-q' }, [current.label]);
+
+  const valueBox = h('div', { class: 'ai-a' }, []);
+  const v = readFieldValue(current.el);
+  if (current.note) {
+    valueBox.append(h('span', { class: 'placeholder' }, [current.note]));
+  } else if (v) {
+    valueBox.textContent = v;
+  } else if (isSuggestKind) {
+    valueBox.append(
+      h('span', { class: 'placeholder' }, [
+        'Awaiting ✨ Suggest — open the field and click the Suggest chip to draft.',
+      ]),
+    );
+  } else {
+    valueBox.append(h('span', { class: 'placeholder' }, ['(field is empty)']));
+  }
+
+  const help = h('div', { class: 'sub light' }, ['← / → step · Esc exit']);
+
+  const editLabel = isSuggestKind ? 'Open field' : 'Edit field';
+  const actions = h('div', { class: 'row gap top wrap' }, [
+    btn({ class: 'ghost xs', text: '←', title: 'Previous', onClick: () => stepFn(-1) }),
+    btn({ class: 'ghost xs', text: '→', title: 'Next', onClick: () => stepFn(1) }),
+    btn({ class: 'primary sm', text: editLabel, onClick: () => editReviewCurrent() }),
+    btn({ class: 'ghost', text: 'Done', onClick: exitFn }),
+  ]);
+
+  const pane = h('div', { class: 'review ai-review', tabindex: '0' }, [
+    counter,
+    label,
+    valueBox,
+    help,
+    actions,
+  ]);
+  installKeyboard(pane);
+  return pane;
+}
+
+function editReviewCurrent(): void {
+  if (!state?.review) return;
+  const items = reviewItemsFor(state.review.group);
+  const current = items[state.review.index];
+  if (!current) return;
+  spotlight(current.el);
+  try {
+    (current.el as HTMLElement).focus({ preventScroll: false });
+  } catch {
+  }
 }
 
 function focusReviewPane(): void {
@@ -706,6 +1039,97 @@ function buildStyle(): HTMLStyleElement {
     button.chip.clickable:focus-visible {
       outline: 2px solid #38bdf8; outline-offset: 2px;
     }
+    button.chip.clickable.active {
+      border-color: #7dd3fc;
+      background: rgba(125,211,252,0.14);
+    }
+    button.chip.ai-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 4px 10px 4px 8px;
+      background: rgba(125,211,252,0.10);
+      border-color: rgba(125,211,252,0.25);
+      color: #7dd3fc;
+    }
+    button.chip.ai-chip:hover { background: rgba(125,211,252,0.18); }
+    button.chip.ai-chip.tone-amber {
+      color: #fbbf24;
+      background: rgba(251,191,36,0.10);
+      border-color: rgba(251,191,36,0.25);
+    }
+    button.chip.ai-chip.tone-amber:hover { background: rgba(251,191,36,0.18); }
+    button.chip.ai-chip.active {
+      border-color: #7dd3fc;
+      background: rgba(125,211,252,0.18);
+    }
+    button.chip.ai-chip .ai-chip-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      white-space: nowrap; font-weight: 600;
+    }
+    button.chip.ai-chip .ai-chip-count { font-variant-numeric: tabular-nums; }
+    .sub.uppercase.eyebrow {
+      text-transform: uppercase; letter-spacing: 0.08em;
+      font-size: 10.5px; color: #94a3b8;
+      margin-top: 2px;
+    }
+    .ai-q {
+      font-size: 13px; color: #f8fafc; font-weight: 600;
+      line-height: 1.35; margin-top: 4px;
+    }
+    .ai-a {
+      font-size: 12.5px; color: #e2e8f0; line-height: 1.5;
+      padding: 9px 11px; min-height: 36px;
+      background: rgba(125,211,252,0.06);
+      border: 1px solid rgba(125,211,252,0.15);
+      border-radius: 8px;
+      white-space: pre-wrap;
+      max-height: 130px; overflow-y: auto;
+    }
+    .ai-a .placeholder { color: #64748b; font-style: italic; }
+    .ai-a .thinking-label { color: #fbbf24; font-weight: 600; margin-left: 7px; }
+    .queue-dots {
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      padding-top: 2px;
+    }
+    .queue-dots .dot {
+      width: 8px; height: 8px; border-radius: 999px; padding: 0; border: none;
+      background: rgba(255,255,255,0.18);
+      cursor: default;
+      transition: width .2s ease, background .2s ease;
+    }
+    button.dot { cursor: pointer; }
+    button.dot:hover { background: #bae6fd; }
+    .queue-dots .dot.answered { background: #7dd3fc; }
+    .queue-dots .dot.failed   { background: #94a3b8; }
+    .queue-dots .dot.suggest  { background: #7dd3fc; opacity: 0.65; }
+    .queue-dots .dot.thinking {
+      width: 14px; background: #fbbf24;
+      animation: aftDotThink 1.4s ease-in-out infinite;
+    }
+    .queue-dots .dot.current {
+      box-shadow: 0 0 0 2px #38bdf8;
+      outline: 1px solid rgba(15,23,42,0.85); outline-offset: -3px;
+    }
+    @keyframes aftDotThink {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.30); }
+      50%      { box-shadow: 0 0 0 3px rgba(251,191,36,0.30); }
+    }
+    .aft-dots { display: inline-flex; gap: 3px; align-items: center; }
+    .aft-dots > span {
+      display: inline-block; width: 4px; height: 4px;
+      background: #fbbf24; border-radius: 50%;
+      animation: aftDot 1.2s ease-in-out infinite;
+    }
+    .aft-dots.tone-sky > span { background: #7dd3fc; }
+    .aft-dots > span:nth-child(2) { animation-delay: .15s; }
+    .aft-dots > span:nth-child(3) { animation-delay: .30s; }
+    @keyframes aftDot {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40%           { opacity: 1;    transform: translateY(-2px); }
+    }
+    .row.wrap { flex-wrap: wrap; }
+    .review.ai-review > * + * { margin-top: 6px; }
+    .review.ai-review .ai-q { margin-top: 2px; }
+    .review.ai-review .row.gap.top { margin-top: 10px; }
     .review { outline: none; }
     .review:focus-visible { outline: none; }
     .note {
@@ -735,19 +1159,23 @@ function buildStyle(): HTMLStyleElement {
     }
     button.primary:hover { background: #0ea5e9; }
     button.primary.full { width: 100%; }
+    button.primary.sm {
+      padding: 6px 11px; font-size: 12.5px; font-weight: 700;
+    }
     button.ghost {
       padding: 7px 12px; font-size: 12.5px; font-weight: 600;
       background: transparent; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.12);
     }
     button.ghost:hover { background: rgba(255,255,255,0.04); }
+    button.ghost.xs {
+      padding: 4px 9px; font-size: 11.5px; font-weight: 600;
+      min-width: 28px;
+    }
     button.icon {
       background: transparent; color: #94a3b8; border: none;
       font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 6px;
     }
     button.icon:hover { color: #f8fafc; }
-    /* Idle pill — tucked flush into the right edge, a little above centre.
-       Uses its own fixed anchor (not the host's bottom-right) so it reads as a
-       slim hand-tab; clicking it fills and the card takes over bottom-right. */
     button.tab {
       position: fixed; right: 0; bottom: 16vh;
       display: inline-flex; align-items: center; gap: 8px;
