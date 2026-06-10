@@ -77,6 +77,22 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
     expect(document.getElementById(HOST_ID)).toBeNull();
   });
 
+  it('close button is hover-revealed (hidden at rest, expands on row hover)', async () => {
+    const { __getShadowCssForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    const css = __getShadowCssForTests();
+    expect(css).toMatch(/\.tab-row\.reveal button\.tab\.tab-close\s*\{[^}]*width:\s*0/);
+    expect(css).toMatch(
+      /\.tab-row\.reveal:hover button\.tab\.tab-close[^{]*\{[^}]*width:\s*38px/,
+    );
+  });
+
+  it('close button carries the "Hide for this page" tooltip', async () => {
+    const { __getTabCloseTooltipForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    expect(__getTabCloseTooltipForTests()).toBe('Hide for this page');
+  });
+
   it('watchdog re-mounts ONCE when the host disappears post-mount', () => {
     showFillTrigger({ detected: 5, onFill: () => {} });
     expect(document.getElementById(HOST_ID)).not.toBeNull();
