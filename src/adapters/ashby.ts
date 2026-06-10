@@ -11,6 +11,7 @@ import {
   clipJobDescription,
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
+  defaultDetectAll,
 } from './_shared';
 
 const FIELD_ENTRY_SELECTOR = '[data-field-entry-id], [data-testid="FieldEntry"]';
@@ -25,6 +26,7 @@ export const ashbyAdapter: PlatformAdapter = {
     return !!doc.querySelector(`${FIELD_ENTRY_SELECTOR}, ${FIELD_LABEL_SELECTOR}`);
   },
   detectFields,
+  detectAll: (root) => defaultDetectAll({ detectFields }, root),
   fillResume,
   getJobDescription,
   detectSubmissionConfirmed,

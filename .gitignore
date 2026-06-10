@@ -13,6 +13,7 @@ test-results/
 vite.config.ts.timestamp-*.mjs
 vite.config.js.timestamp-*.mjs
 .specify/
+specs/
 .claude/
 claude.md
 claude.local.md

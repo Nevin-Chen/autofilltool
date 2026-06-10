@@ -3,6 +3,7 @@ import {
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
+  setAiFallbackProgress,
   setRemoteReviewState,
   clearRemoteReviewState,
   type TriggerStats,
@@ -85,6 +86,20 @@ function install(): void {
         return;
       }
 
+      case 'autofilltool:ai-fallback-progress': {
+        if (e.source !== activeSource) return;
+        if (typeof data.filled !== 'number' || typeof data.pending !== 'number') return;
+        const decrementSkippedBy =
+          typeof data.skippedRemoved === 'number' ? data.skippedRemoved : undefined;
+        setAiFallbackProgress(
+          data.filled,
+          data.pending,
+          [],
+          decrementSkippedBy !== undefined ? { decrementSkippedBy } : {},
+        );
+        return;
+      }
+
       case 'autofilltool:review-state': {
         if (e.source !== activeSource) return;
         const remote = coerceReviewState(data);
@@ -106,12 +121,12 @@ function install(): void {
   }
 }
 
-const REVIEW_GROUPS = new Set<ReviewGroup>(['filled', 'skipped', 'suggest']);
+const REVIEW_GROUPS = new Set<ReviewGroup>(['filled', 'skipped', 'suggest', 'ai']);
 
 function coerceReviewState(
   data: Record<string, unknown>,
 ):
-  | { group: ReviewGroup; index: number; total: number; label: string }
+  | { group: ReviewGroup; index: number; total: number; label: string; note?: string }
   | null {
   if (typeof data.group !== 'string' || !REVIEW_GROUPS.has(data.group as ReviewGroup)) return null;
   if (typeof data.index !== 'number' || typeof data.total !== 'number') return null;
@@ -121,6 +136,7 @@ function coerceReviewState(
     index: data.index,
     total: data.total,
     label: data.label,
+    ...(typeof data.note === 'string' ? { note: data.note } : {}),
   };
 }
 

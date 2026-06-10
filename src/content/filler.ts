@@ -384,6 +384,56 @@ function flashFilled(el: HTMLElement): void {
   }
 }
 
+const THINKING_PULSE_DURATION_MS = 1400;
+const THINKING_KEYFRAMES_ID = '__autofilltool_thinking_keyframes';
+const thinkingPrev = new WeakMap<
+  HTMLElement,
+  { boxShadow: string; transition: string; animation: string }
+>();
+
+function ensureThinkingKeyframes(doc: Document): void {
+  if (doc.getElementById(THINKING_KEYFRAMES_ID)) return;
+  const style = doc.createElement('style');
+  style.id = THINKING_KEYFRAMES_ID;
+  style.textContent = `
+    @keyframes __autofilltool_thinking_pulse {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(245,158,11,0.85), 0 0 6px 1px rgba(245,158,11,0.30); }
+      50%      { box-shadow: 0 0 0 3px rgba(245,158,11,0.95), 0 0 14px 4px rgba(245,158,11,0.55); }
+    }
+  `;
+  (doc.head ?? doc.documentElement).appendChild(style);
+}
+
+export function markThinking(el: HTMLElement): void {
+  try {
+    ensureThinkingKeyframes(el.ownerDocument);
+    if (!thinkingPrev.has(el)) {
+      thinkingPrev.set(el, {
+        boxShadow: el.style.boxShadow,
+        transition: el.style.transition,
+        animation: el.style.animation,
+      });
+    }
+    el.style.animation = `__autofilltool_thinking_pulse ${THINKING_PULSE_DURATION_MS}ms ease-in-out infinite`;
+  } catch {
+  }
+}
+
+export function clearThinking(el: HTMLElement): void {
+  try {
+    const prev = thinkingPrev.get(el);
+    if (prev) {
+      el.style.animation = prev.animation;
+      el.style.transition = prev.transition;
+      el.style.boxShadow = prev.boxShadow;
+      thinkingPrev.delete(el);
+    } else {
+      el.style.animation = '';
+    }
+  } catch {
+  }
+}
+
 export type VirtualizedDropdownOptions = {
   timeoutMs?: number;
   root?: Document;
@@ -415,6 +465,7 @@ export async function fillVirtualizedDropdown(
 
   const root: Document = opts.root ?? trigger.ownerDocument;
   const timeout = opts.timeoutMs ?? 1500;
+  const preexisting = snapshotOpenListboxes(root);
 
   try {
     openCombobox(trigger);
@@ -427,7 +478,7 @@ export async function fillVirtualizedDropdown(
     };
   }
 
-  const listbox = await waitForListbox(root, trigger, timeout);
+  const listbox = await waitForListbox(root, trigger, timeout, preexisting);
   if (!listbox) {
     return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
   }
@@ -480,6 +531,75 @@ export async function fillVirtualizedDropdown(
 
 const FILTERED_OPTION_TIMEOUT_MS = 400;
 
+export async function harvestComboboxOptions(
+  trigger: HTMLElement,
+  opts: { timeoutMs?: number; maxOptions?: number; root?: Document } = {},
+): Promise<string[]> {
+  const root: Document = opts.root ?? trigger.ownerDocument;
+  const timeout = opts.timeoutMs ?? 1500;
+  const maxOptions = opts.maxOptions ?? 50;
+
+  const wasFocused = root.activeElement === trigger;
+  const preexisting = snapshotOpenListboxes(root);
+  try {
+    openCombobox(trigger);
+  } catch {
+    return [];
+  }
+
+  const listbox = await waitForListbox(root, trigger, timeout, preexisting);
+  if (!listbox) {
+    closeCombobox(trigger, wasFocused);
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const options = listbox.querySelectorAll<HTMLElement>('[role="option"]');
+  for (const opt of Array.from(options)) {
+    if (opt.getAttribute('aria-disabled') === 'true') continue;
+    const text = textOfNode(opt);
+    if (!text) continue;
+    if (seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length >= maxOptions) break;
+  }
+
+  closeCombobox(trigger, wasFocused);
+  return out;
+}
+
+function snapshotOpenListboxes(root: Document): WeakSet<Element> {
+  const set = new WeakSet<Element>();
+  for (const el of Array.from(root.querySelectorAll('[role="listbox"]'))) {
+    set.add(el);
+  }
+  return set;
+}
+
+function closeCombobox(trigger: HTMLElement, wasFocused: boolean): void {
+  const init: KeyboardEventInit = {
+    key: 'Escape',
+    code: 'Escape',
+    keyCode: 27,
+    which: 27,
+    bubbles: true,
+    cancelable: true,
+  } as KeyboardEventInit;
+  try {
+    trigger.dispatchEvent(new KeyboardEvent('keydown', init));
+    trigger.dispatchEvent(new KeyboardEvent('keyup', init));
+  } catch {
+  }
+  if (!wasFocused) {
+    try {
+      trigger.blur();
+    } catch {
+    }
+  }
+}
+
 function openCombobox(trigger: HTMLElement): void {
   try {
     trigger.focus();
@@ -489,6 +609,19 @@ function openCombobox(trigger: HTMLElement): void {
   dispatchMouse(trigger, 'mouseup');
   try {
     trigger.click();
+  } catch {
+  }
+  try {
+    trigger.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        code: 'ArrowDown',
+        keyCode: 40,
+        which: 40,
+        bubbles: true,
+        cancelable: true,
+      } as KeyboardEventInit),
+    );
   } catch {
   }
 }
@@ -597,13 +730,19 @@ function waitForListbox(
   root: Document,
   trigger: HTMLElement,
   timeoutMs: number,
+  exclude?: WeakSet<Element>,
 ): Promise<Element | null> {
   const ownedId =
     trigger.getAttribute('aria-controls') ?? trigger.getAttribute('aria-owns');
   const findByOwned = (): Element | null =>
     ownedId ? root.getElementById(ownedId) : null;
-  const findFallback = (): Element | null =>
-    root.querySelector('[role="listbox"]');
+  const findFallback = (): Element | null => {
+    const all = root.querySelectorAll('[role="listbox"]');
+    for (const el of Array.from(all)) {
+      if (!exclude?.has(el)) return el;
+    }
+    return null;
+  };
   const find = (): Element | null => findByOwned() ?? findFallback();
 
   const existing = find();

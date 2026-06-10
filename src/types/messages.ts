@@ -29,6 +29,18 @@ export type TestWebhookMsg = { type: 'TEST_WEBHOOK' };
 
 export type ShowNoticeMsg = { type: 'SHOW_NOTICE'; text: string };
 
+export type AiClassifyMsg = {
+  type: 'AI_CLASSIFY';
+  request: {
+    question: string;
+    fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
+    options?: string[];
+    jobDescription?: string;
+    job?: { company?: string; role?: string; jobUrl?: string };
+    wasClassified?: boolean;
+  };
+};
+
 export type RequestMessage =
   | GetProfileMsg
   | GetSettingsMsg
@@ -38,7 +50,8 @@ export type RequestMessage =
   | GetHistoryMsg
   | ClearHistoryMsg
   | TestWebhookMsg
-  | ShowNoticeMsg;
+  | ShowNoticeMsg
+  | AiClassifyMsg;
 
 export type Ok<T> = { ok: true; value: T };
 export type Err = { ok: false; error: string };
@@ -72,6 +85,7 @@ export type GetHistoryResponse = Result<SubmissionRecord[]>;
 export type ClearHistoryResponse = Result<{ cleared: true }>;
 export type TestWebhookResponse = Result<{ status: number }>;
 export type ShowNoticeResponse = Result<{ shown: boolean }>;
+export type AiClassifyResponse = Result<{ value: string | null }>;
 
 export interface MessageMap {
   GET_PROFILE: GetProfileResponse;
@@ -83,6 +97,7 @@ export interface MessageMap {
   CLEAR_HISTORY: ClearHistoryResponse;
   TEST_WEBHOOK: TestWebhookResponse;
   SHOW_NOTICE: ShowNoticeResponse;
+  AI_CLASSIFY: AiClassifyResponse;
 }
 
 export type ResponseFor<M extends RequestMessage> = MessageMap[M['type']];
@@ -99,6 +114,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'GET_HISTORY' ||
     t === 'CLEAR_HISTORY' ||
     t === 'TEST_WEBHOOK' ||
-    t === 'SHOW_NOTICE'
+    t === 'SHOW_NOTICE' ||
+    t === 'AI_CLASSIFY'
   );
 }

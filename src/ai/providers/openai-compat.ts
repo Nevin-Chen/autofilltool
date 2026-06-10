@@ -8,14 +8,13 @@
 import { parseSSE } from '../sse';
 
 export type ChatCompatParams = {
-  /** Full URL ending in /chat/completions */
   endpoint: string;
   apiKey: string;
   model: string;
   system: string;
   user: string;
   maxTokens: number;
-  /** Override fetch (for tests). */
+  temperature?: number;
   fetchImpl?: typeof fetch;
 };
 
@@ -23,21 +22,23 @@ export async function* streamChatCompletions(
   params: ChatCompatParams,
 ): AsyncGenerator<string, void, unknown> {
   const fetchImpl = params.fetchImpl ?? fetch;
+  const body: Record<string, unknown> = {
+    model: params.model,
+    stream: true,
+    max_tokens: params.maxTokens,
+    messages: [
+      { role: 'system', content: params.system },
+      { role: 'user', content: params.user },
+    ],
+  };
+  if (typeof params.temperature === 'number') body.temperature = params.temperature;
   const res = await fetchImpl(params.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${params.apiKey}`,
     },
-    body: JSON.stringify({
-      model: params.model,
-      stream: true,
-      max_tokens: params.maxTokens,
-      messages: [
-        { role: 'system', content: params.system },
-        { role: 'user', content: params.user },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

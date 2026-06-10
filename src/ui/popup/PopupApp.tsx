@@ -137,6 +137,75 @@ export function PopupApp() {
               </span>
             </span>
           </label>
+
+          {settings.ai.provider !== 'none' && (
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.ai.fallbackClassifier}
+                onChange={(e) =>
+                  updateSettings({
+                    ...settings,
+                    ai: {
+                      ...settings.ai,
+                      fallbackClassifier: e.target.checked,
+                      fallbackIncludeCompliance: e.target.checked
+                        ? settings.ai.fallbackIncludeCompliance
+                        : false,
+                    },
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium text-amber-700 dark:text-amber-400">
+                  Use AI for skipped fields
+                </span>
+              </span>
+            </label>
+          )}
+
+          {settings.ai.provider !== 'none' && settings.ai.fallbackClassifier && (
+            <label className="flex items-start gap-2 pl-6 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.ai.fallbackIncludeCompliance}
+                onChange={(e) =>
+                  updateSettings({
+                    ...settings,
+                    ai: { ...settings.ai, fallbackIncludeCompliance: e.target.checked },
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium text-slate-800 dark:text-slate-100">
+                  Include EEO and visa questions
+                </span>
+              </span>
+            </label>
+          )}
+
+          {settings.ai.provider !== 'none' && settings.ai.fallbackClassifier && (
+            <label className="flex items-start gap-2 pl-6 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.ai.autoFillSuggestFields}
+                onChange={(e) =>
+                  updateSettings({
+                    ...settings,
+                    ai: { ...settings.ai, autoFillSuggestFields: e.target.checked },
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium text-slate-800 dark:text-slate-100">
+                  Auto-fill Suggest text fields
+                </span>
+              </span>
+            </label>
+          )}
         </div>
       )}
 

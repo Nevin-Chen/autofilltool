@@ -17,6 +17,7 @@ export type AnthropicStreamParams = {
   system: string;
   user: string;
   maxTokens: number;
+  temperature?: number;
   fetchImpl?: typeof fetch;
 };
 
@@ -24,6 +25,14 @@ export async function* streamAnthropic(
   params: AnthropicStreamParams,
 ): AsyncGenerator<string, void, unknown> {
   const fetchImpl = params.fetchImpl ?? fetch;
+  const body: Record<string, unknown> = {
+    model: params.model,
+    max_tokens: params.maxTokens,
+    stream: true,
+    system: params.system,
+    messages: [{ role: 'user', content: params.user }],
+  };
+  if (typeof params.temperature === 'number') body.temperature = params.temperature;
   const res = await fetchImpl(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -32,13 +41,7 @@ export async function* streamAnthropic(
       'anthropic-version': ANTHROPIC_VERSION,
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: params.model,
-      max_tokens: params.maxTokens,
-      stream: true,
-      system: params.system,
-      messages: [{ role: 'user', content: params.user }],
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
