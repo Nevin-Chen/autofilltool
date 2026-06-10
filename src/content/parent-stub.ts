@@ -91,12 +91,12 @@ function install(): void {
         if (typeof data.filled !== 'number' || typeof data.pending !== 'number') return;
         const decrementSkippedBy =
           typeof data.skippedRemoved === 'number' ? data.skippedRemoved : undefined;
-        setAiFallbackProgress(
-          data.filled,
-          data.pending,
-          [],
-          decrementSkippedBy !== undefined ? { decrementSkippedBy } : {},
-        );
+        const incrementSkippedBy =
+          typeof data.skippedAdded === 'number' ? data.skippedAdded : undefined;
+        const opts: { decrementSkippedBy?: number; incrementSkippedBy?: number } = {};
+        if (decrementSkippedBy !== undefined) opts.decrementSkippedBy = decrementSkippedBy;
+        if (incrementSkippedBy !== undefined) opts.incrementSkippedBy = incrementSkippedBy;
+        setAiFallbackProgress(data.filled, data.pending, [], opts);
         return;
       }
 

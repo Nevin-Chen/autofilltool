@@ -442,6 +442,58 @@ describe('AI chip — skip-reason notes', () => {
     expect(state).toEqual({ group: 'skipped', index: 0 });
   });
 
+  it('AI-skipped unclassified field appears in the skipped chip', () => {
+    const el = mkInput('Did you go to the IB program?');
+    showFillTriggerDone(baseStats, []);
+    expect(__getChipTextForTests('skip')).toBeNull();
+    setAiFallbackProgress(0, 0, [
+      {
+        group: 'ai',
+        label: 'Did you go to the IB program?',
+        el,
+        note: "AI returned no answer. The model didn't have enough context — fill it in manually.",
+      },
+    ]);
+    expect(__getChipTextForTests('skip')).toMatch(/1 skipped/);
+    __enterReviewForTests('skipped');
+    expect(__getReviewStateForTests()).toEqual({ group: 'skipped', index: 0 });
+    expect(__getReviewPaneTextForTests()).toMatch(/Did you go to the IB program/);
+  });
+
+  it('AI-skipped item still surfaces in the AI chip with its note', () => {
+    const el = mkInput('Visa sponsorship?');
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(0, 0, [
+      {
+        group: 'ai',
+        label: 'Visa sponsorship?',
+        el,
+        note: 'Skipped: compliance/EEO question.',
+      },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toMatch(/compliance\/EEO question/);
+  });
+
+  it('AI-skipped field is not double-counted when it was already in skipped', () => {
+    const el = mkInput('Address?');
+    showFillTriggerDone(
+      { ...baseStats, skipped: 1 },
+      [{ group: 'skipped', label: 'Address?', el }],
+    );
+    setAiFallbackProgress(0, 0, [
+      { group: 'ai', label: 'Address?', el, note: 'AI returned no answer.' },
+    ]);
+    expect(__getChipTextForTests('skip')).toMatch(/1 skipped/);
+  });
+
+  it('remote (iframe) skipped count goes up when incrementSkippedBy is passed', () => {
+    const remote = { onEnter: vi.fn(), onStep: vi.fn(), onExit: vi.fn() };
+    showFillTriggerDone({ ...baseStats, skipped: 0 }, [], { remote });
+    setAiFallbackProgress(0, 0, [], { incrementSkippedBy: 2 });
+    expect(__getChipTextForTests('skip')).toMatch(/2 skipped/);
+  });
+
   it('AI chip review pane lists a textarea once even when it is in BOTH "suggest" and "ai" groups', () => {
     const el = mkInput('Why us?');
     showFillTriggerDone(baseStats, [
@@ -505,5 +557,66 @@ describe('AI chip — skip-reason notes', () => {
       note: 'Skipped: compliance/EEO question.',
     });
     expect(__getReviewPaneAllTextForTests()).toMatch(/compliance\/EEO question/);
+  });
+
+  it('AI review pane shows the selected option for a react-select combobox even though the input is cleared', () => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'react-select__control';
+    const valueDisplay = document.createElement('div');
+    valueDisplay.className = 'react-select__single-value';
+    valueDisplay.textContent = 'United States';
+    const input = document.createElement('input');
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-label', 'Country');
+    input.value = '';
+    wrapper.append(valueDisplay, input);
+    document.body.appendChild(wrapper);
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Country', el: input },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('United States');
+  });
+
+  it('AI review pane shows the selected option for a native <select>', () => {
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', 'Are you authorized to work in the US?');
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Select...';
+    const yes = document.createElement('option');
+    yes.value = 'yes';
+    yes.textContent = 'Yes';
+    const no = document.createElement('option');
+    no.value = 'no';
+    no.textContent = 'No';
+    sel.append(blank, yes, no);
+    sel.value = 'yes';
+    document.body.appendChild(sel);
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Are you authorized to work in the US?', el: sel },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('Yes');
+  });
+
+  it('AI review pane falls back to data-value when single-value child is absent', () => {
+    const trigger = document.createElement('div');
+    trigger.setAttribute('role', 'combobox');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-label', 'School');
+    trigger.setAttribute('data-value', 'Stanford University');
+    document.body.appendChild(trigger);
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'School', el: trigger },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('Stanford University');
   });
 });
