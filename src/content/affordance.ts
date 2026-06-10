@@ -468,7 +468,7 @@ function renderIdlePill(): HTMLElement {
     ? 'View AutoFillTool results for this page'
     : 'Fill this page with AutoFillTool';
   main.append(
-    brandMark(20),
+    brandMark(18),
     h('span', { class: 'tab-label' }, [hasFilled ? 'View results' : 'Fill this page']),
   );
   main.addEventListener('click', () => {
@@ -1346,9 +1346,9 @@ function buildStyle(): HTMLStyleElement {
       cursor: pointer;
     }
     button.tab.tab-main {
-      gap: 11px;
-      padding: 13px 18px 13px 16px;
-      font: 700 15px/1 inherit;
+      gap: 9px;
+      padding: 11px 16px 11px 14px;
+      font: 600 13px/1 inherit;
       border-radius: 14px 0 0 14px;
     }
     button.tab.tab-main:hover { background: rgba(255,255,255,0.04); }
