@@ -267,6 +267,38 @@ export function __clickRemoteChipForTests(group: ReviewGroup): boolean {
   return true;
 }
 
+export function __getTabLabelForTests(): string | null {
+  const el = state?.shadow.querySelector('.tab-main .tab-label') as HTMLElement | null;
+  return el ? (el.textContent ?? '').trim() : null;
+}
+
+export function __clickTabMainForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.tab.tab-main');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __clickTabCloseForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.tab.tab-close');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __getDoneActionTextsForTests(): string[] {
+  const buttons = state?.shadow.querySelectorAll<HTMLButtonElement>('.card button.ghost');
+  if (!buttons) return [];
+  return Array.from(buttons).map((b) => (b.textContent ?? '').trim());
+}
+
+export function __collapseCardForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.icon');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
 export function __getReviewPaneTextForTests(): string | null {
   const counter = state?.shadow.querySelector('.review .sub') as HTMLElement | null;
   return counter ? (counter.textContent ?? '').trim() : null;
@@ -362,6 +394,12 @@ function dismiss(): void {
   removeFillTrigger();
 }
 
+function reopenResults(): void {
+  if (!state || !state.stats) return;
+  state.phase = 'done';
+  render();
+}
+
 function render(): void {
   if (!state) return;
   state.body.innerHTML = '';
@@ -409,13 +447,39 @@ function reviewTitle(g: ReviewGroup): string {
 
 function renderIdlePill(): HTMLElement {
   const s = state!;
-  const tab = document.createElement('button');
-  tab.type = 'button';
-  tab.className = 'tab';
-  tab.title = 'Fill this page with AutoFillTool';
-  tab.append(brandMark(18), h('span', { class: 'tab-label' }, ['Fill this page']));
-  tab.addEventListener('click', () => s.onFill());
-  return tab;
+  const hasFilled = s.stats !== null;
+
+  const row = document.createElement('div');
+  row.className = 'tab-row';
+
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'tab tab-main';
+  main.title = hasFilled
+    ? 'View AutoFillTool results for this page'
+    : 'Fill this page with AutoFillTool';
+  main.append(
+    brandMark(18),
+    h('span', { class: 'tab-label' }, [hasFilled ? 'View results' : 'Fill this page']),
+  );
+  main.addEventListener('click', () => {
+    if (hasFilled) reopenResults();
+    else s.onFill();
+  });
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tab tab-close';
+  close.title = 'Close AutoFillTool on this page';
+  close.setAttribute('aria-label', 'Close');
+  close.textContent = '×';
+  close.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    dismiss();
+  });
+
+  row.append(main, close);
+  return row;
 }
 
 function renderFilling(): HTMLElement {
@@ -474,16 +538,11 @@ function renderDone(): HTMLElement {
   const resume = resumeLine(st.resume);
   const note = autoLogNote(st.autoLogging);
 
-  const actions = h('div', { class: 'row gap top' }, [
-    btn({ class: 'ghost', text: 'Dismiss', onClick: dismiss }),
-  ]);
-
   return frag([
     chips,
     ...(aiRow ? [aiRow] : []),
     ...(resume ? [resume] : []),
     note,
-    actions,
   ]);
 }
 
@@ -1240,19 +1299,36 @@ function buildStyle(): HTMLStyleElement {
       font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 6px;
     }
     button.icon:hover { color: #f8fafc; }
-    button.tab {
+    .tab-row {
       position: fixed; right: 0; bottom: 16vh;
+      display: inline-flex; align-items: stretch;
+      box-shadow: 0 10px 26px rgba(0,0,0,0.30);
+      border-radius: 12px 0 0 12px;
+      overflow: hidden;
+    }
+    button.tab {
       display: inline-flex; align-items: center; gap: 8px;
       font: 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-weight: 600;
       background: #0f172a; color: #e2e8f0;
-      border: 1px solid rgba(255,255,255,0.08); border-right: none;
-      border-radius: 12px 0 0 12px;
-      box-shadow: 0 10px 26px rgba(0,0,0,0.30);
-      padding: 11px 16px 11px 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0;
+      padding: 11px 14px;
     }
     button.tab:hover { color: #f8fafc; }
     button.tab:hover .tab-label { color: #f8fafc; }
+    button.tab.tab-main {
+      border-right: none;
+      border-radius: 12px 0 0 12px;
+      padding: 11px 12px 11px 14px;
+    }
+    button.tab.tab-close {
+      color: #94a3b8;
+      font-size: 16px; line-height: 1; font-weight: 600;
+      padding: 0 11px;
+      border-left: 1px solid rgba(255,255,255,0.10);
+    }
+    button.tab.tab-close:hover { color: #f8fafc; background: rgba(255,255,255,0.04); }
   `;
   return s;
 }
