@@ -284,6 +284,7 @@ function pillAiFallback(
   newItems: ReviewableField[] = [],
 ): void {
   let filledFromSkippedCount = 0;
+  let addedToSkippedCount = 0;
   if (newItems.length > 0) {
     const seenAi = new WeakSet<HTMLElement>(
       lastReviewItems
@@ -293,12 +294,31 @@ function pillAiFallback(
         )
         .map((i) => i.el),
     );
+    const seenSkipped = new WeakSet<HTMLElement>(
+      lastReviewItems
+        .filter(
+          (i): i is ReviewableField & { el: HTMLElement } =>
+            i.group === 'skipped' && i.el instanceof HTMLElement,
+        )
+        .map((i) => i.el),
+    );
     const pushedFilledEls: HTMLElement[] = [];
     for (const item of newItems) {
       if (item.el instanceof HTMLElement && !seenAi.has(item.el)) {
         lastReviewItems.push(item);
         seenAi.add(item.el);
-        if (!item.note) pushedFilledEls.push(item.el);
+        if (!item.note) {
+          pushedFilledEls.push(item.el);
+        } else if (!seenSkipped.has(item.el)) {
+          lastReviewItems.push({
+            group: 'skipped',
+            label: item.label,
+            el: item.el,
+            ...(item.note ? { note: item.note } : {}),
+          });
+          seenSkipped.add(item.el);
+          addedToSkippedCount++;
+        }
       }
     }
     if (pushedFilledEls.length > 0) {
@@ -322,6 +342,9 @@ function pillAiFallback(
       pending,
       ...(filledFromSkippedCount > 0
         ? { skippedRemoved: filledFromSkippedCount }
+        : {}),
+      ...(addedToSkippedCount > 0
+        ? { skippedAdded: addedToSkippedCount }
         : {}),
     });
   } else {
@@ -520,10 +543,32 @@ async function runFill(forceFromMsg?: boolean) {
 
   const fieldActions = actions.filter((a) => a.kind !== 'resume');
   const filled = fieldActions.filter((a) => a.status === 'filled').length;
-  const skipped = fieldActions.filter((a) => a.status === 'skipped').length;
+  let skipped = fieldActions.filter((a) => a.status === 'skipped').length;
   const failed = fieldActions.filter(
     (a) => a.status === 'error' || a.status === 'unsupported',
   ).length;
+
+  if (!settings.ai.fallbackClassifier && adapter.detectAll) {
+    try {
+      const detection = adapter.detectAll(document);
+      const seenEls = new WeakSet<HTMLElement>();
+      for (const item of reviewItems) {
+        if (item.el instanceof HTMLElement) seenEls.add(item.el);
+      }
+      for (const f of fields) {
+        if (f.el instanceof HTMLElement) seenEls.add(f.el);
+      }
+      for (const u of detection.unclassified) {
+        if (!(u.el instanceof HTMLElement)) continue;
+        if (seenEls.has(u.el)) continue;
+        seenEls.add(u.el);
+        reviewItems.push({ group: 'skipped', label: u.label, el: u.el });
+        skipped++;
+      }
+    } catch (err) {
+      log.warn('unclassified detection for skipped chip failed', err);
+    }
+  }
 
   const wire: FillActionWire[] = actions.map((a) => {
     const base: FillActionWire = { label: a.label, kind: a.kind, status: a.status };
@@ -561,7 +606,24 @@ async function runFill(forceFromMsg?: boolean) {
   const aiOwnsTextareas =
     aiConfigured(settings) && settings.ai.fallbackClassifier;
   const suggestCount = aiOwnsTextareas ? 0 : suggestFields.length;
-  if (!aiOwnsTextareas) {
+  if (!aiOwnsTextareas && suggestFields.length > 0) {
+    const suggestEls = new Set<HTMLElement>();
+    for (const f of suggestFields) {
+      if (f.el instanceof HTMLElement) suggestEls.add(f.el);
+    }
+    let removedFromSkipped = 0;
+    for (let i = reviewItems.length - 1; i >= 0; i--) {
+      const it = reviewItems[i]!;
+      if (
+        it.group === 'skipped' &&
+        it.el instanceof HTMLElement &&
+        suggestEls.has(it.el)
+      ) {
+        reviewItems.splice(i, 1);
+        removedFromSkipped++;
+      }
+    }
+    skipped = Math.max(0, skipped - removedFromSkipped);
     for (const f of suggestFields) {
       if (f.el instanceof HTMLElement) {
         reviewItems.push({ group: 'suggest', label: f.label, el: f.el });

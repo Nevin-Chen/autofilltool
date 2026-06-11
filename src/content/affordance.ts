@@ -128,7 +128,7 @@ export function setAiFallbackProgress(
   filled: number,
   pending: number,
   newAiItems: ReviewableField[] = [],
-  opts: { decrementSkippedBy?: number } = {},
+  opts: { decrementSkippedBy?: number; incrementSkippedBy?: number } = {},
 ): void {
   if (!state || state.phase !== 'done' || !state.stats) return;
   state.stats = { ...state.stats, ai: filled, aiPending: pending };
@@ -138,12 +138,32 @@ export function setAiFallbackProgress(
     const existingAiEls = new WeakSet<HTMLElement>(
       state.items.filter((i) => i.group === 'ai').map((i) => i.el),
     );
+    const existingSkippedEls = new WeakSet<HTMLElement>(
+      state.items
+        .filter(
+          (i): i is ReviewableField & { el: HTMLElement } =>
+            i.group === 'skipped' && i.el instanceof HTMLElement,
+        )
+        .map((i) => i.el),
+    );
     const pushedFilledEls: HTMLElement[] = [];
+    let addedSkipped = 0;
     for (const item of newAiItems) {
       if (item.el instanceof HTMLElement && !existingAiEls.has(item.el)) {
         state.items.push(item);
         existingAiEls.add(item.el);
-        if (!item.note) pushedFilledEls.push(item.el);
+        if (!item.note) {
+          pushedFilledEls.push(item.el);
+        } else if (!existingSkippedEls.has(item.el)) {
+          state.items.push({
+            group: 'skipped',
+            label: item.label,
+            el: item.el,
+            ...(item.note ? { note: item.note } : {}),
+          });
+          existingSkippedEls.add(item.el);
+          addedSkipped++;
+        }
       }
     }
     if (pushedFilledEls.length > 0) {
@@ -167,6 +187,12 @@ export function setAiFallbackProgress(
         };
       }
     }
+    if (addedSkipped > 0) {
+      state.stats = {
+        ...state.stats,
+        skipped: state.stats.skipped + addedSkipped,
+      };
+    }
   }
 
   const explicitDecrement = opts.decrementSkippedBy;
@@ -174,6 +200,14 @@ export function setAiFallbackProgress(
     state.stats = {
       ...state.stats,
       skipped: Math.max(0, state.stats.skipped - explicitDecrement),
+    };
+  }
+
+  const explicitIncrement = opts.incrementSkippedBy;
+  if (typeof explicitIncrement === 'number' && explicitIncrement > 0) {
+    state.stats = {
+      ...state.stats,
+      skipped: state.stats.skipped + explicitIncrement,
     };
   }
 
@@ -461,6 +495,7 @@ function renderAiReviewChip(): HTMLElement | null {
   const aiPending = st.aiPending ?? 0;
   const suggestPending = st.suggest ?? 0;
   const aiTotal = Math.max(s.aiQueueOriginal, aiFilled + aiPending);
+  if (aiTotal === 0) return null;
   const total = aiTotal + suggestPending;
   if (total === 0) return null;
 
@@ -738,16 +773,45 @@ function aiItems(): ReviewableField[] {
 }
 
 function readFieldValue(el: HTMLElement): string {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    return el.value ?? '';
-  }
   if (el instanceof HTMLSelectElement) {
     const opt = el.options[el.selectedIndex];
-    return opt?.text ?? el.value ?? '';
+    return (opt?.text ?? el.value ?? '').trim();
+  }
+  // For combobox-style fields (react-select, etc.) the input is cleared after
+  // a selection commits; the displayed value lives in a sibling `single-value`
+  // element. Prefer that over the empty input value so the AI review pane
+  // shows what was selected instead of "(field is empty)".
+  if (isComboboxTrigger(el)) {
+    const v = extractComboboxValue(el);
+    if (v) return v;
+  }
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    return (el.value ?? '').trim();
   }
   const aria = el.getAttribute('aria-label-value');
-  if (aria) return aria;
+  if (aria) return aria.trim();
   return (el.textContent ?? '').trim();
+}
+
+function isComboboxTrigger(el: HTMLElement): boolean {
+  return (
+    el.getAttribute('role') === 'combobox' ||
+    el.getAttribute('aria-haspopup') === 'listbox'
+  );
+}
+
+function extractComboboxValue(trigger: HTMLElement): string {
+  let cursor: HTMLElement | null = trigger;
+  for (let depth = 0; cursor && depth < 4; depth++, cursor = cursor.parentElement) {
+    const dataValue = cursor.getAttribute('data-value');
+    if (dataValue && dataValue.trim()) return dataValue.trim();
+    const singleValue = cursor.querySelector<HTMLElement>('[class*="single-value" i]');
+    if (singleValue) {
+      const text = (singleValue.textContent ?? '').trim();
+      if (text) return text;
+    }
+  }
+  return '';
 }
 
 function enterRemoteReview(group: ReviewGroup, callbacks: RemoteReviewCallbacks): void {
