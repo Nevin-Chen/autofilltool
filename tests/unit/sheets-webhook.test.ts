@@ -18,6 +18,7 @@ const sample: SubmissionRecord = {
 };
 
 beforeEach(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).chrome = {
     permissions: {
       contains: vi.fn(async () => true),
@@ -54,6 +55,7 @@ describe('postSubmission', () => {
   });
 
   it('refuses when host permission is missing', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).chrome.permissions.contains = vi.fn(async () => false);
     const fetchSpy = vi.fn();
     const r = await postSubmission(

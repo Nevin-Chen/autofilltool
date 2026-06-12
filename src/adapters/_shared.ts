@@ -1,4 +1,4 @@
-import type { FieldKind, DetectedField, UnclassifiedField } from './types';
+import type { FieldKind, DetectedField, DetectionResult, UnclassifiedField } from './types';
 import { attachFile } from '@/content/filler';
 
 export type Context = {
@@ -644,7 +644,7 @@ function isVisibleForUnclassifiedDetection(el: HTMLElement): boolean {
 export function defaultDetectAll(
   adapter: { detectFields: (root: Document) => DetectedField[] },
   root: Document,
-): import('./types').DetectionResult {
+): DetectionResult {
   const classified = adapter.detectFields(root);
   const unclassified = findUnclassifiedFields(root, classified);
   return { classified, unclassified };

@@ -267,6 +267,47 @@ export function __clickRemoteChipForTests(group: ReviewGroup): boolean {
   return true;
 }
 
+export function __getTabLabelForTests(): string | null {
+  const el = state?.shadow.querySelector('.tab-main .tab-label') as HTMLElement | null;
+  return el ? (el.textContent ?? '').trim() : null;
+}
+
+export function __clickTabMainForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.tab.tab-main');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __clickTabCloseForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.tab.tab-close');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __getDoneActionTextsForTests(): string[] {
+  const buttons = state?.shadow.querySelectorAll<HTMLButtonElement>('.card button.ghost');
+  if (!buttons) return [];
+  return Array.from(buttons).map((b) => (b.textContent ?? '').trim());
+}
+
+export function __collapseCardForTests(): boolean {
+  const btn = state?.shadow.querySelector<HTMLButtonElement>('button.icon');
+  if (!btn) return false;
+  btn.click();
+  return true;
+}
+
+export function __getShadowCssForTests(): string {
+  return state?.shadow.querySelector('style')?.textContent ?? '';
+}
+
+export function __getTabCloseTooltipForTests(): string | null {
+  const tip = state?.shadow.querySelector('.tab-close .tab-tip') as HTMLElement | null;
+  return tip ? (tip.textContent ?? '').trim() : null;
+}
+
 export function __getReviewPaneTextForTests(): string | null {
   const counter = state?.shadow.querySelector('.review .sub') as HTMLElement | null;
   return counter ? (counter.textContent ?? '').trim() : null;
@@ -362,6 +403,12 @@ function dismiss(): void {
   removeFillTrigger();
 }
 
+function reopenResults(): void {
+  if (!state || !state.stats) return;
+  state.phase = 'done';
+  render();
+}
+
 function render(): void {
   if (!state) return;
   state.body.innerHTML = '';
@@ -409,13 +456,52 @@ function reviewTitle(g: ReviewGroup): string {
 
 function renderIdlePill(): HTMLElement {
   const s = state!;
-  const tab = document.createElement('button');
-  tab.type = 'button';
-  tab.className = 'tab';
-  tab.title = 'Fill this page with AutoFillTool';
-  tab.append(brandMark(18), h('span', { class: 'tab-label' }, ['Fill this page']));
-  tab.addEventListener('click', () => s.onFill());
-  return tab;
+  const hasFilled = s.stats !== null;
+
+  const row = document.createElement('div');
+  row.className = 'tab-row reveal';
+
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'tab tab-main';
+  main.title = hasFilled
+    ? 'View AutoFillTool results for this page'
+    : 'Fill this page with AutoFillTool';
+  main.append(
+    brandMark(18),
+    h('span', { class: 'tab-label' }, [hasFilled ? 'View results' : 'Fill this page']),
+  );
+  main.addEventListener('click', () => {
+    if (hasFilled) reopenResults();
+    else s.onFill();
+  });
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tab tab-close';
+  close.setAttribute('aria-label', 'Hide for this page');
+  close.append(closeGlyph(), h('span', { class: 'tab-tip' }, ['Hide for this page']));
+  close.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    dismiss();
+  });
+
+  row.append(main, close);
+  return row;
+}
+
+function closeGlyph(): SVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.style.flex = '0 0 auto';
+  svg.style.display = 'block';
+  svg.innerHTML =
+    '<path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+  return svg;
 }
 
 function renderFilling(): HTMLElement {
@@ -474,16 +560,11 @@ function renderDone(): HTMLElement {
   const resume = resumeLine(st.resume);
   const note = autoLogNote(st.autoLogging);
 
-  const actions = h('div', { class: 'row gap top' }, [
-    btn({ class: 'ghost', text: 'Dismiss', onClick: dismiss }),
-  ]);
-
   return frag([
     chips,
     ...(aiRow ? [aiRow] : []),
     ...(resume ? [resume] : []),
     note,
-    actions,
   ]);
 }
 
@@ -1240,19 +1321,84 @@ function buildStyle(): HTMLStyleElement {
       font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 6px;
     }
     button.icon:hover { color: #f8fafc; }
-    button.tab {
+    .tab-row {
       position: fixed; right: 0; bottom: 16vh;
-      display: inline-flex; align-items: center; gap: 8px;
-      font: 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-weight: 600;
-      background: #0f172a; color: #e2e8f0;
-      border: 1px solid rgba(255,255,255,0.08); border-right: none;
-      border-radius: 12px 0 0 12px;
-      box-shadow: 0 10px 26px rgba(0,0,0,0.30);
-      padding: 11px 16px 11px 14px;
+      display: inline-flex; align-items: stretch;
+      background: #0f172a; color: #f8fafc;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-right: none;
+      border-radius: 14px 0 0 14px;
+      box-shadow:
+        0 18px 46px rgba(2,132,199,0.20),
+        0 8px 22px rgba(0,0,0,0.32);
+      overflow: visible;
+      transition: box-shadow .2s ease;
     }
-    button.tab:hover { color: #f8fafc; }
-    button.tab:hover .tab-label { color: #f8fafc; }
+    .tab-row:hover {
+      box-shadow:
+        0 22px 56px rgba(2,132,199,0.30),
+        0 10px 28px rgba(0,0,0,0.38);
+    }
+    button.tab {
+      display: inline-flex; align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: transparent; color: #f8fafc; border: none;
+      cursor: pointer;
+    }
+    button.tab.tab-main {
+      gap: 9px;
+      padding: 11px 16px 11px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+      border-radius: 14px 0 0 14px;
+    }
+    button.tab.tab-main:hover { background: rgba(255,255,255,0.04); }
+    button.tab.tab-main:hover .tab-label { color: #f8fafc; }
+    .tab-row.reveal button.tab.tab-close {
+      width: 0; opacity: 0; pointer-events: none; overflow: hidden;
+      padding: 0;
+    }
+    .tab-row.reveal:hover button.tab.tab-close,
+    .tab-row.reveal:focus-within button.tab.tab-close {
+      width: 38px; opacity: 1; pointer-events: auto;
+    }
+    button.tab.tab-close {
+      align-self: stretch;
+      width: 38px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #94a3b8;
+      transition: background .15s ease, color .15s ease, width .2s ease, opacity .2s ease;
+      position: relative;
+    }
+    button.tab.tab-close::before {
+      content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+      width: 1px; background: rgba(255,255,255,0.08);
+    }
+    button.tab.tab-close:hover { color: #f8fafc; background: rgba(255,255,255,0.06); }
+    .tab-row .tab-tip {
+      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: #0f172a; color: #e2e8f0;
+      font: 600 11.5px/1.2 inherit;
+      padding: 6px 9px; border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.08);
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      transition: opacity .15s ease .25s, transform .15s ease .25s;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    }
+    .tab-row .tab-tip::after {
+      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      border: 4px solid transparent; border-top-color: #0f172a;
+    }
+    button.tab.tab-close:hover .tab-tip,
+    button.tab.tab-close:focus-visible .tab-tip {
+      opacity: 1; transform: translateX(-50%) translateY(-2px);
+    }
+    @media (hover: none) {
+      .tab-row.reveal button.tab.tab-close {
+        width: 38px; opacity: 1; pointer-events: auto;
+      }
+    }
   `;
   return s;
 }

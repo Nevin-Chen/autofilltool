@@ -58,6 +58,41 @@ describe('affordance — mount + bounded watchdog re-mount', () => {
     expect(host.isConnected).toBe(true);
   });
 
+  it('idle pill says "Fill this page" before any fill, and the main button triggers onFill', async () => {
+    const { __getTabLabelForTests, __clickTabMainForTests } = await import(
+      '@/content/affordance'
+    );
+    const onFill = vi.fn();
+    showFillTrigger({ detected: 3, onFill });
+    expect(__getTabLabelForTests()).toBe('Fill this page');
+    expect(__clickTabMainForTests()).toBe(true);
+    expect(onFill).toHaveBeenCalledOnce();
+  });
+
+  it('idle pill has a close (×) button that removes the trigger from the page', async () => {
+    const { __clickTabCloseForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    expect(document.getElementById(HOST_ID)).not.toBeNull();
+    expect(__clickTabCloseForTests()).toBe(true);
+    expect(document.getElementById(HOST_ID)).toBeNull();
+  });
+
+  it('close button is hover-revealed (hidden at rest, expands on row hover)', async () => {
+    const { __getShadowCssForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    const css = __getShadowCssForTests();
+    expect(css).toMatch(/\.tab-row\.reveal button\.tab\.tab-close\s*\{[^}]*width:\s*0/);
+    expect(css).toMatch(
+      /\.tab-row\.reveal:hover button\.tab\.tab-close[^{]*\{[^}]*width:\s*38px/,
+    );
+  });
+
+  it('close button carries the "Hide for this page" tooltip', async () => {
+    const { __getTabCloseTooltipForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    expect(__getTabCloseTooltipForTests()).toBe('Hide for this page');
+  });
+
   it('watchdog re-mounts ONCE when the host disappears post-mount', () => {
     showFillTrigger({ detected: 5, onFill: () => {} });
     expect(document.getElementById(HOST_ID)).not.toBeNull();
@@ -250,6 +285,105 @@ describe('post-fill note — Sheets link state', () => {
     expect(note?.href).toBe(
       'https://github.com/Nevin-Chen/autofilltool#google-sheets-logging',
     );
+  });
+});
+
+describe('done card — actions row', () => {
+  const baseStats: TriggerStats = {
+    filled: 2,
+    skipped: 0,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'generic',
+    adapterName: 'generic',
+    resume: 'noResume',
+    autoLogging: false,
+  };
+
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  it('done card no longer renders a Dismiss button', async () => {
+    const { __getDoneActionTextsForTests } = await import('@/content/affordance');
+    showFillTriggerDone(baseStats, []);
+    const labels = __getDoneActionTextsForTests();
+    expect(labels).not.toContain('Dismiss');
+  });
+});
+
+describe('post-fill pill — View results re-opens the chips', () => {
+  const baseStats: TriggerStats = {
+    filled: 3,
+    skipped: 1,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'generic',
+    adapterName: 'generic',
+    resume: 'noResume',
+    autoLogging: false,
+  };
+
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  it('pill switches to "View results" after fill is done and the user collapses the card', async () => {
+    const { __getTabLabelForTests } = await import('@/content/affordance');
+    showFillTrigger({ detected: 4, onFill: () => {} });
+    expect(__getTabLabelForTests()).toBe('Fill this page');
+    showFillTriggerDone(baseStats, []);
+    // collapse via the × icon button in the card header
+    const { __collapseCardForTests } = await import('@/content/affordance');
+    expect(__collapseCardForTests()).toBe(true);
+    expect(__getTabLabelForTests()).toBe('View results');
+  });
+
+  it('clicking the View results pill re-opens the chips card', async () => {
+    const {
+      __getTabLabelForTests,
+      __clickTabMainForTests,
+      __getChipTextForTests,
+      __collapseCardForTests,
+    } = await import('@/content/affordance');
+    showFillTrigger({ detected: 4, onFill: vi.fn() });
+    showFillTriggerDone(baseStats, []);
+    __collapseCardForTests();
+    expect(__getTabLabelForTests()).toBe('View results');
+    expect(__getChipTextForTests('ok')).toBeNull();
+    __clickTabMainForTests();
+    expect(__getChipTextForTests('ok')).toMatch(/3 filled/);
+  });
+
+  it('clicking "View results" does NOT call onFill', async () => {
+    const { __clickTabMainForTests, __collapseCardForTests } = await import(
+      '@/content/affordance'
+    );
+    const onFill = vi.fn();
+    showFillTrigger({ detected: 4, onFill });
+    showFillTriggerDone(baseStats, []);
+    __collapseCardForTests();
+    __clickTabMainForTests();
+    expect(onFill).not.toHaveBeenCalled();
+  });
+
+  it('close (×) on the post-fill pill removes the host entirely', async () => {
+    const { __clickTabCloseForTests, __collapseCardForTests } = await import(
+      '@/content/affordance'
+    );
+    showFillTrigger({ detected: 4, onFill: () => {} });
+    showFillTriggerDone(baseStats, []);
+    __collapseCardForTests();
+    expect(__clickTabCloseForTests()).toBe(true);
+    expect(document.getElementById(HOST_ID)).toBeNull();
   });
 });
 
