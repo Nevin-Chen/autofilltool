@@ -1,7 +1,3 @@
-/** Inline "✨ Suggest" buttons for open-ended fields with AI provider gating. */
-// Dual-layer gate: visibility + click-time recheck (hardened privacy guarantee).
-// Closed Shadow DOM, idempotent injection, streams responses into textareas.
-
 import type { DetectedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import type { Settings } from '@/profile/schema';
@@ -11,13 +7,11 @@ import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 
 const HOST_DATA_ATTR = 'data-autofilltool-suggest-host';
 
-/** True when an AI provider is selected (the visibility + click-guard gate). */
 export function aiConfigured(settings: Settings): boolean {
   return settings.ai.provider !== 'none';
 }
 
 export type InstallSuggestOptions = {
-  /** Visibility gate (FR-013): skip injection entirely when no provider is set. */
   aiConfigured: boolean;
 };
 
@@ -26,7 +20,7 @@ export function installSuggestButtons(
   ctx: JobContext,
   opts: InstallSuggestOptions,
 ): void {
-  if (!opts.aiConfigured) return; // FR-013: no button without a provider
+  if (!opts.aiConfigured) return;
   for (const field of fields) {
     if (field.kind !== 'openEnded' && field.kind !== 'coverLetter') continue;
     if (!(field.el instanceof HTMLTextAreaElement)) continue;
@@ -36,13 +30,6 @@ export function installSuggestButtons(
   }
 }
 
-/**
- * The hard privacy gate (FR-016): read settings, and only open the port when a
- * provider is configured. Otherwise call `onNoProvider` (the prompt) and return
- * null WITHOUT connecting — so an unconfigured click provably opens no port and
- * issues no request. Settings come from chrome.storage.local (no network). Deps
- * are injected so this is unit-testable with spies.
- */
 export async function guardedConnect(deps: {
   loadSettings: () => Promise<Settings>;
   connect: () => chrome.runtime.Port;
@@ -52,7 +39,6 @@ export async function guardedConnect(deps: {
   try {
     settings = await deps.loadSettings();
   } catch {
-    // Fail safe: if we can't confirm a provider, behave as unconfigured.
     deps.onNoProvider();
     return null;
   }
@@ -63,8 +49,80 @@ export async function guardedConnect(deps: {
   return deps.connect();
 }
 
-// dataset keys are camelCased forms of the data- attribute name.
 const CAMEL_FLAG = 'autofilltoolSuggestBound';
+
+type PillState =
+  | { kind: 'idle' }
+  | { kind: 'working' }
+  | { kind: 'failure'; message?: string }
+  | { kind: 'no-provider' };
+
+function renderState(
+  mount: HTMLElement,
+  state: PillState,
+  handlers: { onActivate: () => void },
+): void {
+  mount.replaceChildren();
+
+  if (state.kind === 'failure') {
+    const group = document.createElement('div');
+    group.className = 'pill-failure';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', state.message ?? 'AI request failed');
+
+    const failed = document.createElement('span');
+    failed.className = 'seg failed';
+    failed.title = state.message ?? '';
+    failed.textContent = '⚠ Failed';
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'seg retry';
+    retry.textContent = '↻ Retry';
+    retry.addEventListener('click', handlers.onActivate);
+
+    group.append(failed, retry);
+    mount.append(group);
+    return;
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pill';
+  btn.addEventListener('click', handlers.onActivate);
+
+  if (state.kind === 'idle') {
+    const spark = document.createElement('span');
+    spark.className = 'spark';
+    spark.textContent = '✨';
+    btn.append(spark, document.createTextNode(' Suggest'));
+    btn.title = 'Draft an answer with AI';
+  } else if (state.kind === 'working') {
+    btn.classList.add('working');
+    const stop = document.createElement('span');
+    stop.className = 'stop-x';
+    stop.textContent = '×';
+    const dots = document.createElement('span');
+    dots.className = 'dots';
+    dots.setAttribute('aria-hidden', 'true');
+    dots.append(
+      document.createElement('i'),
+      document.createElement('i'),
+      document.createElement('i'),
+    );
+    const label = document.createElement('span');
+    label.textContent = 'Thinking';
+    btn.append(stop, dots, label);
+    btn.title = 'Stop drafting';
+    btn.setAttribute('aria-label', 'Stop drafting');
+  } else if (state.kind === 'no-provider') {
+    btn.classList.add('no-provider');
+    btn.textContent = 'Configure AI in Settings';
+    btn.disabled = true;
+  }
+
+  mount.append(btn);
+}
 
 function attachButtonFor(
   textarea: HTMLTextAreaElement,
@@ -76,7 +134,7 @@ function attachButtonFor(
   Object.assign(host.style, {
     position: 'absolute',
     zIndex: '2147483646',
-    pointerEvents: 'none', // children re-enable
+    pointerEvents: 'none',
   } as CSSStyleDeclaration);
 
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -85,64 +143,84 @@ function attachButtonFor(
   wrap.className = 'wrap';
   shadow.appendChild(wrap);
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'suggest';
-  btn.textContent = '✨ Suggest';
-  btn.title = 'Draft an answer with AI';
-  const status = document.createElement('span');
-  status.className = 'status';
-  wrap.append(btn, status);
-
-  // Anchor to the textarea's bottom-right corner via CSS-pixel offsets.
   const reposition = () => {
     const r = textarea.getBoundingClientRect();
-    host.style.left = `${window.scrollX + r.right - 96}px`;
+    const pillWidth = wrap.getBoundingClientRect().width || 96;
+    host.style.left = `${window.scrollX + r.right - pillWidth - 8}px`;
     host.style.top = `${window.scrollY + r.bottom - 28}px`;
   };
+
+  let currentPort: chrome.runtime.Port | null = null;
+  let streaming = false;
+  let autoResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearAutoReset = () => {
+    if (autoResetTimer !== null) {
+      clearTimeout(autoResetTimer);
+      autoResetTimer = null;
+    }
+  };
+
+  const handlers = { onActivate: () => void onActivate() };
+
+  const setIdle = () => {
+    clearAutoReset();
+    renderState(wrap, { kind: 'idle' }, handlers);
+    reposition();
+  };
+  const setWorking = () => {
+    clearAutoReset();
+    renderState(wrap, { kind: 'working' }, handlers);
+    reposition();
+  };
+  const setFailure = (message?: string) => {
+    clearAutoReset();
+    renderState(
+      wrap,
+      message !== undefined ? { kind: 'failure', message } : { kind: 'failure' },
+      handlers,
+    );
+    autoResetTimer = setTimeout(setIdle, 8000);
+    reposition();
+  };
+  const setNoProvider = () => {
+    clearAutoReset();
+    renderState(wrap, { kind: 'no-provider' }, handlers);
+    autoResetTimer = setTimeout(setIdle, 4000);
+    reposition();
+  };
+
+  document.body.appendChild(host);
+  setIdle();
   reposition();
   window.addEventListener('scroll', reposition, { passive: true });
   window.addEventListener('resize', reposition);
 
-  let currentPort: chrome.runtime.Port | null = null;
-  let streaming = false;
-
-  const reset = () => {
+  const resetStream = () => {
     streaming = false;
-    btn.disabled = false;
-    btn.textContent = '✨ Suggest';
     currentPort = null;
   };
 
-  btn.addEventListener('click', () => {
-    void onActivate();
-  });
-
   async function onActivate(): Promise<void> {
     if (streaming && currentPort) {
-      // Click during stream = cancel.
       try {
         currentPort.postMessage({ kind: 'cancel' });
         currentPort.disconnect();
       } catch {
-        /* ignore */
       }
-      status.textContent = ' cancelled';
-      reset();
+      resetStream();
+      setIdle();
       return;
     }
 
-    // Defensive gate (FR-016): no provider → prompt, and provably no port/fetch.
     const port = await guardedConnect({
       loadSettings: getSettings,
       connect: () => chrome.runtime.connect({ name: AI_PORT_NAME }),
-      onNoProvider: () => showNoProviderPrompt(status),
+      onNoProvider: setNoProvider,
     });
     if (!port) return;
     currentPort = port;
 
-    // Only now that we're proceeding do we touch the textarea: clear if empty,
-    // else append a blank line so we don't clobber the user's draft.
     if (textarea.value.trim().length === 0) {
       setNativeValue(textarea, '');
     } else {
@@ -151,37 +229,33 @@ function attachButtonFor(
     dispatchInputEvents(textarea);
 
     streaming = true;
-    btn.disabled = false;
-    btn.textContent = '✕ Stop';
-    status.textContent = ' connecting…';
-
-    let first = true;
+    setWorking();
 
     port.onMessage.addListener((raw: AiBgToClient) => {
       if (raw.kind === 'delta') {
-        if (first) {
-          status.textContent = ' streaming…';
-          first = false;
-        }
         setNativeValue(textarea, textarea.value + raw.text);
-        // Just `input` while streaming; full input/change/blur on done.
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       } else if (raw.kind === 'done') {
-        status.textContent = ' done';
         dispatchInputEvents(textarea);
-        reset();
-        port.disconnect();
-        setTimeout(() => (status.textContent = ''), 1500);
+        resetStream();
+        try {
+          port.disconnect();
+        } catch {
+        }
+        setIdle();
       } else if (raw.kind === 'error') {
-        status.textContent = ` ${truncate(raw.message, 60)}`;
-        reset();
-        port.disconnect();
+        resetStream();
+        try {
+          port.disconnect();
+        } catch {
+        }
+        setFailure(truncate(raw.message, 80));
       }
     });
     port.onDisconnect.addListener(() => {
       if (streaming) {
-        status.textContent = ' disconnected';
-        reset();
+        resetStream();
+        setFailure('Disconnected');
       }
     });
 
@@ -200,24 +274,6 @@ function attachButtonFor(
       },
     });
   }
-
-  document.body.appendChild(host);
-}
-
-/**
- * Empty-state prompt (US4 scenario 3): tell the user to configure a provider.
- * Purely presentational — shown inside the button's own shadow status line, so
- * it can't be reached or restyled by the page, and triggers no navigation.
- */
-function showNoProviderPrompt(status: HTMLElement): void {
-  status.textContent = ' Configure an AI provider in Settings';
-  status.setAttribute('data-aft-no-provider', '1');
-  setTimeout(() => {
-    if (status.getAttribute('data-aft-no-provider') === '1') {
-      status.removeAttribute('data-aft-no-provider');
-      status.textContent = '';
-    }
-  }, 4000);
 }
 
 function buildStyle(): HTMLStyleElement {
@@ -226,23 +282,65 @@ function buildStyle(): HTMLStyleElement {
     :host { all: initial; }
     .wrap {
       pointer-events: auto;
-      display: inline-flex; align-items: center; gap: 6px;
+      display: inline-flex; align-items: center;
       font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    .suggest {
+
+    .pill {
       pointer-events: auto;
-      background: #0f172a;
-      color: #f8fafc;
-      border: 1px solid rgba(255,255,255,0.1);
-      padding: 4px 10px;
-      border-radius: 999px;
-      cursor: pointer;
-      font: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #0f172a; color: #f8fafc;
+      border: 1px solid rgba(255,255,255,0.10);
+      padding: 5px 11px; border-radius: 999px;
+      cursor: pointer; font: inherit; font-weight: 700;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: background .15s ease;
     }
-    .suggest:hover { background: #1e293b; }
-    .suggest:disabled { opacity: 0.6; cursor: default; }
-    .status { color: #64748b; }
+    .pill:hover { background: #1e293b; }
+    .pill:disabled { opacity: 0.6; cursor: default; }
+    .pill .spark { color: #7dd3fc; font-size: 13px; line-height: 1; }
+
+    .pill.working { padding: 5px 11px 5px 9px; }
+    .pill.working .stop-x { color: #f8fafc; font-weight: 700; font-size: 14px; line-height: 1; padding: 0 1px; }
+    .pill.working .dots { display: inline-flex; gap: 3px; align-items: center; color: #7dd3fc; }
+    .pill.working .dots i {
+      width: 4px; height: 4px; border-radius: 50%; background: currentColor;
+      opacity: 0.6;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .pill.working .dots i {
+        animation: aft-dot 1.2s ease-in-out infinite;
+      }
+      .pill.working .dots i:nth-child(2) { animation-delay: .15s; }
+      .pill.working .dots i:nth-child(3) { animation-delay: .30s; }
+    }
+    @keyframes aft-dot {
+      0%,80%,100% { opacity: .3; transform: scale(.85); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    .pill-failure {
+      pointer-events: auto;
+      display: inline-flex; align-items: stretch;
+      background: #0f172a; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      overflow: hidden;
+      font: 700 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .pill-failure .seg {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: transparent; border: none; color: inherit;
+      padding: 5px 11px; font: inherit; cursor: default;
+    }
+    .pill-failure .seg.failed { color: #fca5a5; }
+    .pill-failure .seg.retry {
+      color: #f8fafc; cursor: pointer;
+      border-left: 1px solid rgba(255,255,255,0.10);
+    }
+    .pill-failure .seg.retry:hover { background: rgba(255,255,255,0.06); }
+
+    .pill.no-provider { background: #1e293b; }
   `;
   return s;
 }
