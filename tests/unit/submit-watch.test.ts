@@ -37,6 +37,7 @@ beforeEach(() => {
     value: { stored: true, posted: true, record: {} },
   }));
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).chrome = {
     runtime: { sendMessage },
     storage: {

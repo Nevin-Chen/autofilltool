@@ -1348,7 +1348,9 @@ function buildStyle(): HTMLStyleElement {
     button.tab.tab-main {
       gap: 9px;
       padding: 11px 16px 11px 14px;
-      font: 600 13px/1 inherit;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
       border-radius: 14px 0 0 14px;
     }
     button.tab.tab-main:hover { background: rgba(255,255,255,0.04); }
