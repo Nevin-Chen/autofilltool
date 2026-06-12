@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
 
 export const AddressSchema = z.object({
   line1: z.string().default(''),
@@ -85,7 +85,7 @@ export type AiProvider = z.infer<typeof AiProviderSchema>;
 
 export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),
-  apiKey: z.string().default(''),
+  apiKeys: z.record(z.string(), z.string()).default({}),
   model: z.string().default(''),
   endpoint: z.string().default(''),
   cacheResponses: z.boolean().default(false),
@@ -186,4 +186,9 @@ export function emptyProfile(): Profile {
 
 export function defaultSettings(): Settings {
   return SettingsSchema.parse({});
+}
+
+export function activeApiKey(ai: AiSettings): string {
+  if (ai.provider === 'none') return '';
+  return ai.apiKeys[ai.provider] ?? '';
 }

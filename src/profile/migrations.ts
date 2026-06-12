@@ -6,21 +6,34 @@ import {
   SubmissionRecordSchema,
 } from './schema';
 
-/**
- * Migrations run in order from the stored `schemaVersion` up to
- * CURRENT_SCHEMA_VERSION. Each step receives the previous step's output and
- * returns the next shape. Keep them small and idempotent.
- *
- * For v1 (initial), there are no migrations — but the wiring is here so future
- * changes (e.g., renaming a field, splitting `links` into multiple records)
- * have an obvious home.
- */
-
 type MigrationFn = (raw: unknown) => unknown;
 
 const profileMigrations: Record<number, MigrationFn> = {};
 
-const settingsMigrations: Record<number, MigrationFn> = {};
+const settingsMigrations: Record<number, MigrationFn> = {
+  1: (raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const r = raw as Record<string, unknown>;
+    const aiRaw =
+      r.ai && typeof r.ai === 'object' ? (r.ai as Record<string, unknown>) : {};
+    const oldKey = typeof aiRaw.apiKey === 'string' ? aiRaw.apiKey : '';
+    const provider =
+      typeof aiRaw.provider === 'string' ? aiRaw.provider : 'none';
+    const apiKeys: Record<string, string> =
+      aiRaw.apiKeys && typeof aiRaw.apiKeys === 'object'
+        ? { ...(aiRaw.apiKeys as Record<string, string>) }
+        : {};
+    if (
+      oldKey &&
+      provider !== 'none' &&
+      provider !== 'ollama' &&
+      !apiKeys[provider]
+    ) {
+      apiKeys[provider] = oldKey;
+    }
+    return { ...r, ai: { ...aiRaw, apiKeys } };
+  },
+};
 const resumeMigrations: Record<number, MigrationFn> = {};
 const historyMigrations: Record<number, MigrationFn> = {};
 
