@@ -3,7 +3,8 @@ import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
-import { extractResumeText } from './resume-text';
+import { extractResumeText, isResumePlaceholder } from './resume-text';
+import { log } from '@/lib/logger';
 
 export { extractResumeText };
 
@@ -23,7 +24,6 @@ export type StreamEvent =
 export async function* dispatch(
   req: SuggestRequest,
   settings: AiSettings,
-  profile: Profile,
   resume: ResumeRecord | null,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   if (settings.provider === 'none') {
@@ -41,9 +41,10 @@ export async function* dispatch(
     return;
   }
 
-  const prompt = await buildPrompt(req, profile, resume);
+  const prompt = await buildPrompt(req, resume);
 
   try {
+    const maxTokens = estimateTokens(req.maxChars);
     if (settings.provider === 'openai') {
       const model = settings.model || OPENAI_DEFAULT_MODEL;
       for await (const text of streamOpenAI({
@@ -51,7 +52,7 @@ export async function* dispatch(
         model,
         system: prompt.system,
         user: prompt.user,
-        maxTokens: estimateTokens(req.maxChars),
+        maxTokens,
       })) {
         yield { kind: 'delta', text };
       }
@@ -62,7 +63,7 @@ export async function* dispatch(
         model,
         system: prompt.system,
         user: prompt.user,
-        maxTokens: estimateTokens(req.maxChars),
+        maxTokens,
       })) {
         yield { kind: 'delta', text };
       }
@@ -73,7 +74,7 @@ export async function* dispatch(
         model,
         system: prompt.system,
         user: prompt.user,
-        maxTokens: estimateTokens(req.maxChars),
+        maxTokens,
       })) {
         yield { kind: 'delta', text };
       }
@@ -84,7 +85,7 @@ export async function* dispatch(
         model,
         system: prompt.system,
         user: prompt.user,
-        maxTokens: estimateTokens(req.maxChars),
+        maxTokens,
         endpoint: settings.endpoint,
       })) {
         yield { kind: 'delta', text };
@@ -108,24 +109,12 @@ const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
 
 export async function buildPrompt(
   req: SuggestRequest,
-  profile: Profile,
   resume: ResumeRecord | null,
 ): Promise<BuiltPrompt> {
   const lengthHint = req.maxChars
     ? ` Keep the response under ${req.maxChars} characters.`
     : ' Keep the response to 2-4 short paragraphs.';
 
-  const system = [
-    'You are helping the user draft an answer to a job application question.',
-    'Write in the first person, in the user\'s authentic voice — direct, specific, no hype.',
-    'Ground every claim in details from the profile, résumé, or job description below. Do not invent companies, dates, titles, or skills.',
-    'When the job description mentions specific responsibilities, qualifications, or values, mirror that vocabulary in your answer — but only when the user\'s actual experience supports it.',
-    'If the profile lacks enough detail to answer well, write a short honest placeholder rather than fabricating.',
-    `Match the question's tone.${lengthHint}`,
-    'Return only the answer text — no preamble, no quotes, no markdown headings.',
-  ].join(' ');
-
-  const profileSummary = summarizeProfile(profile);
   const resumeText = resume ? await extractResumeText(resume) : '';
   const jobDescription = req.jobDescription
     ? truncate(req.jobDescription.trim(), JOB_DESCRIPTION_PROMPT_BUDGET)
@@ -135,47 +124,73 @@ export async function buildPrompt(
       ? `Applying for ${req.job.role ?? 'a role'}${req.job.company ? ` at ${req.job.company}` : ''}.`
       : '';
 
-  const userParts = [
-    job,
-    req.label ? `Question label: ${req.label}` : '',
-    `Question: ${req.question}`,
-    '',
-  ];
-  if (jobDescription) {
-    userParts.push('Job description (from the posting):', jobDescription, '');
-  }
-  userParts.push('Profile:', profileSummary || '(empty)', '');
-  if (resumeText) {
-    userParts.push('Résumé (text excerpt):', resumeText, '');
-  }
-  userParts.push('Now write the answer.');
+  const resumeIsPlaceholder = !!resumeText && isResumePlaceholder(resumeText);
+  const hasResumeContent = !!resumeText && !resumeIsPlaceholder;
+  const candidateIsSparse = !hasResumeContent;
 
-  return { system, user: userParts.filter(Boolean).join('\n') };
+  const baseRules = [
+    'You are helping the user draft an answer to a job application question.',
+    "Write in the first person, in the user's authentic voice, direct, specific, no hype.",
+    'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE (the user\'s résumé), JOB POSTING (what the employer wrote), and TASK (the question to answer).',
+    'Hard rule: every specific claim about the user (companies, dates, titles, technologies, metrics, projects) MUST come verbatim from ABOUT THE CANDIDATE. You are forbidden from inventing companies, titles, dates, employers, products, or projects. You are forbidden from importing facts out of JOB POSTING into the answer as if they were the user\'s own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.',
+    'The résumé inside ABOUT THE CANDIDATE may be split into labelled sections (## CONTACT, ## SUMMARY, ## EXPERIENCE, ## SKILLS, ## PROJECTS, ## EDUCATION, ...). Mine the section that matches the question: behavioural prompts → ## EXPERIENCE, technology questions → ## SKILLS, education prompts → ## EDUCATION. Quote the user\'s own phrasing, company names, role titles, metrics, technologies, verbatim.',
+    'When the job description mentions specific responsibilities, qualifications, or values, mirror that vocabulary in your answer, but only when the user\'s actual experience supports it.',
+  ];
+  const sparseRule = candidateIsSparse
+    ? 'ABOUT THE CANDIDATE is empty (no parseable résumé attached). Do NOT fabricate any experience, employer, role, or project. Return exactly this line and stop: [Please upload a résumé in the autofilltool options, then click Suggest again.]'
+    : 'If the résumé genuinely lacks the specifics needed for this particular question, write a brief honest answer that uses only what IS there rather than fabricating new facts.';
+  const closingRules = [
+    sparseRule,
+    `Match the question's tone.${lengthHint}`,
+    'Return only the answer text, no preamble, no quotes, no markdown headings.',
+  ];
+  const system = [...baseRules, ...closingRules].join(' ');
+
+  const userParts: string[] = [];
+
+  userParts.push('=== ABOUT THE CANDIDATE ===');
+  if (resumeText) {
+    userParts.push('', 'Résumé:', resumeText);
+  } else {
+    userParts.push('', 'Résumé: (none uploaded)');
+  }
+
+  userParts.push('', '=== JOB POSTING ===');
+  if (job) userParts.push('', job);
+  if (jobDescription) {
+    userParts.push('', 'Job description:', jobDescription);
+  } else if (!job) {
+    userParts.push('', '(no job posting context available)');
+  }
+
+  userParts.push('', '=== TASK ===');
+  if (req.label) userParts.push('', `Question label: ${req.label}`);
+  userParts.push('', `Question: ${req.question}`);
+
+  userParts.push(
+    '',
+    'Write the answer now. Anchor every specific claim (companies, titles, dates, projects, technologies, metrics) in ABOUT THE CANDIDATE. Use JOB POSTING only to choose which of the candidate\'s experiences to highlight and which vocabulary to mirror.',
+  );
+
+  const user = userParts.join('\n');
+
+  log.debug('Suggest prompt built', {
+    question: req.question.slice(0, 80),
+    resumeChars: resumeText.length,
+    resumeIsPlaceholder,
+    resumeSections: countResumeSections(resumeText),
+    resumeHead: resumeText.slice(0, 240),
+    jdChars: jobDescription.length,
+    candidateIsSparse,
+    userChars: user.length,
+  });
+
+  return { system, user };
 }
 
-export function summarizeProfile(profile: Profile): string {
-  const lines: string[] = [];
-  const name =
-    [profile.preferredName || profile.firstName, profile.lastName]
-      .filter(Boolean)
-      .join(' ') || '';
-  if (name) lines.push(`- Name: ${name}`);
-  if (profile.links.linkedin) lines.push(`- LinkedIn: ${profile.links.linkedin}`);
-  if (profile.links.github) lines.push(`- GitHub: ${profile.links.github}`);
-  if (profile.links.portfolio) lines.push(`- Portfolio: ${profile.links.portfolio}`);
-  if (profile.workAuth.desiredSalary) {
-    lines.push(`- Desired comp: ${profile.workAuth.desiredSalary}`);
-  }
-  if (profile.savedAnswers.length > 0) {
-    lines.push('- Previously written answers:');
-    for (const a of profile.savedAnswers.slice(0, 5)) {
-      lines.push(`  · "${a.questionPattern}" → ${truncate(a.answer, 300)}`);
-    }
-  }
-  if (profile.defaultCoverLetter) {
-    lines.push(`- Default cover letter blurb: ${truncate(profile.defaultCoverLetter, 500)}`);
-  }
-  return lines.join('\n');
+function countResumeSections(resumeText: string): number {
+  const matches = resumeText.match(/^## [A-Z]+/gm);
+  return matches ? matches.length : 0;
 }
 
 function truncate(s: string, max: number): string {
@@ -183,9 +198,11 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1).trimEnd() + '…';
 }
 
-function estimateTokens(maxChars: number | undefined): number {
-  if (!maxChars) return 800;
-  return Math.max(64, Math.min(2048, Math.round(maxChars / 3)));
+export function estimateTokens(maxChars: number | undefined): number {
+  const UNCAPPED = 8192;
+  if (!maxChars) return UNCAPPED;
+  const target = Math.round(maxChars / 3);
+  return Math.max(512, Math.min(UNCAPPED, target));
 }
 
 export type ClassifyRequest = {
@@ -387,7 +404,6 @@ export async function classifyField(
         ...(req.job ? { job: req.job } : {}),
         ...(req.jobDescription ? { jobDescription: req.jobDescription } : {}),
       },
-      profile,
       resume,
     );
     return classifyDirect(prompt, settings, {

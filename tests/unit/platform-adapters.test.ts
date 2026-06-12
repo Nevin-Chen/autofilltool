@@ -24,32 +24,32 @@ describe('adapter matches()', () => {
   });
 
   it('greenhouse matches boards.greenhouse.io', () => {
-    const url = new URL('https://boards.greenhouse.io/acme/jobs/1');
+    const url = new URL('https://boards.greenhouse.io/stripe/jobs/1');
     expect(greenhouseAdapter.matches(url, document)).toBe(true);
   });
 
   it('greenhouse matches via #application-form on custom domains', () => {
     document.body.innerHTML = '<form id="application-form"></form>';
-    const url = new URL('https://careers.foo.com/apply');
+    const url = new URL('https://careers.nvidia.com/apply');
     expect(greenhouseAdapter.matches(url, document)).toBe(true);
   });
 
   it('greenhouse matches via #grnhse_iframe on a company page', () => {
     document.body.innerHTML =
-      '<div id="grnhse_app"><iframe id="grnhse_iframe" src="https://job-boards.greenhouse.io/embed/job_app?for=acme"></iframe></div>';
-    const url = new URL('https://acme.com/careers/jobs/123');
+      '<div id="grnhse_app"><iframe id="grnhse_iframe" src="https://job-boards.greenhouse.io/embed/job_app?for=stripe"></iframe></div>';
+    const url = new URL('https://stripe.com/careers/jobs/123');
     expect(greenhouseAdapter.matches(url, document)).toBe(true);
   });
 
   it('greenhouse matches job-boards.greenhouse.io (new redesign host)', () => {
     const url = new URL(
-      'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=123',
+      'https://job-boards.greenhouse.io/embed/job_app?for=stripe&token=123',
     );
     expect(greenhouseAdapter.matches(url, document)).toBe(true);
   });
 
   it('lever matches jobs.lever.co', () => {
-    const url = new URL('https://jobs.lever.co/acme-bio/abcd-1234/apply');
+    const url = new URL('https://jobs.lever.co/recursion-pharma/abcd-1234/apply');
     expect(leverAdapter.matches(url, document)).toBe(true);
   });
 
@@ -59,13 +59,13 @@ describe('adapter matches()', () => {
   });
 
   it('workday matches *.myworkdayjobs.com', () => {
-    const url = new URL('https://acme.wd5.myworkdayjobs.com/External/job/123');
+    const url = new URL('https://nvidia.wd5.myworkdayjobs.com/External/job/123');
     expect(workdayAdapter.matches(url, document)).toBe(true);
   });
 
   it('workday matches via data-automation-id on custom domains', () => {
     document.body.innerHTML = '<input data-automation-id="firstName" />';
-    const url = new URL('https://careers.acme.com/apply');
+    const url = new URL('https://careers.stripe.com/apply');
     expect(workdayAdapter.matches(url, document)).toBe(true);
   });
 
@@ -673,7 +673,7 @@ describe('getJobDescription', () => {
     document.body.innerHTML = `
       <header>nav junk</header>
       <div id="content">
-        <h1>Senior Engineer at Acme</h1>
+        <h1>Senior Engineer at Stripe</h1>
         <p>You'll lead the platform team and ship infra.</p>
         <p>Requirements: 5+ years backend.</p>
       </div>

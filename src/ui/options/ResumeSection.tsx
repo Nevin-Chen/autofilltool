@@ -1,12 +1,3 @@
-/**
- * Resume upload section of the Options page. Loads the stored ResumeRecord
- * (if any), lets the user replace or remove it, and keeps the user informed
- * about size + type limits.
- *
- * The actual file → base64 conversion lives in `@/profile/resume.ts` so the
- * same code path is used at fill time on the content side.
- */
-
 import { useEffect, useState } from 'react';
 import { fileToResumeRecord } from '@/profile/resume';
 import {
@@ -15,6 +6,10 @@ import {
   clearResume as removeResume,
 } from '@/profile/store';
 import type { ResumeRecord } from '@/profile/schema';
+import {
+  extractResumeText,
+  isResumePlaceholder,
+} from '@/ai/resume-text';
 import { Section } from './Section';
 
 const ACCEPTED = [
@@ -24,7 +19,7 @@ const ACCEPTED = [
   'text/plain',
 ];
 const ACCEPTED_LABEL = '.pdf, .doc, .docx, .txt';
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB; ATSes usually cap around 10 MB
+const MAX_BYTES = 5 * 1024 * 1024;
 
 type Status =
   | { kind: 'idle' }
@@ -40,7 +35,19 @@ export function ResumeSection() {
     let cancelled = false;
     (async () => {
       const r = await getResume();
-      if (!cancelled) setResumeState(r);
+      if (cancelled) return;
+      setResumeState(r);
+      if (r && !r.extractedText) {
+        try {
+          const text = await extractResumeText(r);
+          if (cancelled) return;
+          if (text && !isResumePlaceholder(text)) {
+            const updated: ResumeRecord = { ...r, extractedText: text };
+            await persistResume(updated);
+            if (!cancelled) setResumeState(updated);
+          }
+        } catch {}
+      }
     })();
     return () => {
       cancelled = true;
@@ -49,7 +56,6 @@ export function ResumeSection() {
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Reset the input so picking the same file twice still fires onChange.
     e.target.value = '';
     if (!file) return;
 
@@ -61,7 +67,6 @@ export function ResumeSection() {
       return;
     }
     if (file.type && !ACCEPTED.includes(file.type)) {
-      // Allow if MIME is missing (some OSes don't set it for .docx) but extension matches.
       if (!/\.(pdf|docx?|txt)$/i.test(file.name)) {
         setStatus({
           kind: 'error',
@@ -71,12 +76,26 @@ export function ResumeSection() {
       }
     }
 
-    setStatus({ kind: 'info', text: 'Saving…' });
+    setStatus({ kind: 'info', text: 'Reading file…' });
     try {
-      const record = await fileToResumeRecord(file);
+      const base = await fileToResumeRecord(file);
+      setStatus({ kind: 'info', text: 'Parsing résumé…' });
+      let extractedText: string | undefined;
+      try {
+        const text = await extractResumeText(base);
+        if (text && !isResumePlaceholder(text)) extractedText = text;
+      } catch {}
+      const record: ResumeRecord = extractedText
+        ? { ...base, extractedText }
+        : base;
       await persistResume(record);
       setResumeState(record);
-      setStatus({ kind: 'ok', text: 'Resume saved locally.' });
+      setStatus({
+        kind: 'ok',
+        text: extractedText
+          ? 'Resume saved locally. Text extracted for Suggest.'
+          : 'Resume saved locally. Text extraction failed; Suggest will be limited.',
+      });
     } catch (err) {
       setStatus({
         kind: 'error',
