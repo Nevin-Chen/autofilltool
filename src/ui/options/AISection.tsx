@@ -1,14 +1,3 @@
-/**
- * AI section of the Options page. Provider radio, API key (stored locally,
- * never synced), model picker with sensible defaults, optional response
- * cache, plus a one-shot Test button that fires a tiny completion through
- * the background to confirm the key + permission combo actually works.
- *
- * Mirrors the Tracking section's permission pattern: chrome.permissions
- * .request must run from a user gesture, so the Grant button calls it
- * directly from its click handler.
- */
-
 import { useEffect, useMemo, useState } from 'react';
 import type { AiProvider, AiSettings } from '@/profile/schema';
 import {
@@ -24,7 +13,6 @@ import {
 } from '@/ai/providers/ollama';
 import { Section } from './Section';
 
-/** Remote-API providers — Ollama is local so it isn't in this table. */
 const REMOTE_PROVIDER_HOSTS: Record<
   Exclude<AiProvider, 'none' | 'ollama'>,
   string
@@ -40,11 +28,6 @@ const PROVIDER_DEFAULT_MODELS: Record<Exclude<AiProvider, 'none'>, string> = {
   gemini: 'gemini-2.5-flash',
   ollama: OLLAMA_DEFAULT_MODEL,
 };
-
-/** Every provider's default model — used to detect an untouched model field. */
-const KNOWN_DEFAULT_MODELS = new Set<string>(
-  Object.values(PROVIDER_DEFAULT_MODELS),
-);
 
 const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
   openai: 'sk-…',
@@ -66,13 +49,11 @@ type Status =
 
 export type AISectionProps = {
   settings: AiSettings;
-  /** Provider persisted to storage; marks the matching radio as "(current)". */
   savedProvider?: AiProvider;
   onChange: (next: AiSettings) => void;
   defaultCollapsed?: boolean;
 };
 
-/** Small "(current)" badge on the provider that's actually saved to storage. */
 function CurrentTag() {
   return (
     <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400">
@@ -118,21 +99,22 @@ export function AISection({
     };
   }, [providerHost]);
 
+  const [customModels, setCustomModels] = useState<
+    Partial<Record<AiProvider, string>>
+  >(() =>
+    settings.provider !== 'none' ? { [settings.provider]: settings.model } : {},
+  );
+
   const setProvider = (provider: AiProvider) => {
-    // Swap the model to the new provider's default unless the user typed a
-    // custom one. A blank field or any known per-provider default counts as
-    // "untouched", so switching providers always shows that provider's model
-    // rather than a stale value from the previously selected provider.
-    const hasCustomModel =
-      settings.model.length > 0 && !KNOWN_DEFAULT_MODELS.has(settings.model);
+    const remembered = customModels[provider];
     const next: AiSettings = {
       ...settings,
       provider,
       model:
         provider === 'none'
           ? ''
-          : hasCustomModel
-            ? settings.model
+          : remembered !== undefined
+            ? remembered
             : PROVIDER_DEFAULT_MODELS[provider],
     };
     onChange(next);
@@ -177,8 +159,6 @@ export function AISection({
       setStatus({ kind: 'error', text: 'Pick a provider first.' });
       return;
     }
-    // Ollama runs locally and doesn't need an API key; every other provider
-    // does.
     if (settings.provider !== 'ollama' && !settings.apiKey) {
       setStatus({ kind: 'error', text: 'Add an API key first.' });
       return;
@@ -364,7 +344,14 @@ export function AISection({
               <input
                 type="text"
                 value={settings.model}
-                onChange={(e) => onChange({ ...settings, model: e.target.value.trim() })}
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  setCustomModels((prev) => ({
+                    ...prev,
+                    [settings.provider]: value,
+                  }));
+                  onChange({ ...settings, model: value });
+                }}
                 placeholder={PROVIDER_DEFAULT_MODELS[settings.provider]}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
@@ -444,10 +431,6 @@ export function AISection({
   );
 }
 
-/**
- * Quick streaming round-trip used by the Test button. We collect deltas
- * until the stream completes; the test passes if anything came back.
- */
 function streamOnce(req: { question: string }): Promise<
   { ok: true; chars: number } | { ok: false; error: string }
 > {
@@ -461,7 +444,6 @@ function streamOnce(req: { question: string }): Promise<
       try {
         port.disconnect();
       } catch {
-        /* ignore */
       }
     };
     const port = chrome.runtime.connect({ name: AI_PORT_NAME });
