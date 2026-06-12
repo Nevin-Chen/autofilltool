@@ -6,7 +6,7 @@ export const AddressSchema = z.object({
   line1: z.string().default(''),
   line2: z.string().default(''),
   city: z.string().default(''),
-  region: z.string().default(''), // state/province
+  region: z.string().default(''),
   postalCode: z.string().default(''),
   country: z.string().default(''),
 });
@@ -26,7 +26,7 @@ export const WorkAuthSchema = z.object({
   requiresSponsorship: z.boolean().nullable().default(null),
   willingToRelocate: z.boolean().nullable().default(null),
   noticePeriodWeeks: z.number().int().nonnegative().nullable().default(null),
-  desiredSalary: z.string().default(''), // free text; users phrase this differently
+  desiredSalary: z.string().default(''),
 });
 export type WorkAuth = z.infer<typeof WorkAuthSchema>;
 
@@ -54,7 +54,7 @@ export const ProfileSchema = z.object({
   preferredName: z.string().default(''),
   email: z.string().email().or(z.literal('')).default(''),
   phone: z.string().default(''),
-  phoneCountry: z.string().default(''), // ISO 3166-1 alpha-2; drives the dial-code picker
+  phoneCountry: z.string().default(''),
 
   address: AddressSchema.default({}),
   links: LinksSchema.default({}),
@@ -132,6 +132,7 @@ export const ResumeRecordSchema = z.object({
   size: z.number().int().nonnegative(),
   bytesBase64: z.string(),
   uploadedAt: z.string().datetime(),
+  extractedText: z.string().optional(),
 });
 export type ResumeRecord = z.infer<typeof ResumeRecordSchema>;
 

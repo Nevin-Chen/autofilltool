@@ -1,22 +1,7 @@
-/**
- * Résumé → plain text for the AI Suggest prompt. Résumés are stored as
- * base64 bytes (src/profile/resume.ts); the model needs readable text to
- * ground answers in beyond the typed profile fields.
- *
- * Handles text/plain (base64→UTF-8), PDF (pdfjs-dist), and DOC/DOCX
- * (mammoth); anything else gets a one-line placeholder. Parsers are heavy,
- * so they live here and are imported dynamically — MV3 workers cold-start
- * on every wake, and we only want to pay for pdfjs when a résumé is actually
- * parsed. Isolating them also lets tests mock the dynamic imports. Never
- * throws: extraction failure falls back to the placeholder.
- */
-
 import type { ResumeRecord } from '@/profile/schema';
 
-/** Extracted-text cap — ~2 screens, enough for name/roles/skills. */
 export const RESUME_CHAR_BUDGET = 6000;
 
-/** PDF page cap — résumés are 1–2 pages; guards against a stray long PDF. */
 const PDF_MAX_PAGES = 20;
 
 const MIME_PDF = 'application/pdf';
@@ -25,39 +10,173 @@ const MIME_DOCX =
 const MIME_DOC = 'application/msword';
 
 export async function extractResumeText(resume: ResumeRecord): Promise<string> {
+  if (resume.extractedText && !isResumePlaceholder(resume.extractedText)) {
+    return resume.extractedText;
+  }
+
   const mime = (resume.mimeType || '').toLowerCase();
   try {
+    let raw: string | null = null;
     if (mime === 'text/plain' || mime.startsWith('text/')) {
-      const text = decodeBase64Utf8(resume.bytesBase64);
-      return truncate(text.trim(), RESUME_CHAR_BUDGET);
+      raw = decodeBase64Utf8(resume.bytesBase64);
+    } else if (mime === MIME_PDF) {
+      raw = await extractPdf(resume.bytesBase64);
+    } else if (mime === MIME_DOCX || mime === MIME_DOC) {
+      raw = await extractDocx(resume.bytesBase64);
     }
-    if (mime === MIME_PDF) {
-      const text = await extractPdf(resume.bytesBase64);
-      return truncate(text, RESUME_CHAR_BUDGET);
-    }
-    if (mime === MIME_DOCX || mime === MIME_DOC) {
-      const text = await extractDocx(resume.bytesBase64);
-      return truncate(text, RESUME_CHAR_BUDGET);
-    }
+    if (raw === null) return placeholderFor(resume);
+    return shapeForPrompt(raw);
   } catch (err) {
-    // Soft fail: a malformed file shouldn't break Suggest; use the placeholder.
     // eslint-disable-next-line no-console
     console.warn('[autofilltool] résumé text extraction failed:', err);
   }
   return placeholderFor(resume);
 }
 
-/* ----------------------------------------------------------- pdfjs-dist */
+type SectionName =
+  | 'contact'
+  | 'summary'
+  | 'experience'
+  | 'skills'
+  | 'projects'
+  | 'education'
+  | 'certifications'
+  | 'awards'
+  | 'publications';
 
-/**
- * Bundled pdf.js worker path (copied via `public/`, listed in manifest
- * `web_accessible_resources`). Tests override workerSrc directly.
- */
+const SECTION_BUDGETS: Record<SectionName, number> = {
+  contact: 300,
+  summary: 400,
+  experience: 2800,
+  skills: 800,
+  projects: 800,
+  education: 500,
+  certifications: 200,
+  awards: 100,
+  publications: 100,
+};
+
+const SECTION_ORDER: SectionName[] = [
+  'contact',
+  'summary',
+  'experience',
+  'skills',
+  'projects',
+  'education',
+  'certifications',
+  'awards',
+  'publications',
+];
+
+const SECTION_PATTERNS: Array<{ name: SectionName; re: RegExp }> = [
+  {
+    name: 'summary',
+    re: /^(?:professional\s+|career\s+)?(?:summary|profile|objective|about(?:\s+me)?)\b/i,
+  },
+  {
+    name: 'experience',
+    re: /^(?:work\s+|professional\s+|relevant\s+|industry\s+|employment\s+)?(?:experience|history)\b|^employment\b/i,
+  },
+  {
+    name: 'education',
+    re: /^education(?:al)?\b|^academic(?:\s+background)?\b/i,
+  },
+  {
+    name: 'skills',
+    re: /^(?:technical\s+|core\s+|key\s+|relevant\s+)?(?:skills|technologies|tech\s+stack|competenc(?:y|ies)|expertise|proficienc(?:y|ies))\b/i,
+  },
+  {
+    name: 'projects',
+    re: /^(?:personal\s+|side\s+|select(?:ed)?\s+|notable\s+)?(?:projects|portfolio)\b/i,
+  },
+  {
+    name: 'certifications',
+    re: /^certifications?\b|^certs?\b|^licenses?\b/i,
+  },
+  { name: 'awards', re: /^awards?\b|^honors?\b|^achievements?\b/i },
+  { name: 'publications', re: /^publications?\b|^papers?\b|^research\b/i },
+];
+
+function shapeForPrompt(raw: string): string {
+  const cleaned = cleanResumeText(raw);
+  const split = splitIntoSections(cleaned);
+  if (split.detected.length === 0) {
+    return truncate(cleaned, RESUME_CHAR_BUDGET);
+  }
+  return renderSections(split);
+}
+
+function cleanResumeText(raw: string): string {
+  let s = raw.replace(/\r\n?/g, '\n');
+  s = s.replace(/^[ \t]*Page\s+\d+(?:\s+of\s+\d+)?[ \t]*$/gim, '');
+  s = s.replace(/[ \t]+\n/g, '\n');
+  s = s.replace(/\n{3,}/g, '\n\n');
+  return s.trim();
+}
+
+function classifyHeadingLine(line: string): SectionName | null {
+  const trimmed = line.trim().replace(/[:\-—_•*]+\s*$/, '').trim();
+  if (!trimmed || trimmed.length > 40) return null;
+  if (/[.!?,]/.test(trimmed)) return null;
+  if (!/[A-Za-z]/.test(trimmed)) return null;
+  for (const { name, re } of SECTION_PATTERNS) {
+    if (re.test(trimmed)) return name;
+  }
+  return null;
+}
+
+type SplitResult = {
+  detected: SectionName[];
+  blocks: Record<SectionName, string>;
+};
+
+function splitIntoSections(cleaned: string): SplitResult {
+  const lines = cleaned.split('\n');
+  const buffers: Record<SectionName, string[]> = {
+    contact: [],
+    summary: [],
+    experience: [],
+    skills: [],
+    projects: [],
+    education: [],
+    certifications: [],
+    awards: [],
+    publications: [],
+  };
+  let current: SectionName = 'contact';
+  const detected = new Set<SectionName>();
+  for (const line of lines) {
+    const sect = classifyHeadingLine(line);
+    if (sect) {
+      current = sect;
+      detected.add(sect);
+      continue;
+    }
+    buffers[current].push(line);
+  }
+  const blocks = {} as Record<SectionName, string>;
+  for (const name of SECTION_ORDER) {
+    blocks[name] = buffers[name].join('\n').replace(/^\n+|\n+$/g, '');
+  }
+  return { detected: Array.from(detected), blocks };
+}
+
+function renderSections(split: SplitResult): string {
+  const out: string[] = [];
+  for (const name of SECTION_ORDER) {
+    const content = split.blocks[name];
+    if (!content || !content.trim()) continue;
+    const header = name === 'contact' ? 'CONTACT' : name.toUpperCase();
+    const trimmed = truncate(content.trim(), SECTION_BUDGETS[name]);
+    out.push(`## ${header}\n${trimmed}`);
+  }
+  return out.join('\n\n');
+}
+
 const PDFJS_WORKER_PATH = 'pdf.worker.mjs';
 
 async function extractPdf(b64: string): Promise<string> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // GlobalWorkerOptions is a process-global; set workerSrc once (extension only).
   const opts = (pdfjs as { GlobalWorkerOptions?: { workerSrc?: string } })
     .GlobalWorkerOptions;
   if (opts && !opts.workerSrc) {
@@ -92,8 +211,6 @@ async function extractPdf(b64: string): Promise<string> {
     let line = '';
     for (const item of content.items) {
       if (!('str' in item)) continue;
-      // transform[5] is the y origin; same-y items share a line (keeps
-      // multi-column layouts from collapsing).
       const t = item.transform;
       const y: number | null =
         Array.isArray(t) && typeof t[5] === 'number' ? t[5] : null;
@@ -112,14 +229,13 @@ async function extractPdf(b64: string): Promise<string> {
       }
     }
     if (line.trim()) parts.push(line.trim());
-    parts.push(''); // page break → blank line
+    parts.push('');
     chars += parts.reduce((n, p) => n + p.length, 0);
     if (chars >= RESUME_CHAR_BUDGET * 2) break;
   }
   return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** Minimum surface area of the pdfjs.PDFDocumentProxy we touch. */
 type PdfDocument = {
   numPages: number;
   getPage(n: number): Promise<{
@@ -129,11 +245,7 @@ type PdfDocument = {
   }>;
 };
 
-/* --------------------------------------------------------------- mammoth */
-
 async function extractDocx(b64: string): Promise<string> {
-  // mammoth's browser build wants `{ arrayBuffer }`, the node build `{ buffer }`.
-  // Vite→browser, vitest→node; pass both so each env picks the key it needs.
   const mammothMod = (await import('mammoth')) as unknown as {
     extractRawText?: (opts: object) => Promise<{ value: string }>;
     default?: { extractRawText?: (opts: object) => Promise<{ value: string }> };
@@ -150,10 +262,14 @@ async function extractDocx(b64: string): Promise<string> {
   return result.value.trim();
 }
 
-/* ------------------------------------------------------------- helpers */
+export const RESUME_PLACEHOLDER_MARKER = 'text extraction unsupported';
+
+export function isResumePlaceholder(text: string): boolean {
+  return text.includes(RESUME_PLACEHOLDER_MARKER);
+}
 
 function placeholderFor(r: ResumeRecord): string {
-  return `(${r.filename}, ${r.mimeType || 'binary'}, ${r.size} bytes — text extraction unsupported for this type)`;
+  return `(${r.filename}, ${r.mimeType || 'binary'}, ${r.size} bytes — ${RESUME_PLACEHOLDER_MARKER} for this type)`;
 }
 
 function decodeBase64Utf8(b64: string): string {

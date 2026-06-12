@@ -285,11 +285,18 @@ chrome.runtime.onConnect.addListener((port) => {
     });
 
     async function runSuggest(p: chrome.runtime.Port, req: typeof raw.req) {
-      const [settings, profile, resume] = await Promise.all([
+      const [settings, resume] = await Promise.all([
         getSettings(),
-        getProfile(),
         getResume(),
       ]);
+      log.debug('Suggest: resume snapshot from storage', {
+        present: !!resume,
+        filename: resume?.filename ?? null,
+        mimeType: resume?.mimeType ?? null,
+        size: resume?.size ?? 0,
+        bytesBase64Length: resume?.bytesBase64.length ?? 0,
+        provider: settings.ai.provider,
+      });
       const providerHost =
         settings.ai.provider === 'openai'
           ? 'https://api.openai.com/'
@@ -314,7 +321,7 @@ chrome.runtime.onConnect.addListener((port) => {
           return;
         }
       }
-      for await (const ev of dispatchAi(req, settings.ai, profile, resume)) {
+      for await (const ev of dispatchAi(req, settings.ai, resume)) {
         if (aborted) return;
         safePost(p, ev);
       }

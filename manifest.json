@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Local-first autofill for online job applications. You stay in control of submission.",
   "minimum_chrome_version": "116",
   "permissions": [
