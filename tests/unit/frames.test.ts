@@ -13,7 +13,6 @@ function frame(frameId: number, url: string, atsHint: AtsHint = null): FrameInfo
   return { frameId, url, atsHint };
 }
 
-/** Build a fresh Document with the given HTML body for probe tests. */
 function docWith(html: string): Document {
   const doc = document.implementation.createHTMLDocument('test');
   doc.body.innerHTML = html;
@@ -48,8 +47,6 @@ describe('probeAtsHint', () => {
   });
 
   it('does NOT match Greenhouse on a partial name signature alone', () => {
-    // A page with just `name="first_name"` (e.g. a marketing newsletter
-    // signup) shouldn't be misidentified as a Greenhouse form.
     expect(probeAtsHint(docWith('<input name="first_name">'))).toBeNull();
   });
 
@@ -79,22 +76,20 @@ describe('probeAtsHint', () => {
 
 describe('isAtsFrameUrl', () => {
   it('matches the canonical ATS hostnames', () => {
-    expect(isAtsFrameUrl('https://boards.greenhouse.io/foo/jobs/123')).toBe(true);
-    expect(isAtsFrameUrl('https://job-boards.greenhouse.io/foo/jobs/123')).toBe(true);
-    expect(isAtsFrameUrl('https://jobs.lever.co/acme/abc')).toBe(true);
-    expect(isAtsFrameUrl('https://jobs.ashbyhq.com/acme/job-xyz')).toBe(true);
-    expect(isAtsFrameUrl('https://acme.myworkdayjobs.com/Careers')).toBe(true);
+    expect(isAtsFrameUrl('https://boards.greenhouse.io/stripe/jobs/123')).toBe(true);
+    expect(isAtsFrameUrl('https://job-boards.greenhouse.io/stripe/jobs/123')).toBe(true);
+    expect(isAtsFrameUrl('https://jobs.lever.co/stripe/abc')).toBe(true);
+    expect(isAtsFrameUrl('https://jobs.ashbyhq.com/stripe/job-xyz')).toBe(true);
+    expect(isAtsFrameUrl('https://nvidia.myworkdayjobs.com/Careers')).toBe(true);
   });
 
   it('matches greenhouse custom subdomains', () => {
-    // Custom subdomains: careers.acme.com would NOT match because it's not
-    // a greenhouse.io host. But subdomains *of* greenhouse.io should match.
     expect(isAtsFrameUrl('https://internal.greenhouse.io/whatever')).toBe(true);
   });
 
   it('does not match company career pages', () => {
-    expect(isAtsFrameUrl('https://acme.com/careers/jobs/123')).toBe(false);
-    expect(isAtsFrameUrl('https://careers.acme.com/job/123')).toBe(false);
+    expect(isAtsFrameUrl('https://stripe.com/careers/jobs/123')).toBe(false);
+    expect(isAtsFrameUrl('https://careers.stripe.com/job/123')).toBe(false);
     expect(isAtsFrameUrl('https://example.com')).toBe(false);
   });
 
@@ -107,13 +102,10 @@ describe('isAtsFrameUrl', () => {
 
 describe('pickTargetFrames', () => {
   it('returns DOM-probed ATS frames first when any are present', () => {
-    // The iframe URL doesn't match any ATS host, but its DOM probe does —
-    // e.g. an embed served from a custom domain or about:blank with
-    // content written in via JS. The probe wins.
     const frames = [
-      frame(0, 'https://acme.com/careers/jobs/123'),
+      frame(0, 'https://stripe.com/careers/jobs/123'),
       frame(7, 'about:blank', 'greenhouse'),
-      frame(9, 'https://www.googletagmanager.com/gtag/js?id=foo'),
+      frame(9, 'https://www.googletagmanager.com/gtag/js?id=GTM-W2RJ7JL'),
     ];
     const picked = pickTargetFrames(frames);
     expect(picked).toHaveLength(1);
@@ -122,9 +114,9 @@ describe('pickTargetFrames', () => {
 
   it('falls back to URL-based ATS targeting when no DOM hints are set', () => {
     const frames = [
-      frame(0, 'https://acme.com/careers/jobs/123'),
-      frame(7, 'https://boards.greenhouse.io/embed/job_app?for=acme'),
-      frame(9, 'https://www.googletagmanager.com/gtag/js?id=foo'),
+      frame(0, 'https://stripe.com/careers/jobs/123'),
+      frame(7, 'https://boards.greenhouse.io/embed/job_app?for=stripe'),
+      frame(9, 'https://www.googletagmanager.com/gtag/js?id=GTM-W2RJ7JL'),
     ];
     const picked = pickTargetFrames(frames);
     expect(picked).toHaveLength(1);
@@ -133,11 +125,8 @@ describe('pickTargetFrames', () => {
 
   it('prefers DOM probe over URL match when both exist', () => {
     const frames = [
-      // URL-match: an ATS subdomain, but no real form (e.g. a job board
-      // listing iframe, not the application iframe).
       frame(7, 'https://boards.greenhouse.io/companies/x'),
-      // DOM probe: the actual application form, on a custom domain.
-      frame(11, 'https://careers.acme.com/apply', 'greenhouse'),
+      frame(11, 'https://careers.stripe.com/apply', 'greenhouse'),
     ];
     const picked = pickTargetFrames(frames);
     expect(picked).toHaveLength(1);
@@ -145,11 +134,10 @@ describe('pickTargetFrames', () => {
   });
 
   it('returns all ATS frames when multiple are present', () => {
-    // Unusual but possible: a page with two embedded application forms.
     const frames = [
-      frame(0, 'https://acme.com/careers'),
+      frame(0, 'https://stripe.com/careers'),
       frame(3, 'https://boards.greenhouse.io/embed/job_app?for=a'),
-      frame(5, 'https://jobs.lever.co/acme/abc'),
+      frame(5, 'https://jobs.lever.co/stripe/abc'),
     ];
     const picked = pickTargetFrames(frames);
     expect(picked.map((f) => f.frameId).sort()).toEqual([3, 5]);
@@ -157,7 +145,7 @@ describe('pickTargetFrames', () => {
 
   it('falls back to the top frame when no ATS frames are present', () => {
     const frames = [
-      frame(0, 'https://acme.com/some-form'),
+      frame(0, 'https://stripe.com/some-form'),
       frame(2, 'https://example.com/iframe-junk'),
     ];
     const picked = pickTargetFrames(frames);
@@ -174,8 +162,6 @@ describe('pickTargetFrames', () => {
     expect(pickTargetFrames(frames)).toEqual([]);
   });
 });
-
-/* ----------------------------------------------------- mergeFillResponses */
 
 function ok(
   adapterId: string,

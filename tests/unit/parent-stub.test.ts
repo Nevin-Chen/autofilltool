@@ -39,7 +39,7 @@ describe('parent-stub — postMessage protocol', () => {
       'https://boards.greenhouse.io',
       'https://jobs.lever.co',
       'https://jobs.ashbyhq.com',
-      'https://acme.myworkdayjobs.com',
+      'https://nvidia.myworkdayjobs.com',
     ];
     for (const origin of hosts) {
       __resetAffordanceForTests();

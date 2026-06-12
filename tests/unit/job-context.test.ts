@@ -13,13 +13,13 @@ describe('extractJobContext', () => {
           '@context': 'https://schema.org',
           '@type': 'JobPosting',
           title: 'Senior Backend Engineer',
-          hiringOrganization: { '@type': 'Organization', name: 'Acme Robotics' },
+          hiringOrganization: { '@type': 'Organization', name: 'Boston Dynamics' },
         })}
       </script>
     `;
     const ctx = extractJobContext(document, new URL('https://example.com/x'));
     expect(ctx.role).toBe('Senior Backend Engineer');
-    expect(ctx.company).toBe('Acme Robotics');
+    expect(ctx.company).toBe('Boston Dynamics');
   });
 
   it('falls back to og:title and og:site_name', () => {
@@ -44,9 +44,9 @@ describe('extractJobContext', () => {
   it('derives company from lever URL', () => {
     const ctx = extractJobContext(
       document,
-      new URL('https://jobs.lever.co/acme-bio/abcd-1234'),
+      new URL('https://jobs.lever.co/recursion-pharma/abcd-1234'),
     );
-    expect(ctx.company).toBe('Acme Bio');
+    expect(ctx.company).toBe('Recursion Pharma');
   });
 
   it('strips utm tracking params from jobUrl', () => {
@@ -80,9 +80,9 @@ describe('extractJobContext', () => {
     document.head.innerHTML = `<meta property="og:site_name" content="Embed" />`;
     const ctx = extractJobContext(
       document,
-      new URL('https://boards.greenhouse.io/embed/job_app?for=acme-bio&token=12345'),
+      new URL('https://boards.greenhouse.io/embed/job_app?for=recursion-pharma&token=12345'),
     );
-    expect(ctx.company).toBe('Acme Bio');
+    expect(ctx.company).toBe('Recursion Pharma');
   });
 
   it('Greenhouse embed widget without ?for= falls through (not "Embed")', () => {

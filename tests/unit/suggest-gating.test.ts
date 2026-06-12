@@ -5,7 +5,7 @@ import type { JobContext } from '@/content/job-context';
 import { defaultSettings, type Settings } from '@/profile/schema';
 
 const ctx: JobContext = {
-  company: 'Acme',
+  company: 'Stripe',
   role: 'Engineer',
   jobUrl: 'https://example.com/job',
   jobDescription: '',
@@ -57,8 +57,8 @@ describe('guardedConnect privacy guard (FR-016)', () => {
       onNoProvider,
     });
     expect(port).toBeNull();
-    expect(connect).not.toHaveBeenCalled(); // provably no port opened
-    expect(onNoProvider).toHaveBeenCalledTimes(1); // prompt shown
+    expect(connect).not.toHaveBeenCalled();
+    expect(onNoProvider).toHaveBeenCalledTimes(1);
   });
 
   it('fails safe (no port) when settings cannot be read', async () => {

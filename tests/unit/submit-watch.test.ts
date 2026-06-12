@@ -17,7 +17,7 @@ const adapter: PlatformAdapter = {
 };
 
 const ctx = {
-  company: 'Acme',
+  company: 'Stripe',
   role: 'Engineer',
   jobUrl: 'http://localhost/jobs/1',
   jobDescription: '',
@@ -36,7 +36,7 @@ beforeEach(() => {
     ok: true,
     value: { stored: true, posted: true, record: {} },
   }));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   (globalThis as any).chrome = {
     runtime: { sendMessage },
     storage: {
@@ -78,7 +78,7 @@ describe('isSubmissionConfirmed', () => {
       ...adapter,
       detectSubmissionConfirmed: () => true,
     };
-    // Empty body would fail the shared heuristic, so a true result proves the hook ran.
+
     expect(isSubmissionConfirmed(withHook, document, new URL('http://localhost/'))).toBe(true);
   });
 
@@ -99,13 +99,11 @@ describe('installSubmitWatch', () => {
     document.body.innerHTML = '<form><button>Submit Application</button></form>';
     installSubmitWatch({ adapter, ctx });
 
-    // User clicks the page's own Submit control.
     document.querySelector('button')!.dispatchEvent(
       new MouseEvent('click', { bubbles: true }),
     );
-    // The page swaps in its confirmation view.
+
     document.body.innerHTML = CONFIRM_HTML;
-    // Drive the watcher's check synchronously via the patched history hook.
     history.pushState({}, '', '/applied');
     await flush();
 
@@ -117,9 +115,8 @@ describe('installSubmitWatch', () => {
     expect(msg.type).toBe('LOG_SUBMISSION');
     expect(msg.record.status).toBe('submitted');
     expect(msg.record.source).toBe('greenhouse');
-    expect(msg.record.company).toBe('Acme');
+    expect(msg.record.company).toBe('Stripe');
 
-    // A second confirmation signal must not log again.
     history.pushState({}, '', '/applied2');
     await flush();
     expect(sendMessage).toHaveBeenCalledTimes(1);
@@ -127,7 +124,7 @@ describe('installSubmitWatch', () => {
 
   it('does not fire when the user never attempted to submit', async () => {
     installSubmitWatch({ adapter, ctx });
-    document.body.innerHTML = CONFIRM_HTML; // confirmation appears with no submit attempt
+    document.body.innerHTML = CONFIRM_HTML;
     history.pushState({}, '', '/applied');
     await flush();
     expect(sendMessage).not.toHaveBeenCalled();
@@ -138,7 +135,7 @@ describe('maybeLogPostNavigation', () => {
   it('logs from a recent same-host breadcrumb on a confirmation page', async () => {
     sessionStore['autofilltool:lastFill'] = {
       jobUrl: 'http://localhost/jobs/1',
-      company: 'Acme',
+      company: 'Stripe',
       role: 'Engineer',
       adapterId: 'lever',
       at: Date.now(),
@@ -147,7 +144,7 @@ describe('maybeLogPostNavigation', () => {
     await maybeLogPostNavigation(adapter, document, new URL('http://localhost/applied'));
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const msg = sendMessage.mock.calls[0]![0] as { record: { source: string } };
-    expect(msg.record.source).toBe('lever'); // taken from the breadcrumb
+    expect(msg.record.source).toBe('lever');
   });
 
   it('no-op without a breadcrumb', async () => {
@@ -159,7 +156,7 @@ describe('maybeLogPostNavigation', () => {
   it('no-op when the breadcrumb is stale', async () => {
     sessionStore['autofilltool:lastFill'] = {
       jobUrl: 'http://localhost/jobs/1',
-      company: 'Acme',
+      company: 'Stripe',
       role: 'Engineer',
       adapterId: 'lever',
       at: Date.now() - 11 * 60 * 1000,

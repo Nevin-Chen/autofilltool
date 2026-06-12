@@ -24,7 +24,7 @@ describe('buildPrompt', () => {
       {
         question: 'Why are you interested in this role?',
         label: 'Why us?',
-        job: { company: 'Acme', role: 'Senior Engineer' },
+        job: { company: 'Stripe', role: 'Senior Engineer' },
       },
       null,
     );
@@ -32,7 +32,7 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/first person/);
     expect(system).toMatch(/forbidden from inventing/);
     expect(user).toMatch(/Senior Engineer/);
-    expect(user).toMatch(/Acme/);
+    expect(user).toMatch(/Stripe/);
     expect(user).toMatch(/Why us\?/);
     expect(user).toMatch(/Why are you interested in this role\?/);
   });
@@ -42,7 +42,7 @@ describe('buildPrompt', () => {
       {
         question: 'Tell me about yourself.',
       },
-      resumeFromText('Ada Lovelace — Senior Engineer at Acme.'),
+      resumeFromText('Ada Lovelace — Senior Engineer at Stripe.'),
     );
     expect(user).toMatch(/=== ABOUT THE CANDIDATE ===/);
     expect(user).toMatch(/Ada Lovelace/);
@@ -50,7 +50,7 @@ describe('buildPrompt', () => {
   });
 
   it('inlines text resume bytes verbatim', async () => {
-    const txt = 'Ada Lovelace — Senior Engineer at Acme. Built X, shipped Y.';
+    const txt = 'Ada Lovelace — Senior Engineer at Stripe. Built X, shipped Y.';
     const bytes = new TextEncoder().encode(txt);
     const resume: ResumeRecord = {
       filename: 'cv.txt',
@@ -64,8 +64,6 @@ describe('buildPrompt', () => {
   });
 
   it('returns a placeholder note for an unparseable PDF', async () => {
-    // Tiny garbage bytes — pdfjs will throw and we should fall through
-    // to the placeholder so the prompt still builds.
     const resume: ResumeRecord = {
       filename: 'cv.pdf',
       mimeType: 'application/pdf',
@@ -107,9 +105,9 @@ describe('buildPrompt', () => {
       {
         question: 'Why us?',
         jobDescription: 'About the role: Build storage systems.',
-        job: { company: 'Acme', role: 'Senior Engineer' },
+        job: { company: 'Stripe', role: 'Senior Engineer' },
       },
-      resumeFromText('Ada Lovelace — Senior Engineer at Acme.'),
+      resumeFromText('Ada Lovelace — Senior Engineer at Stripe.'),
     );
     const candidate = user.indexOf('=== ABOUT THE CANDIDATE ===');
     const posting = user.indexOf('=== JOB POSTING ===');
@@ -196,7 +194,7 @@ describe('buildPrompt anti-hallucination kill switch', () => {
   it('omits the hard refusal when a résumé has actual content', async () => {
     const { system } = await buildPrompt(
       { question: 'q' },
-      resumeFromText('Ada Lovelace — Senior Engineer at Acme.'),
+      resumeFromText('Ada Lovelace — Senior Engineer at Stripe.'),
     );
     expect(system).not.toMatch(/ABOUT THE CANDIDATE is empty/);
     expect(system).toMatch(/forbidden from inventing/);
@@ -206,7 +204,7 @@ describe('buildPrompt anti-hallucination kill switch', () => {
     for (const opener of ['(415) 555-1234 | Ada Lovelace', '(she/her) Ada Lovelace']) {
       const { system } = await buildPrompt(
         { question: 'q' },
-        resumeFromText(`${opener}\nSenior Engineer at Acme.`),
+        resumeFromText(`${opener}\nSenior Engineer at Stripe.`),
       );
       expect(system).not.toMatch(/ABOUT THE CANDIDATE is empty/);
     }

@@ -9,7 +9,7 @@ import type { SubmissionRecord } from '@/profile/schema';
 const sample: SubmissionRecord = {
   id: '00000000-0000-0000-0000-000000000001',
   timestamp: '2026-01-01T00:00:00.000Z',
-  company: 'Acme',
+  company: 'Stripe',
   role: 'Engineer',
   jobUrl: 'https://example.com/jobs/1',
   source: 'generic',
@@ -18,9 +18,6 @@ const sample: SubmissionRecord = {
 };
 
 beforeEach(() => {
-  // Pretend the user has granted host permission for any URL we test against.
-  // sheets-webhook.ts calls chrome.permissions.contains via hasOriginPermission.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).chrome = {
     permissions: {
       contains: vi.fn(async () => true),
@@ -57,7 +54,6 @@ describe('postSubmission', () => {
   });
 
   it('refuses when host permission is missing', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).chrome.permissions.contains = vi.fn(async () => false);
     const fetchSpy = vi.fn();
     const r = await postSubmission(
@@ -86,7 +82,7 @@ describe('postSubmission', () => {
     expect(((init.headers ?? {}) as Record<string, string>)['Content-Type']).toMatch(
       /text\/plain/,
     );
-    expect(init.body).toContain('Acme');
+    expect(init.body).toContain('Stripe');
   });
 
   it('retries once on network error and reports failure', async () => {
