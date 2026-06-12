@@ -18,9 +18,7 @@ import {
 
 type MigrationFn = (raw: unknown) => unknown;
 
-const profileMigrations: Record<number, MigrationFn> = {
-  // 0: (raw) => ({ ...raw as object, newField: 'default' }),
-};
+const profileMigrations: Record<number, MigrationFn> = {};
 
 const settingsMigrations: Record<number, MigrationFn> = {};
 const resumeMigrations: Record<number, MigrationFn> = {};
