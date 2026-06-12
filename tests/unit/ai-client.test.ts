@@ -30,7 +30,7 @@ describe('buildPrompt', () => {
     );
 
     expect(system).toMatch(/first person/);
-    expect(system).toMatch(/forbidden from inventing/);
+    expect(system).toMatch(/Do not invent or infer them/);
     expect(user).toMatch(/Senior Engineer/);
     expect(user).toMatch(/Stripe/);
     expect(user).toMatch(/Why us\?/);
@@ -97,7 +97,7 @@ describe('buildPrompt', () => {
     expect(user).toMatch(/Job description:/);
     expect(user).toMatch(/Lead a small engineering team/);
     expect(user).toMatch(/Requirements: 5\+ years management/);
-    expect(system).toMatch(/mirror that vocabulary/);
+    expect(system).toMatch(/Mirror relevant vocabulary from JOB POSTING/);
   });
 
   it('orders sections candidate → posting → task with the question last', async () => {
@@ -127,9 +127,31 @@ describe('buildPrompt', () => {
       /Ground every claim in details from the profile, résumé, or job description/,
     );
     expect(system).toMatch(
-      /every specific claim about the user.*MUST come verbatim from ABOUT THE CANDIDATE/,
+      /every specific claim about the user.*MUST be present in ABOUT THE CANDIDATE/,
     );
     expect(system).toMatch(/the user's résumé/);
+  });
+
+  it('bans the obvious AI tells and em dashes in the voice rules', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/Banned vocabulary/);
+    expect(system).toMatch(/delve/);
+    expect(system).toMatch(/leverage/);
+    expect(system).toMatch(/seamless/);
+    expect(system).toMatch(/Do not use em dashes/);
+    expect(system).toMatch(/Never wrap résumé content in quotation marks/);
+
+    expect(system).not.toMatch(/—/);
+  });
+
+  it('routes each question type to the right résumé section and adds a motivation case', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/For behavioural questions[^.]*## EXPERIENCE/);
+    expect(system).toMatch(/For technology questions[^.]*## SKILLS/);
+    expect(system).toMatch(/For education questions[^.]*## EDUCATION/);
+    expect(system).toMatch(/For motivation questions[^.]*why this role[^.]*why this company/);
+    expect(system).toMatch(/Do not summarize the entire résumé/);
+    expect(system).toMatch(/do not copy large portions of JOB POSTING/);
   });
 
   it('clips an overlong jobDescription to ~3000 chars defensively', async () => {
@@ -197,7 +219,7 @@ describe('buildPrompt anti-hallucination kill switch', () => {
       resumeFromText('Ada Lovelace — Senior Engineer at Stripe.'),
     );
     expect(system).not.toMatch(/ABOUT THE CANDIDATE is empty/);
-    expect(system).toMatch(/forbidden from inventing/);
+    expect(system).toMatch(/Do not invent or infer them/);
   });
 
   it('does not false-positive a parsed résumé that starts with a parenthetical', async () => {

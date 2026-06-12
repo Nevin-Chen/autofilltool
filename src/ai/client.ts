@@ -1,4 +1,5 @@
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
+import { activeApiKey } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
@@ -33,7 +34,8 @@ export async function* dispatch(
     };
     return;
   }
-  if (settings.provider !== 'ollama' && !settings.apiKey) {
+  const apiKey = activeApiKey(settings);
+  if (settings.provider !== 'ollama' && !apiKey) {
     yield {
       kind: 'error',
       message: 'No AI provider configured. Open Options → AI to add a key.',
@@ -48,7 +50,7 @@ export async function* dispatch(
     if (settings.provider === 'openai') {
       const model = settings.model || OPENAI_DEFAULT_MODEL;
       for await (const text of streamOpenAI({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -59,7 +61,7 @@ export async function* dispatch(
     } else if (settings.provider === 'anthropic') {
       const model = settings.model || ANTHROPIC_DEFAULT_MODEL;
       for await (const text of streamAnthropic({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -70,7 +72,7 @@ export async function* dispatch(
     } else if (settings.provider === 'gemini') {
       const model = settings.model || GEMINI_DEFAULT_MODEL;
       for await (const text of streamGemini({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -81,7 +83,7 @@ export async function* dispatch(
     } else if (settings.provider === 'ollama') {
       const model = settings.model || OLLAMA_DEFAULT_MODEL;
       for await (const text of streamOllama({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -112,8 +114,8 @@ export async function buildPrompt(
   resume: ResumeRecord | null,
 ): Promise<BuiltPrompt> {
   const lengthHint = req.maxChars
-    ? ` Keep the response under ${req.maxChars} characters.`
-    : ' Keep the response to 2-4 short paragraphs.';
+    ? `Keep the response under ${req.maxChars} characters.`
+    : 'Keep the response to 2-4 short paragraphs.';
 
   const resumeText = resume ? await extractResumeText(resume) : '';
   const jobDescription = req.jobDescription
@@ -128,23 +130,48 @@ export async function buildPrompt(
   const hasResumeContent = !!resumeText && !resumeIsPlaceholder;
   const candidateIsSparse = !hasResumeContent;
 
-  const baseRules = [
+  const rules = [
     'You are helping the user draft an answer to a job application question.',
-    "Write in the first person, in the user's authentic voice, direct, specific, no hype.",
-    'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE (the user\'s résumé), JOB POSTING (what the employer wrote), and TASK (the question to answer).',
-    'Hard rule: every specific claim about the user (companies, dates, titles, technologies, metrics, projects) MUST come verbatim from ABOUT THE CANDIDATE. You are forbidden from inventing companies, titles, dates, employers, products, or projects. You are forbidden from importing facts out of JOB POSTING into the answer as if they were the user\'s own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.',
-    'The résumé inside ABOUT THE CANDIDATE may be split into labelled sections (## CONTACT, ## SUMMARY, ## EXPERIENCE, ## SKILLS, ## PROJECTS, ## EDUCATION, ...). Mine the section that matches the question: behavioural prompts → ## EXPERIENCE, technology questions → ## SKILLS, education prompts → ## EDUCATION. Quote the user\'s own phrasing, company names, role titles, metrics, technologies, verbatim.',
-    'When the job description mentions specific responsibilities, qualifications, or values, mirror that vocabulary in your answer, but only when the user\'s actual experience supports it.',
+    "Write in the first person, in the user's authentic voice.",
+
+    'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE, JOB POSTING, and TASK.',
+    "ABOUT THE CANDIDATE contains the user's résumé and is the only source of truth about the user's background.",
+    "JOB POSTING contains the employer's description of the role.",
+    'TASK contains the question to answer.',
+
+    "Hard rule on facts: every specific claim about the user (companies, titles, dates, employers, products, projects, technologies, metrics) MUST be present in ABOUT THE CANDIDATE. Do not invent or infer them. Do not import facts from JOB POSTING and present them as the user's own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.",
+    'If the question cannot be fully answered from ABOUT THE CANDIDATE, prefer a partial honest answer over speculation. Write the strongest answer you can from what IS there rather than fabricating new facts.',
+
+    'The résumé inside ABOUT THE CANDIDATE may be split into labelled sections (## CONTACT, ## SUMMARY, ## EXPERIENCE, ## SKILLS, ## PROJECTS, ## EDUCATION). Mine the section that matches the question.',
+    "For behavioural questions ('tell me about a time', 'describe a situation', 'give an example'), pick a concrete real example from ## EXPERIENCE. Describe the situation, what was done, and the result.",
+    'For technology questions, pull from ## SKILLS and ## EXPERIENCE.',
+    'For education questions, use ## EDUCATION only.',
+    "For motivation questions ('why this role', 'why this company'), connect specific details from the user's background to specific responsibilities, qualifications, or values in JOB POSTING. Do not invent personal history or experiences.",
+
+    "Mirror relevant vocabulary from JOB POSTING when the user's actual experience supports it, but do not copy large portions of JOB POSTING.",
+
+    'Answer the specific question directly. Do not summarize the entire résumé unless the question explicitly asks for a background overview.',
+    "Reuse the user's own facts (company names, role titles, metrics, technologies, dates) but rephrase them in natural first-person prose. Never wrap résumé content in quotation marks.",
+
+    "Voice: concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
+    "Plain words. Do not reach for synonyms of basic words like problem, change, system, build, ship. Repeat the ordinary word when it is the right one. Do not use 'furthermore', 'moreover', 'additionally', 'in addition', 'thus', or 'hence' as transitions; use a pronoun or a new sentence instead.",
+    "Do not perform. No keynote cadence, no mission-statement phrasing, no applause-line endings. No service-desk tone like 'Great question', 'I hope this helps', 'Feel free to reach out'. Start where the answer starts. Stop where it stops.",
+    "Watch regularity. The most visible LLM tell is rhythmic sameness: identical paragraph arcs, the same punctuation move every paragraph, repeated 'not X, but Y' patterns, paragraph-closing type definitions like 'the kind of X where Y'. Break those patterns where they dominate, do not just mask them with random variation.",
+    'Show concrete before generalizing. Lead with what happened, where it appeared, what constraint mattered, what failed or worked, then what it seems to mean. Do not open with an abstract diagnosis the reader has nothing concrete to attach to yet.',
+    'Cut anything performative. Drop sentences whose only job is to announce the next sentence. Collapse paragraphs that restate each other. Replace the most generic clause with something specific, or delete it.',
+
+    "Banned vocabulary (do not use in any form): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges').",
+    'Do not use em dashes. Use commas, parentheses, or separate sentences instead. Hyphens in compound words (front-end, data-driven) and en dashes in date ranges (2019-2022) are fine.',
+
+    "Match the question's tone.",
+    lengthHint,
+
+    candidateIsSparse
+      ? 'ABOUT THE CANDIDATE is empty (no parseable résumé attached). Do NOT fabricate any experience, employer, role, or project. Return exactly this line and stop: [Please upload a résumé in the autofilltool options, then click Suggest again.]'
+      : 'Return only the answer text. No preamble, no surrounding quotation marks, no markdown headings.',
   ];
-  const sparseRule = candidateIsSparse
-    ? 'ABOUT THE CANDIDATE is empty (no parseable résumé attached). Do NOT fabricate any experience, employer, role, or project. Return exactly this line and stop: [Please upload a résumé in the autofilltool options, then click Suggest again.]'
-    : 'If the résumé genuinely lacks the specifics needed for this particular question, write a brief honest answer that uses only what IS there rather than fabricating new facts.';
-  const closingRules = [
-    sparseRule,
-    `Match the question's tone.${lengthHint}`,
-    'Return only the answer text, no preamble, no quotes, no markdown headings.',
-  ];
-  const system = [...baseRules, ...closingRules].join(' ');
+
+  const system = rules.join(' ');
 
   const userParts: string[] = [];
 
@@ -307,7 +334,6 @@ export function parseClassifyResponse(
   if (lines.length === 0) return null;
   let line = lines[0]!;
   line = line.replace(/^["'`]+|["'`]+$/g, '').trim();
-  // The model was instructed to reply SKIP when it can't answer.
   if (/^skip$/i.test(line)) return null;
   if (line.length === 0) return null;
   return line;
@@ -392,7 +418,7 @@ export async function classifyField(
   resume: ResumeRecord | null = null,
 ): Promise<string | null> {
   if (settings.provider === 'none') return null;
-  if (settings.provider !== 'ollama' && !settings.apiKey) return null;
+  if (settings.provider !== 'ollama' && !activeApiKey(settings)) return null;
 
   const useWritingPrompt =
     req.fieldType === 'textarea' && (req.jobDescription || resume);
@@ -448,10 +474,11 @@ async function classifyDirect(
     const maxTokens = opts.maxTokens ?? 200;
     const accumulationCap = opts.fieldType === 'textarea' ? 4000 : 600;
     const temperature = 0;
+    const apiKey = activeApiKey(settings);
     if (settings.provider === 'openai') {
       const model = settings.model || OPENAI_DEFAULT_MODEL;
       for await (const text of streamOpenAI({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -464,7 +491,7 @@ async function classifyDirect(
     } else if (settings.provider === 'anthropic') {
       const model = settings.model || ANTHROPIC_DEFAULT_MODEL;
       for await (const text of streamAnthropic({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -477,7 +504,7 @@ async function classifyDirect(
     } else if (settings.provider === 'gemini') {
       const model = settings.model || GEMINI_DEFAULT_MODEL;
       for await (const text of streamGemini({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,
@@ -490,7 +517,7 @@ async function classifyDirect(
     } else if (settings.provider === 'ollama') {
       const model = settings.model || OLLAMA_DEFAULT_MODEL;
       for await (const text of streamOllama({
-        apiKey: settings.apiKey,
+        apiKey,
         model,
         system: prompt.system,
         user: prompt.user,

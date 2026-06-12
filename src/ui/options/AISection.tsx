@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AiProvider, AiSettings } from '@/profile/schema';
+import { activeApiKey } from '@/profile/schema';
 import {
   hasOriginPermission,
   requestOriginPermission,
@@ -159,7 +160,7 @@ export function AISection({
       setStatus({ kind: 'error', text: 'Pick a provider first.' });
       return;
     }
-    if (settings.provider !== 'ollama' && !settings.apiKey) {
+    if (settings.provider !== 'ollama' && !activeApiKey(settings)) {
       setStatus({ kind: 'error', text: 'Add an API key first.' });
       return;
     }
@@ -299,9 +300,13 @@ export function AISection({
                 </span>
                 <input
                   type="password"
-                  value={settings.apiKey}
+                  value={settings.apiKeys[settings.provider] ?? ''}
                   onChange={(e) => {
-                    onChange({ ...settings, apiKey: e.target.value.trim() });
+                    const value = e.target.value.trim();
+                    onChange({
+                      ...settings,
+                      apiKeys: { ...settings.apiKeys, [settings.provider]: value },
+                    });
                     setStatus({ kind: 'idle' });
                   }}
                   placeholder={PROVIDER_KEY_HINT[settings.provider]}
@@ -403,7 +408,7 @@ export function AISection({
                 disabled={
                   !granted ||
                   testing ||
-                  (settings.provider !== 'ollama' && !settings.apiKey)
+                  (settings.provider !== 'ollama' && !activeApiKey(settings))
                 }
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
               >

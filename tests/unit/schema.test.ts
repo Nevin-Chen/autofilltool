@@ -5,6 +5,7 @@ import {
   ResumeRecordSchema,
   emptyProfile,
   defaultSettings,
+  activeApiKey,
   CURRENT_SCHEMA_VERSION,
 } from '@/profile/schema';
 import {
@@ -77,6 +78,92 @@ describe('settings schema', () => {
       tracking: { webhookUrl: 'https://script.google.com/macros/s/abc/exec' },
     });
     expect(r.success).toBe(true);
+  });
+
+  it('defaults apiKeys to an empty map; activeApiKey() returns "" for "none"', () => {
+    const s = defaultSettings();
+    expect(s.ai.apiKeys).toEqual({});
+    expect(activeApiKey(s.ai)).toBe('');
+  });
+
+  it('activeApiKey() returns the per-provider entry once one is set', () => {
+    const s = defaultSettings();
+    const ai = {
+      ...s.ai,
+      provider: 'openai' as const,
+      apiKeys: { openai: 'sk-test', anthropic: 'sk-ant' },
+    };
+    expect(activeApiKey(ai)).toBe('sk-test');
+    expect(activeApiKey({ ...ai, provider: 'anthropic' })).toBe('sk-ant');
+    expect(activeApiKey({ ...ai, provider: 'gemini' })).toBe('');
+  });
+});
+
+describe('AI settings v1 → v2 migration', () => {
+  it('backfills the old shared apiKey into apiKeys under its provider', () => {
+    const v1 = {
+      ai: {
+        provider: 'gemini',
+        apiKey: 'AIza-test',
+        model: 'gemini-2.5-flash',
+        endpoint: '',
+        cacheResponses: false,
+      },
+    };
+    const migrated = migrateSettings(v1, 1);
+    expect(migrated.ai.provider).toBe('gemini');
+    expect(migrated.ai.apiKeys).toEqual({ gemini: 'AIza-test' });
+  });
+
+  it('does NOT backfill ollama or none (their old apiKey was a stale leak)', () => {
+    for (const provider of ['ollama', 'none'] as const) {
+      const migrated = migrateSettings(
+        {
+          ai: {
+            provider,
+            apiKey: 'sk-leaked-from-openai',
+            model: '',
+            endpoint: '',
+            cacheResponses: false,
+          },
+        },
+        1,
+      );
+      expect(migrated.ai.apiKeys).toEqual({});
+    }
+  });
+
+  it('respects an existing apiKeys[provider] entry over the old apiKey', () => {
+    const migrated = migrateSettings(
+      {
+        ai: {
+          provider: 'openai',
+          apiKey: 'sk-old',
+          apiKeys: { openai: 'sk-new' },
+          model: '',
+          endpoint: '',
+          cacheResponses: false,
+        },
+      },
+      1,
+    );
+    expect(migrated.ai.apiKeys.openai).toBe('sk-new');
+  });
+
+  it('drops the old apiKey field entirely after migration', () => {
+    const migrated = migrateSettings(
+      {
+        ai: {
+          provider: 'anthropic',
+          apiKey: 'sk-ant-test',
+          model: '',
+          endpoint: '',
+          cacheResponses: false,
+        },
+      },
+      1,
+    );
+    expect((migrated.ai as unknown as Record<string, unknown>).apiKey).toBeUndefined();
   });
 });
 
