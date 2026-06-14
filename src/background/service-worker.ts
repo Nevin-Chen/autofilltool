@@ -21,6 +21,7 @@ import {
 import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema';
 import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
 import { dispatch as dispatchAi, classifyField } from '@/ai/client';
+import { collectVoiceContext } from '@/ai/voice-context';
 import {
   OLLAMA_DEFAULT_BASE,
   resolveOriginForPermission,
@@ -285,10 +286,18 @@ chrome.runtime.onConnect.addListener((port) => {
     });
 
     async function runSuggest(p: chrome.runtime.Port, req: typeof raw.req) {
-      const [settings, resume] = await Promise.all([
+      const [settings, resume, profile] = await Promise.all([
         getSettings(),
         getResume(),
+        getProfile(),
       ]);
+      let voiceContext;
+      try {
+        voiceContext = collectVoiceContext(profile, req.question, settings.ai);
+      } catch (err) {
+        log.warn('collectVoiceContext failed; continuing without voice context', err);
+        voiceContext = undefined;
+      }
       log.debug('Suggest: resume snapshot from storage', {
         present: !!resume,
         filename: resume?.filename ?? null,
@@ -321,7 +330,7 @@ chrome.runtime.onConnect.addListener((port) => {
           return;
         }
       }
-      for await (const ev of dispatchAi(req, settings.ai, resume)) {
+      for await (const ev of dispatchAi(req, settings.ai, resume, voiceContext)) {
         if (aborted) return;
         safePost(p, ev);
       }

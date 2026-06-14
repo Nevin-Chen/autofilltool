@@ -5,6 +5,7 @@ import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic'
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
 import { extractResumeText, isResumePlaceholder } from './resume-text';
+import type { VoiceContext } from './voice-context';
 import { log } from '@/lib/logger';
 
 export { extractResumeText };
@@ -26,6 +27,7 @@ export async function* dispatch(
   req: SuggestRequest,
   settings: AiSettings,
   resume: ResumeRecord | null,
+  voiceContext?: VoiceContext,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   if (settings.provider === 'none') {
     yield {
@@ -43,7 +45,7 @@ export async function* dispatch(
     return;
   }
 
-  const prompt = await buildPrompt(req, resume);
+  const prompt = await buildPrompt(req, resume, voiceContext);
 
   try {
     const maxTokens = estimateTokens(req.maxChars);
@@ -112,6 +114,7 @@ const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
 export async function buildPrompt(
   req: SuggestRequest,
   resume: ResumeRecord | null,
+  voiceContext?: VoiceContext,
 ): Promise<BuiltPrompt> {
   const lengthHint = req.maxChars
     ? `Keep the response under ${req.maxChars} characters.`
@@ -130,6 +133,11 @@ export async function buildPrompt(
   const hasResumeContent = !!resumeText && !resumeIsPlaceholder;
   const candidateIsSparse = !hasResumeContent;
 
+  const voiceSamples = voiceContext?.voiceSamples ?? [];
+  const exemplars = voiceContext?.exemplars ?? [];
+  const hasVoice = voiceSamples.length > 0;
+  const hasExemplars = exemplars.length > 0;
+
   const rules = [
     'You are helping the user draft an answer to a job application question.',
     "Write in the first person, in the user's authentic voice.",
@@ -141,6 +149,17 @@ export async function buildPrompt(
 
     "Hard rule on facts: every specific claim about the user (companies, titles, dates, employers, products, projects, technologies, metrics) MUST be present in ABOUT THE CANDIDATE. Do not invent or infer them. Do not import facts from JOB POSTING and present them as the user's own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.",
     'If the question cannot be fully answered from ABOUT THE CANDIDATE, prefer a partial honest answer over speculation. Write the strongest answer you can from what IS there rather than fabricating new facts.',
+
+    ...(hasVoice
+      ? [
+          "When ABOUT YOUR VOICE is present, it represents the user's own writing. Mirror its cadence, sentence length, vocabulary preferences, register, and punctuation habits when generating prose. The negative voice rules below (banned vocabulary, no em dashes, anti-cadence, no service-desk tone) apply as a SOFT OVERRIDE: when the model is mirroring phrasing that demonstrably appears in ABOUT YOUR VOICE or in ABOUT THE CANDIDATE, the model MAY use vocabulary and patterns that those rules would otherwise ban. The negative rules continue to govern anything the model generates that is not anchored in the user's own writing.",
+        ]
+      : []),
+    ...(hasExemplars
+      ? [
+          'EXAMPLES OF YOUR PAST ANSWERS, if present, are previous answers the user wrote to questions similar to the current TASK. Treat them as style and structure exemplars: borrow length, paragraph count, sentence rhythm, and phrasing patterns. Do NOT copy their factual claims (companies, dates, projects, metrics) unless those facts are also present in ABOUT THE CANDIDATE. Do NOT copy them word-for-word into the answer.',
+        ]
+      : []),
 
     'The résumé inside ABOUT THE CANDIDATE may be split into labelled sections (## CONTACT, ## SUMMARY, ## EXPERIENCE, ## SKILLS, ## PROJECTS, ## EDUCATION). Mine the section that matches the question.',
     "For behavioural questions ('tell me about a time', 'describe a situation', 'give an example'), pick a concrete real example from ## EXPERIENCE. Describe the situation, what was done, and the result.",
@@ -182,6 +201,34 @@ export async function buildPrompt(
     userParts.push('', 'Résumé: (none uploaded)');
   }
 
+  if (hasVoice) {
+    userParts.push('', '=== ABOUT YOUR VOICE ===');
+    userParts.push(
+      '',
+      "The following are short samples of writing the user has done. Use them as a tone, cadence, and vocabulary reference. Do NOT treat any factual claim in these samples as information about the user; the user's facts live in ABOUT THE CANDIDATE.",
+    );
+    voiceSamples.forEach((s, i) => {
+      userParts.push('', `Sample ${i + 1}:`, s.body);
+    });
+  }
+
+  if (hasExemplars) {
+    userParts.push('', '=== EXAMPLES OF YOUR PAST ANSWERS ===');
+    userParts.push(
+      '',
+      'The following are past answers the user wrote to questions similar to the current TASK. Use them as style and structure exemplars only. Do NOT borrow specific facts (companies, dates, metrics) unless they are also in ABOUT THE CANDIDATE.',
+    );
+    exemplars.forEach((e, i) => {
+      userParts.push(
+        '',
+        `Example ${i + 1}:`,
+        `Question: ${e.questionPattern}`,
+        'Answer:',
+        e.answer,
+      );
+    });
+  }
+
   userParts.push('', '=== JOB POSTING ===');
   if (job) userParts.push('', job);
   if (jobDescription) {
@@ -209,6 +256,8 @@ export async function buildPrompt(
     resumeHead: resumeText.slice(0, 240),
     jdChars: jobDescription.length,
     candidateIsSparse,
+    voiceSamples: voiceSamples.length,
+    exemplars: exemplars.length,
     userChars: user.length,
   });
 
