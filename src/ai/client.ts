@@ -137,6 +137,7 @@ export async function buildPrompt(
   const exemplars = voiceContext?.exemplars ?? [];
   const hasVoice = voiceSamples.length > 0;
   const hasExemplars = exemplars.length > 0;
+  const hasVoiceContext = hasVoice || hasExemplars;
 
   const rules = [
     'You are helping the user draft an answer to a job application question.',
@@ -152,12 +153,12 @@ export async function buildPrompt(
 
     ...(hasVoice
       ? [
-          "When ABOUT YOUR VOICE is present, it represents the user's own writing. Mirror its cadence, sentence length, vocabulary preferences, register, and punctuation habits when generating prose. The negative voice rules below (banned vocabulary, no em dashes, anti-cadence, no service-desk tone) apply as a SOFT OVERRIDE: when the model is mirroring phrasing that demonstrably appears in ABOUT YOUR VOICE or in ABOUT THE CANDIDATE, the model MAY use vocabulary and patterns that those rules would otherwise ban. The negative rules continue to govern anything the model generates that is not anchored in the user's own writing.",
+          "ABOUT YOUR VOICE is the authoritative reference for HOW to write. Your job is to produce an answer that could plausibly have been written by the same person who wrote those samples. Match their sentence length, paragraph count, opener style, transitions, punctuation habits, register, and word choices. Trust these samples over any general writing advice. SOFT OVERRIDE: when ABOUT YOUR VOICE uses vocabulary, punctuation, or rhythmic patterns that the rules below would otherwise discourage, follow the samples. ABOUT THE CANDIDATE remains the only source of facts about the user.",
         ]
       : []),
     ...(hasExemplars
       ? [
-          'EXAMPLES OF YOUR PAST ANSWERS, if present, are previous answers the user wrote to questions similar to the current TASK. Treat them as style and structure exemplars: borrow length, paragraph count, sentence rhythm, and phrasing patterns. Do NOT copy their factual claims (companies, dates, projects, metrics) unless those facts are also present in ABOUT THE CANDIDATE. Do NOT copy them word-for-word into the answer.',
+          'EXAMPLES OF YOUR PAST ANSWERS are previous answers the user wrote to questions similar to the current TASK. Treat them as the primary template for structure: match their paragraph count, sentence length, opener style, and rhythm closely. Do NOT copy their factual claims (companies, dates, projects, metrics) unless those facts are also present in ABOUT THE CANDIDATE. Do NOT copy them word-for-word into the answer.',
         ]
       : []),
 
@@ -172,15 +173,23 @@ export async function buildPrompt(
     'Answer the specific question directly. Do not summarize the entire résumé unless the question explicitly asks for a background overview.',
     "Reuse the user's own facts (company names, role titles, metrics, technologies, dates) but rephrase them in natural first-person prose. Never wrap résumé content in quotation marks.",
 
-    "Voice: concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
-    "Plain words. Do not reach for synonyms of basic words like problem, change, system, build, ship. Repeat the ordinary word when it is the right one. Do not use 'furthermore', 'moreover', 'additionally', 'in addition', 'thus', or 'hence' as transitions; use a pronoun or a new sentence instead.",
-    "Do not perform. No keynote cadence, no mission-statement phrasing, no applause-line endings. No service-desk tone like 'Great question', 'I hope this helps', 'Feel free to reach out'. Start where the answer starts. Stop where it stops.",
-    "Watch regularity. The most visible LLM tell is rhythmic sameness: identical paragraph arcs, the same punctuation move every paragraph, repeated 'not X, but Y' patterns, paragraph-closing type definitions like 'the kind of X where Y'. Break those patterns where they dominate, do not just mask them with random variation.",
-    'Show concrete before generalizing. Lead with what happened, where it appeared, what constraint mattered, what failed or worked, then what it seems to mean. Do not open with an abstract diagnosis the reader has nothing concrete to attach to yet.',
-    'Cut anything performative. Drop sentences whose only job is to announce the next sentence. Collapse paragraphs that restate each other. Replace the most generic clause with something specific, or delete it.',
+    ...(hasVoiceContext
+      ? []
+      : [
+          "Voice: concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
+          "Plain words. Do not reach for synonyms of basic words like problem, change, system, build, ship. Repeat the ordinary word when it is the right one. Do not use 'furthermore', 'moreover', 'additionally', 'in addition', 'thus', or 'hence' as transitions; use a pronoun or a new sentence instead.",
+          "Do not perform. No keynote cadence, no mission-statement phrasing, no applause-line endings. No service-desk tone like 'Great question', 'I hope this helps', 'Feel free to reach out'. Start where the answer starts. Stop where it stops.",
+          "Watch regularity. The most visible LLM tell is rhythmic sameness: identical paragraph arcs, the same punctuation move every paragraph, repeated 'not X, but Y' patterns, paragraph-closing type definitions like 'the kind of X where Y'. Break those patterns where they dominate, do not just mask them with random variation.",
+          'Show concrete before generalizing. Lead with what happened, where it appeared, what constraint mattered, what failed or worked, then what it seems to mean. Do not open with an abstract diagnosis the reader has nothing concrete to attach to yet.',
+          'Cut anything performative. Drop sentences whose only job is to announce the next sentence. Collapse paragraphs that restate each other. Replace the most generic clause with something specific, or delete it.',
+        ]),
 
-    "Banned vocabulary (do not use in any form): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges').",
-    'Do not use em dashes. Use commas, parentheses, or separate sentences instead. Hyphens in compound words (front-end, data-driven) and en dashes in date ranges (2019-2022) are fine.',
+    hasVoiceContext
+      ? "Banned vocabulary (avoid unless these words actually appear in ABOUT YOUR VOICE or EXAMPLES OF YOUR PAST ANSWERS): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges')."
+      : "Banned vocabulary (do not use in any form): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges').",
+    hasVoiceContext
+      ? 'Em dashes: avoid unless they appear in ABOUT YOUR VOICE or EXAMPLES OF YOUR PAST ANSWERS. Hyphens in compound words (front-end, data-driven) and en dashes in date ranges (2019-2022) are always fine.'
+      : 'Do not use em dashes. Use commas, parentheses, or separate sentences instead. Hyphens in compound words (front-end, data-driven) and en dashes in date ranges (2019-2022) are fine.',
 
     "Match the question's tone.",
     lengthHint,

@@ -1,4 +1,4 @@
-export const EXEMPLAR_SIM_THRESHOLD = 0.18 as const;
+export const EXEMPLAR_SIM_THRESHOLD = 0.1 as const;
 export const FAVORITE_SCORE_BOOST = 0.05 as const;
 
 const STOPWORDS = new Set([
@@ -40,7 +40,7 @@ export function normalize(s: string): string[] {
   const cleaned = lower.replace(/[^a-z0-9]+/g, ' ');
   const tokens: string[] = [];
   for (const tok of cleaned.split(/\s+/)) {
-    if (tok.length < 3) continue;
+    if (tok.length < 2) continue;
     if (STOPWORDS.has(tok)) continue;
     tokens.push(tok);
   }

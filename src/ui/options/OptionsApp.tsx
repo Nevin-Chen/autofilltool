@@ -12,6 +12,7 @@ import { COUNTRIES, splitPhone, joinPhone } from '@/lib/countries';
 import { TrackingSection } from './TrackingSection';
 import { ResumeSection } from './ResumeSection';
 import { AISection } from './AISection';
+import { WritingSection } from './WritingSection';
 import { Section } from './Section';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -43,7 +44,14 @@ export function OptionsApp() {
     e.preventDefault();
     setSave('saving');
     setError(null);
-    const pParsed = ProfileSchema.safeParse(profile);
+    const cleanedProfile: Profile = {
+      ...profile,
+      savedAnswers: profile.savedAnswers.filter(
+        (s) => s.questionPattern.trim() !== '' && s.answer.trim() !== '',
+      ),
+      voiceSamples: profile.voiceSamples.filter((s) => s.body.trim() !== ''),
+    };
+    const pParsed = ProfileSchema.safeParse(cleanedProfile);
     const sParsed = SettingsSchema.safeParse(settings);
     if (!pParsed.success || !sParsed.success) {
       setSave('error');
@@ -57,6 +65,7 @@ export function OptionsApp() {
     }
     try {
       await Promise.all([setProfile(pParsed.data), setSettings(sParsed.data)]);
+      setProfileState(pParsed.data);
       setSavedProvider(sParsed.data.ai.provider);
       setSave('saved');
       setTimeout(() => setSave('idle'), 1500);
@@ -326,6 +335,20 @@ export function OptionsApp() {
           defaultCollapsed
         />
 
+        <WritingSection
+          voiceSamples={profile.voiceSamples}
+          exemplars={profile.savedAnswers}
+          onVoiceSamplesChange={(voiceSamples) =>
+            updateProfile('voiceSamples', voiceSamples)
+          }
+          onExemplarsChange={(savedAnswers) =>
+            updateProfile('savedAnswers', savedAnswers)
+          }
+          provider={settings.ai.provider}
+          model={settings.ai.model}
+          defaultCollapsed
+        />
+
         <TrackingSection
           url={settings.tracking.webhookUrl}
           onChange={(webhookUrl) =>
@@ -359,7 +382,7 @@ export function OptionsApp() {
       </form>
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        v{chrome.runtime.getManifest().version}
+        AutoFillTool v{chrome.runtime.getManifest().version}
       </footer>
     </main>
   );

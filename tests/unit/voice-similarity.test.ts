@@ -7,9 +7,9 @@ import {
 } from '@/ai/voice-similarity';
 
 describe('normalize', () => {
-  it('lowercases, strips punctuation, drops short tokens and stopwords', () => {
+  it('lowercases, strips punctuation, drops single-char tokens and stopwords', () => {
     expect(normalize('Why this company?')).toEqual(['why', 'company']);
-    expect(normalize('Tell us about a time you led')).toEqual(['tell', 'about', 'time', 'led']);
+    expect(normalize('Tell us about a time you led')).toEqual(['tell', 'us', 'about', 'time', 'led']);
   });
 
   it('returns [] for the empty string', () => {
@@ -52,7 +52,7 @@ describe('scoreExemplar', () => {
     }
   });
 
-  it('threshold of 0.18 is exported and stable', () => {
-    expect(EXEMPLAR_SIM_THRESHOLD).toBe(0.18);
+  it('threshold of 0.1 is exported and stable', () => {
+    expect(EXEMPLAR_SIM_THRESHOLD).toBe(0.1);
   });
 });
