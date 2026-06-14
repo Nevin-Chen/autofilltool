@@ -17,6 +17,10 @@ with a generic fallback for any other form.
   draft using OpenAI, Anthropic, Gemini, or local **Ollama**. Drafts are
   grounded in the job description, your résumé text, and your profile — the
   system prompt forbids inventing facts.
+- **Writing voice** — paste short prose samples or favorite past answers in
+  Options → Writing voice; Suggest mirrors your tone and structure without
+  treating those samples as new facts. Provider-aware budget gauge shows
+  how much of your saved writing fits each call.
 - **Submission tracking** — record each apply to local history, navigate it
   from the popup, export to CSV, or push to a Google Sheet you control.
 - **Skip-if-filled** by default; **Force overwrite** toggle for re-runs.
