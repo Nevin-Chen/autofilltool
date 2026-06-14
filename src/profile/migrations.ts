@@ -8,7 +8,14 @@ import {
 
 type MigrationFn = (raw: unknown) => unknown;
 
-const profileMigrations: Record<number, MigrationFn> = {};
+const profileMigrations: Record<number, MigrationFn> = {
+  2: (raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const r = raw as Record<string, unknown>;
+    if (Array.isArray(r.voiceSamples)) return r;
+    return { ...r, voiceSamples: [] };
+  },
+};
 
 const settingsMigrations: Record<number, MigrationFn> = {
   1: (raw) => {

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
+
+export const VOICE_SAMPLE_MAX_CHARS = 3000 as const;
+export const EXEMPLAR_ANSWER_MAX_CHARS = 3000 as const;
 
 export const AddressSchema = z.object({
   line1: z.string().default(''),
@@ -40,13 +43,24 @@ export const DemographicsSchema = z.object({
 });
 export type Demographics = z.infer<typeof DemographicsSchema>;
 
-export const SavedAnswerSchema = z.object({
+export const ExemplarAnswerSchema = z.object({
   id: z.string().uuid(),
   questionPattern: z.string().min(1),
-  answer: z.string(),
+  answer: z.string().min(1).max(EXEMPLAR_ANSWER_MAX_CHARS),
   updatedAt: z.string().datetime(),
+  favorite: z.boolean().optional(),
 });
-export type SavedAnswer = z.infer<typeof SavedAnswerSchema>;
+export type ExemplarAnswer = z.infer<typeof ExemplarAnswerSchema>;
+
+export const SavedAnswerSchema = ExemplarAnswerSchema;
+export type SavedAnswer = ExemplarAnswer;
+
+export const VoiceSampleSchema = z.object({
+  id: z.string().uuid(),
+  body: z.string().min(1).max(VOICE_SAMPLE_MAX_CHARS),
+  createdAt: z.string().datetime(),
+});
+export type VoiceSample = z.infer<typeof VoiceSampleSchema>;
 
 export const ProfileSchema = z.object({
   firstName: z.string().default(''),
@@ -61,7 +75,8 @@ export const ProfileSchema = z.object({
   workAuth: WorkAuthSchema.default({}),
   demographics: DemographicsSchema.default({}),
   defaultCoverLetter: z.string().default(''),
-  savedAnswers: z.array(SavedAnswerSchema).default([]),
+  savedAnswers: z.array(ExemplarAnswerSchema).default([]),
+  voiceSamples: z.array(VoiceSampleSchema).default([]),
 });
 export type Profile = z.infer<typeof ProfileSchema>;
 
