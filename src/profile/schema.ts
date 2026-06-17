@@ -40,6 +40,14 @@ export const DemographicsSchema = z.object({
 });
 export type Demographics = z.infer<typeof DemographicsSchema>;
 
+export const EducationSchema = z.object({
+  school: z.string().default(''),
+  degree: z.string().default(''),
+  fieldOfStudy: z.string().default(''),
+  gradYear: z.string().default(''),
+});
+export type Education = z.infer<typeof EducationSchema>;
+
 export const SavedAnswerSchema = z.object({
   id: z.string().uuid(),
   questionPattern: z.string().min(1),
@@ -60,6 +68,7 @@ export const ProfileSchema = z.object({
   links: LinksSchema.default({}),
   workAuth: WorkAuthSchema.default({}),
   demographics: DemographicsSchema.default({}),
+  education: EducationSchema.default({}),
   defaultCoverLetter: z.string().default(''),
   savedAnswers: z.array(SavedAnswerSchema).default([]),
 });

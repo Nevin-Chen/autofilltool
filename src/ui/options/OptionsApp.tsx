@@ -208,6 +208,46 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
+        <Section title="Education">
+          <Grid>
+            <TextField
+              label="School / University"
+              value={profile.education.school}
+              onChange={(v) =>
+                updateProfile('education', { ...profile.education, school: v })
+              }
+            />
+            <SelectField
+              label="Degree"
+              value={profile.education.degree}
+              options={DEGREE_OPTIONS}
+              onChange={(v) =>
+                updateProfile('education', { ...profile.education, degree: v })
+              }
+            />
+            <TextField
+              label="Field of study / major"
+              value={profile.education.fieldOfStudy}
+              onChange={(v) =>
+                updateProfile('education', {
+                  ...profile.education,
+                  fieldOfStudy: v,
+                })
+              }
+            />
+            <TextField
+              label="Graduation year"
+              value={profile.education.gradYear}
+              onChange={(v) =>
+                updateProfile('education', {
+                  ...profile.education,
+                  gradYear: v,
+                })
+              }
+            />
+          </Grid>
+        </Section>
+
         <Section
           title="Work authorization"
         >
@@ -488,6 +528,18 @@ function TristateField(props: {
     </label>
   );
 }
+
+const DEGREE_OPTIONS = [
+  'High School Diploma',
+  "Associate's Degree",
+  "Bachelor's Degree",
+  "Master's Degree",
+  'MBA',
+  'Doctorate (PhD)',
+  'Professional Degree (JD, MD)',
+  'Certificate',
+  'Other',
+];
 
 const GENDER_OPTIONS = [
   'Male',

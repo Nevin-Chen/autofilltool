@@ -165,6 +165,22 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(desired|expected|target).*\b(salary|compensation|pay)\b|salary[\s_-]*(expectation|range)/,
     confidence: 0.8,
   },
+  {
+    kind: 'gradYear',
+    re: /\b(grad(uation)?[\s_-]*(year|date)|year[\s_-]*of[\s_-]*graduation|completion[\s_-]*(year|date))\b/,
+    confidence: 0.75,
+  },
+  {
+    kind: 'fieldOfStudy',
+    re: /\b(field[\s_-]*of[\s_-]*study|major|discipline|concentration|area[\s_-]*of[\s_-]*study)\b/,
+    confidence: 0.75,
+  },
+  { kind: 'degree', re: /\b(degree|qualification)\b/, confidence: 0.7 },
+  {
+    kind: 'school',
+    re: /\b(school|university|college|institution|alma[\s_-]*mater)\b/,
+    confidence: 0.75,
+  },
   { kind: 'gender', re: /\b(gender|sex)\b/, confidence: 0.65 },
   { kind: 'pronouns', re: /\bpronoun/, confidence: 0.7 },
   {

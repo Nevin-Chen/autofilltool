@@ -24,6 +24,20 @@ describe('profile schema', () => {
     expect(parsed.savedAnswers).toEqual([]);
   });
 
+  it('defaults the education block to empty strings', () => {
+    expect(emptyProfile().education).toEqual({
+      school: '',
+      degree: '',
+      fieldOfStudy: '',
+      gradYear: '',
+    });
+  });
+
+  it('backfills education for profiles stored before the field existed', () => {
+    const migrated = migrateProfile({ firstName: 'Ada' }, CURRENT_SCHEMA_VERSION);
+    expect(migrated.education.school).toBe('');
+  });
+
   it('rejects an invalid email', () => {
     const r = ProfileSchema.safeParse({ ...emptyProfile(), email: 'not-an-email' });
     expect(r.success).toBe(false);
@@ -96,6 +110,33 @@ describe('settings schema', () => {
     expect(activeApiKey(ai)).toBe('sk-test');
     expect(activeApiKey({ ...ai, provider: 'anthropic' })).toBe('sk-ant');
     expect(activeApiKey({ ...ai, provider: 'gemini' })).toBe('');
+  });
+
+  it('defaults the per-provider models map to empty', () => {
+    expect(defaultSettings().ai.models).toEqual({});
+  });
+
+  it('persists per-provider models so switching providers does not lose them', () => {
+    const r = SettingsSchema.safeParse({
+      ...defaultSettings(),
+      ai: {
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        models: { ollama: 'qwen2.5:14b', gemini: 'gemini-2.5-flash' },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.ai.models.ollama).toBe('qwen2.5:14b');
+    }
+  });
+
+  it('backfills models={} for settings stored before the field existed', () => {
+    const migrated = migrateSettings(
+      { ai: { provider: 'ollama', model: 'qwen2.5:14b' } },
+      CURRENT_SCHEMA_VERSION,
+    );
+    expect(migrated.ai.models).toEqual({});
   });
 });
 
