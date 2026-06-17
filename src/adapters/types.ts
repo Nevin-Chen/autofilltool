@@ -29,6 +29,10 @@ export type FieldKind =
   | 'race'
   | 'veteranStatus'
   | 'disabilityStatus'
+  | 'school'
+  | 'degree'
+  | 'fieldOfStudy'
+  | 'gradYear'
   | 'coverLetter'
   | 'openEnded';
 

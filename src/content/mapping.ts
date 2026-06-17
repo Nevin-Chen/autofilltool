@@ -64,6 +64,15 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
     case 'disabilityStatus':
       return profile.demographics.disabilityStatus;
 
+    case 'school':
+      return profile.education.school || null;
+    case 'degree':
+      return profile.education.degree || null;
+    case 'fieldOfStudy':
+      return profile.education.fieldOfStudy || null;
+    case 'gradYear':
+      return profile.education.gradYear || null;
+
     case 'coverLetter':
       return profile.defaultCoverLetter || null;
 

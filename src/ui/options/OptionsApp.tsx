@@ -85,9 +85,6 @@ export function OptionsApp() {
     <main className="mx-auto max-w-3xl p-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">AutoFillTool</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          All data is stored locally in your browser (chrome.storage.local)
-        </p>
       </header>
 
       <form onSubmit={onSave} className="space-y-8">
@@ -203,6 +200,46 @@ export function OptionsApp() {
               value={profile.links.other}
               onChange={(v) =>
                 updateProfile('links', { ...profile.links, other: v })
+              }
+            />
+          </Grid>
+        </Section>
+
+        <Section title="Education">
+          <Grid>
+            <TextField
+              label="School / University"
+              value={profile.education.school}
+              onChange={(v) =>
+                updateProfile('education', { ...profile.education, school: v })
+              }
+            />
+            <SelectField
+              label="Degree"
+              value={profile.education.degree}
+              options={DEGREE_OPTIONS}
+              onChange={(v) =>
+                updateProfile('education', { ...profile.education, degree: v })
+              }
+            />
+            <TextField
+              label="Field of study / major"
+              value={profile.education.fieldOfStudy}
+              onChange={(v) =>
+                updateProfile('education', {
+                  ...profile.education,
+                  fieldOfStudy: v,
+                })
+              }
+            />
+            <TextField
+              label="Graduation year"
+              value={profile.education.gradYear}
+              onChange={(v) =>
+                updateProfile('education', {
+                  ...profile.education,
+                  gradYear: v,
+                })
               }
             />
           </Grid>
@@ -359,7 +396,7 @@ export function OptionsApp() {
       </form>
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        v{chrome.runtime.getManifest().version}
+        AutoFillTool v{chrome.runtime.getManifest().version}
       </footer>
     </main>
   );
@@ -404,7 +441,7 @@ function CountryField(props: {
       <select
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— select —</option>
         {!known && props.value !== '' && (
@@ -440,7 +477,7 @@ function PhoneField(props: {
           aria-label="Country dialing code"
           value={iso}
           onChange={(e) => setCountry(e.target.value)}
-          className="w-32 shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          className="w-32 shrink-0 rounded-md border border-slate-300 bg-white pl-2 pr-8 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
         >
           <option value="">—</option>
           {COUNTRIES.map((c) => (
@@ -479,7 +516,7 @@ function TristateField(props: {
             e.target.value === '' ? null : e.target.value === 'yes' ? true : false;
           props.onChange(next);
         }}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— blank —</option>
         <option value="yes">Yes</option>
@@ -488,6 +525,18 @@ function TristateField(props: {
     </label>
   );
 }
+
+const DEGREE_OPTIONS = [
+  'High School Diploma',
+  "Associate's Degree",
+  "Bachelor's Degree",
+  "Master's Degree",
+  'MBA',
+  'Doctorate (PhD)',
+  'Professional Degree (JD, MD)',
+  'Certificate',
+  'Other',
+];
 
 const GENDER_OPTIONS = [
   'Male',
@@ -540,7 +589,7 @@ function SelectField(props: {
       <select
         value={value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— blank —</option>
         {!known && value !== '' && <option value={value}>{value}</option>}
