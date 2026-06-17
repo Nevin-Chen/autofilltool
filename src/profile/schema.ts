@@ -87,6 +87,8 @@ export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),
   apiKeys: z.record(z.string(), z.string()).default({}),
   model: z.string().default(''),
+
+  models: z.record(z.string(), z.string()).default({}),
   endpoint: z.string().default(''),
   cacheResponses: z.boolean().default(false),
   fallbackClassifier: z.boolean().default(false),

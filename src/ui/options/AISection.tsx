@@ -100,17 +100,16 @@ export function AISection({
     };
   }, [providerHost]);
 
-  const [customModels, setCustomModels] = useState<
-    Partial<Record<AiProvider, string>>
-  >(() =>
-    settings.provider !== 'none' ? { [settings.provider]: settings.model } : {},
-  );
-
   const setProvider = (provider: AiProvider) => {
-    const remembered = customModels[provider];
+    const models = { ...settings.models };
+    if (settings.provider !== 'none') {
+      models[settings.provider] = settings.model;
+    }
+    const remembered = models[provider];
     const next: AiSettings = {
       ...settings,
       provider,
+      models,
       model:
         provider === 'none'
           ? ''
@@ -351,11 +350,11 @@ export function AISection({
                 value={settings.model}
                 onChange={(e) => {
                   const value = e.target.value.trim();
-                  setCustomModels((prev) => ({
-                    ...prev,
-                    [settings.provider]: value,
-                  }));
-                  onChange({ ...settings, model: value });
+                  onChange({
+                    ...settings,
+                    model: value,
+                    models: { ...settings.models, [settings.provider]: value },
+                  });
                 }}
                 placeholder={PROVIDER_DEFAULT_MODELS[settings.provider]}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
