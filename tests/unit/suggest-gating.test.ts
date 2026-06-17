@@ -89,4 +89,33 @@ describe('guardedConnect privacy guard (FR-016)', () => {
     expect(connect).toHaveBeenCalledTimes(1);
     expect(onNoProvider).not.toHaveBeenCalled();
   });
+
+  it('reports the resolved settings via onReady before connecting', async () => {
+    const fakePort = {} as chrome.runtime.Port;
+    const connect = vi.fn(() => fakePort);
+    const onReady = vi.fn();
+    await guardedConnect({
+      loadSettings: async () => withProvider('ollama'),
+      connect,
+      onNoProvider: vi.fn(),
+      onReady,
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(onReady.mock.calls[0]?.[0].ai.provider).toBe('ollama');
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(onReady.mock.invocationCallOrder[0]).toBeLessThan(
+      connect.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('does not call onReady when no provider is configured', async () => {
+    const onReady = vi.fn();
+    await guardedConnect({
+      loadSettings: async () => withProvider('none'),
+      connect: vi.fn(),
+      onNoProvider: vi.fn(),
+      onReady,
+    });
+    expect(onReady).not.toHaveBeenCalled();
+  });
 });

@@ -34,6 +34,7 @@ export async function guardedConnect(deps: {
   loadSettings: () => Promise<Settings>;
   connect: () => chrome.runtime.Port;
   onNoProvider: () => void;
+  onReady?: (settings: Settings) => void;
 }): Promise<chrome.runtime.Port | null> {
   let settings: Settings;
   try {
@@ -46,6 +47,7 @@ export async function guardedConnect(deps: {
     deps.onNoProvider();
     return null;
   }
+  deps.onReady?.(settings);
   return deps.connect();
 }
 
@@ -53,7 +55,7 @@ const CAMEL_FLAG = 'autofilltoolSuggestBound';
 
 type PillState =
   | { kind: 'idle' }
-  | { kind: 'working' }
+  | { kind: 'working'; label: string }
   | { kind: 'failure'; message?: string }
   | { kind: 'no-provider' };
 
@@ -111,7 +113,7 @@ function renderState(
       document.createElement('i'),
     );
     const label = document.createElement('span');
-    label.textContent = 'Thinking';
+    label.textContent = state.label;
     btn.append(stop, dots, label);
     btn.title = 'Stop drafting';
     btn.setAttribute('aria-label', 'Stop drafting');
@@ -168,9 +170,9 @@ function attachButtonFor(
     renderState(wrap, { kind: 'idle' }, handlers);
     reposition();
   };
-  const setWorking = () => {
+  const setWorking = (label: string) => {
     clearAutoReset();
-    renderState(wrap, { kind: 'working' }, handlers);
+    renderState(wrap, { kind: 'working', label }, handlers);
     reposition();
   };
   const setFailure = (message?: string) => {
@@ -213,10 +215,14 @@ function attachButtonFor(
       return;
     }
 
+    const ready = { provider: 'none' as Settings['ai']['provider'] };
     const port = await guardedConnect({
       loadSettings: getSettings,
       connect: () => chrome.runtime.connect({ name: AI_PORT_NAME }),
       onNoProvider: setNoProvider,
+      onReady: (s) => {
+        ready.provider = s.ai.provider;
+      },
     });
     if (!port) return;
     currentPort = port;
@@ -229,10 +235,16 @@ function attachButtonFor(
     dispatchInputEvents(textarea);
 
     streaming = true;
-    setWorking();
+
+    setWorking(ready.provider === 'ollama' ? 'Loading model' : 'Thinking');
+    let firstDelta = true;
 
     port.onMessage.addListener((raw: AiBgToClient) => {
       if (raw.kind === 'delta') {
+        if (firstDelta) {
+          firstDelta = false;
+          setWorking('Writing');
+        }
         setNativeValue(textarea, textarea.value + raw.text);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       } else if (raw.kind === 'done') {
