@@ -444,7 +444,7 @@ function CountryField(props: {
       <select
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— select —</option>
         {!known && props.value !== '' && (
@@ -480,7 +480,7 @@ function PhoneField(props: {
           aria-label="Country dialing code"
           value={iso}
           onChange={(e) => setCountry(e.target.value)}
-          className="w-32 shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          className="w-32 shrink-0 rounded-md border border-slate-300 bg-white pl-2 pr-8 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
         >
           <option value="">—</option>
           {COUNTRIES.map((c) => (
@@ -519,7 +519,7 @@ function TristateField(props: {
             e.target.value === '' ? null : e.target.value === 'yes' ? true : false;
           props.onChange(next);
         }}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— blank —</option>
         <option value="yes">Yes</option>
@@ -592,7 +592,7 @@ function SelectField(props: {
       <select
         value={value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
       >
         <option value="">— blank —</option>
         {!known && value !== '' && <option value={value}>{value}</option>}

@@ -27,3 +27,16 @@ body {
     color: #e2e8f0;
   }
 }
+
+/* Native <select> draws its own arrow and reserves uneven horizontal space, so
+   it never lines up with our text inputs. Strip the native control and draw a
+   consistent slate-500 chevron (readable in light + dark). The right-side room
+   for the chevron comes from pr-* utilities on each <select>. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m4 6 4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+}
