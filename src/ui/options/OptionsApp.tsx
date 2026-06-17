@@ -85,9 +85,6 @@ export function OptionsApp() {
     <main className="mx-auto max-w-3xl p-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">AutoFillTool</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          All data is stored locally in your browser (chrome.storage.local)
-        </p>
       </header>
 
       <form onSubmit={onSave} className="space-y-8">
@@ -399,7 +396,7 @@ export function OptionsApp() {
       </form>
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        v{chrome.runtime.getManifest().version}
+        AutoFillTool v{chrome.runtime.getManifest().version}
       </footer>
     </main>
   );
