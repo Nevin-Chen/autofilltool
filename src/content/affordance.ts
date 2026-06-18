@@ -1012,7 +1012,7 @@ function renderAiReviewPane(
   } else if (isSuggestKind) {
     valueBox.append(
       h('span', { class: 'placeholder' }, [
-        'Awaiting ✨ Suggest — open the field and click the Suggest chip to draft.',
+        'Awaiting Autofill: open the field and click the Autofill chip to draft.',
       ]),
     );
   } else {
