@@ -31,6 +31,7 @@ import {
   type AiBgToClient,
 } from '@/types/ai-port';
 import { hasOriginPermission } from '@/lib/permissions';
+import { startKeepAlive } from './keepalive';
 
 async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>> {
   switch (msg.type) {
@@ -321,9 +322,14 @@ chrome.runtime.onConnect.addListener((port) => {
           return;
         }
       }
-      for await (const ev of dispatchAi(req, settings.ai, resume)) {
-        if (aborted) return;
-        safePost(p, ev);
+      const stopKeepAlive = startKeepAlive();
+      try {
+        for await (const ev of dispatchAi(req, settings.ai, resume)) {
+          if (aborted) return;
+          safePost(p, ev);
+        }
+      } finally {
+        stopKeepAlive();
       }
     }
   });

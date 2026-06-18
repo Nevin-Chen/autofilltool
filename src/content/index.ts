@@ -689,7 +689,7 @@ async function runFill(forceFromMsg?: boolean) {
             group: 'ai',
             label: u.label,
             el: u.el,
-            note: 'Skipped: long-form field. Click ✨ Suggest to draft this one, or turn on "Auto-fill Suggest text fields" in the popup.',
+            note: 'Skipped: long-form field. Click Autofill to draft this one, or turn on "Auto-fill Suggest text fields" in the popup.',
           });
           continue;
         }

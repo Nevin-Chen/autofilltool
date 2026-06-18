@@ -34,6 +34,7 @@ export async function guardedConnect(deps: {
   loadSettings: () => Promise<Settings>;
   connect: () => chrome.runtime.Port;
   onNoProvider: () => void;
+  onReady?: (settings: Settings) => void;
 }): Promise<chrome.runtime.Port | null> {
   let settings: Settings;
   try {
@@ -46,21 +47,36 @@ export async function guardedConnect(deps: {
     deps.onNoProvider();
     return null;
   }
+  deps.onReady?.(settings);
   return deps.connect();
 }
 
 const CAMEL_FLAG = 'autofilltoolSuggestBound';
 
+export type SuggestMode = 'append' | 'replace';
+
+export function seedForMode(current: string, mode: SuggestMode): string {
+  if (mode === 'replace') return '';
+  if (current.trim().length === 0) return '';
+  return current.replace(/\s+$/, '') + '\n\n';
+}
+
+type PillHandlers = {
+  onActivate: () => void;
+  onAppend: () => void;
+  onReplace: () => void;
+};
+
 type PillState =
-  | { kind: 'idle' }
-  | { kind: 'working' }
+  | { kind: 'idle'; hasText: boolean }
+  | { kind: 'working'; label: string }
   | { kind: 'failure'; message?: string }
   | { kind: 'no-provider' };
 
 function renderState(
   mount: HTMLElement,
   state: PillState,
-  handlers: { onActivate: () => void },
+  handlers: PillHandlers,
 ): void {
   mount.replaceChildren();
 
@@ -86,18 +102,17 @@ function renderState(
     return;
   }
 
+  if (state.kind === 'idle') {
+    mount.append(buildIdlePill(state.hasText, handlers));
+    return;
+  }
+
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pill';
   btn.addEventListener('click', handlers.onActivate);
 
-  if (state.kind === 'idle') {
-    const spark = document.createElement('span');
-    spark.className = 'spark';
-    spark.textContent = '✨';
-    btn.append(spark, document.createTextNode(' Suggest'));
-    btn.title = 'Draft an answer with AI';
-  } else if (state.kind === 'working') {
+  if (state.kind === 'working') {
     btn.classList.add('working');
     const stop = document.createElement('span');
     stop.className = 'stop-x';
@@ -111,7 +126,7 @@ function renderState(
       document.createElement('i'),
     );
     const label = document.createElement('span');
-    label.textContent = 'Thinking';
+    label.textContent = state.label;
     btn.append(stop, dots, label);
     btn.title = 'Stop drafting';
     btn.setAttribute('aria-label', 'Stop drafting');
@@ -122,6 +137,112 @@ function renderState(
   }
 
   mount.append(btn);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function buildAutofillIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '13');
+  svg.setAttribute('height', '13');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.7');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ['M3 4 L7.5 8 L3 12', 'M8.5 4 L13 8 L8.5 12']) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
+function buildIdlePill(hasText: boolean, handlers: PillHandlers): HTMLElement {
+  if (!hasText) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill';
+    btn.title = 'Draft an answer with AI';
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.appendChild(buildAutofillIcon());
+    btn.append(icon, document.createTextNode('Autofill'));
+    btn.addEventListener('click', handlers.onReplace);
+    return btn;
+  }
+
+  const group = document.createElement('div');
+  group.className = 'pill-menu';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pill';
+  btn.title = 'Choose how to autofill';
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'false');
+  const icon = document.createElement('span');
+  icon.className = 'icon';
+  icon.appendChild(buildAutofillIcon());
+  const caret = document.createElement('span');
+  caret.className = 'caret-glyph';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = '▾';
+  btn.append(icon, document.createTextNode('Autofill'), caret);
+
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  let outside: ((e: Event) => void) | null = null;
+  const closeMenu = () => {
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    if (outside) {
+      window.removeEventListener('pointerdown', outside, true);
+      outside = null;
+    }
+  };
+  const openMenu = () => {
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+
+    outside = (e: Event) => {
+      const root = menu.getRootNode();
+      const host = root instanceof ShadowRoot ? root.host : null;
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+      if (host && !path.includes(host)) closeMenu();
+    };
+    window.addEventListener('pointerdown', outside, true);
+  };
+
+  const item = (text: string, run: () => void): HTMLButtonElement => {
+    const it = document.createElement('button');
+    it.type = 'button';
+    it.className = 'menu-item';
+    it.setAttribute('role', 'menuitem');
+    it.textContent = text;
+    it.addEventListener('click', () => {
+      closeMenu();
+      run();
+    });
+    return it;
+  };
+  menu.append(
+    item('Add to answer', handlers.onAppend),
+    item('Start over', handlers.onReplace),
+  );
+
+  btn.addEventListener('click', () => {
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  });
+
+  group.append(btn, menu);
+  return group;
 }
 
 function attachButtonFor(
@@ -161,16 +282,24 @@ function attachButtonFor(
     }
   };
 
-  const handlers = { onActivate: () => void onActivate() };
+  const handlers: PillHandlers = {
+    onActivate: () => void onActivate(),
+    onAppend: () => void onActivate('append'),
+    onReplace: () => void onActivate('replace'),
+  };
 
   const setIdle = () => {
     clearAutoReset();
-    renderState(wrap, { kind: 'idle' }, handlers);
+    renderState(
+      wrap,
+      { kind: 'idle', hasText: textarea.value.trim().length > 0 },
+      handlers,
+    );
     reposition();
   };
-  const setWorking = () => {
+  const setWorking = (label: string) => {
     clearAutoReset();
-    renderState(wrap, { kind: 'working' }, handlers);
+    renderState(wrap, { kind: 'working', label }, handlers);
     reposition();
   };
   const setFailure = (message?: string) => {
@@ -201,7 +330,7 @@ function attachButtonFor(
     currentPort = null;
   };
 
-  async function onActivate(): Promise<void> {
+  async function onActivate(mode: SuggestMode = 'replace'): Promise<void> {
     if (streaming && currentPort) {
       try {
         currentPort.postMessage({ kind: 'cancel' });
@@ -213,26 +342,32 @@ function attachButtonFor(
       return;
     }
 
+    const ready = { provider: 'none' as Settings['ai']['provider'] };
     const port = await guardedConnect({
       loadSettings: getSettings,
       connect: () => chrome.runtime.connect({ name: AI_PORT_NAME }),
       onNoProvider: setNoProvider,
+      onReady: (s) => {
+        ready.provider = s.ai.provider;
+      },
     });
     if (!port) return;
     currentPort = port;
 
-    if (textarea.value.trim().length === 0) {
-      setNativeValue(textarea, '');
-    } else {
-      setNativeValue(textarea, textarea.value + '\n\n');
-    }
+    setNativeValue(textarea, seedForMode(textarea.value, mode));
     dispatchInputEvents(textarea);
 
     streaming = true;
-    setWorking();
+
+    setWorking(ready.provider === 'ollama' ? 'Loading model' : 'Thinking');
+    let firstDelta = true;
 
     port.onMessage.addListener((raw: AiBgToClient) => {
       if (raw.kind === 'delta') {
+        if (firstDelta) {
+          firstDelta = false;
+          setWorking('Writing');
+        }
         setNativeValue(textarea, textarea.value + raw.text);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       } else if (raw.kind === 'done') {
@@ -298,7 +433,7 @@ function buildStyle(): HTMLStyleElement {
     }
     .pill:hover { background: #1e293b; }
     .pill:disabled { opacity: 0.6; cursor: default; }
-    .pill .spark { color: #7dd3fc; font-size: 13px; line-height: 1; }
+    .pill .icon { color: #7dd3fc; line-height: 0; display: inline-flex; align-items: center; }
 
     .pill.working { padding: 5px 11px 5px 9px; }
     .pill.working .stop-x { color: #f8fafc; font-weight: 700; font-size: 14px; line-height: 1; padding: 0 1px; }
@@ -341,6 +476,31 @@ function buildStyle(): HTMLStyleElement {
     .pill-failure .seg.retry:hover { background: rgba(255,255,255,0.06); }
 
     .pill.no-provider { background: #1e293b; }
+
+    .pill-menu {
+      pointer-events: auto;
+      position: relative;
+      display: inline-flex;
+    }
+    .pill-menu .caret-glyph { font-size: 11px; opacity: 0.85; margin-left: -2px; }
+
+    .menu {
+      position: absolute; top: calc(100% + 6px); right: 0;
+      min-width: 150px;
+      display: flex; flex-direction: column;
+      background: #0f172a; color: #f8fafc;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.30);
+      padding: 4px;
+    }
+    .menu[hidden] { display: none; }
+    .menu-item {
+      text-align: left; background: transparent; border: none; color: inherit;
+      font: inherit; font-weight: 600; cursor: pointer;
+      padding: 7px 9px; border-radius: 7px; white-space: nowrap;
+    }
+    .menu-item:hover { background: #1e293b; }
   `;
   return s;
 }

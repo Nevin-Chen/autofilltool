@@ -194,8 +194,8 @@ export function AISection({
       defaultCollapsed={defaultCollapsed}
       hint={
         <>
-          Adds a <span aria-hidden="true">✨</span> Suggest button next to
-          open-ended textareas. You must select an AI provider to get suggestions.
+          Adds an Autofill button next to open-ended textareas. You must
+          select an AI provider to get suggestions.
         </>
       }
     >
