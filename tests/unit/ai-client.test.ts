@@ -175,6 +175,25 @@ describe('buildPrompt', () => {
     expect(system).not.toMatch(/—/);
   });
 
+  it('structures the system prompt into labelled sections, not one run-on line', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/\n/);
+    expect(system).toMatch(/OUTPUT RULES \(mandatory/);
+    expect(system).toMatch(/WRITING STYLE/);
+    expect(system).toMatch(/GROUNDING/);
+  });
+
+  it('gives positive punctuation guidance, not only the em-dash ban', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/join clauses with a comma or a period/i);
+  });
+
+  it('restates the no-em-dash constraint at the tail of the user message (recency)', async () => {
+    const { user } = await buildPrompt({ question: 'Why us?' }, null);
+    const lastLine = user.trimEnd().split('\n').pop() ?? '';
+    expect(lastLine).toMatch(/do not use em dashes/i);
+  });
+
   it('routes each question type to the right résumé section and adds a motivation case', async () => {
     const { system } = await buildPrompt({ question: 'q' }, null);
     expect(system).toMatch(/For behavioural questions[^.]*## EXPERIENCE/);
