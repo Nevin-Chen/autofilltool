@@ -3,6 +3,7 @@ import type { JobContext } from './job-context';
 import type { Settings } from '@/profile/schema';
 import { getSettings } from '@/profile/store';
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
+import { fieldDescription } from '@/adapters/_shared';
 import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 
 const HOST_DATA_ATTR = 'data-autofilltool-suggest-host';
@@ -26,7 +27,7 @@ export function installSuggestButtons(
     if (!(field.el instanceof HTMLTextAreaElement)) continue;
     if (field.el.dataset[CAMEL_FLAG]) continue;
     field.el.dataset[CAMEL_FLAG] = '1';
-    attachButtonFor(field.el, field.label, ctx);
+    attachButtonFor(field.el, field.label, fieldDescription(field.el), ctx);
   }
 }
 
@@ -248,6 +249,7 @@ function buildIdlePill(hasText: boolean, handlers: PillHandlers): HTMLElement {
 function attachButtonFor(
   textarea: HTMLTextAreaElement,
   label: string,
+  description: string,
   ctx: JobContext,
 ): void {
   const host = document.createElement('div');
@@ -401,6 +403,7 @@ function attachButtonFor(
       req: {
         question: label || textarea.name || 'Open-ended question',
         label,
+        ...(description ? { description } : {}),
         ...(ctx.company || ctx.role
           ? { job: { company: ctx.company, role: ctx.role, jobUrl: ctx.jobUrl } }
           : {}),

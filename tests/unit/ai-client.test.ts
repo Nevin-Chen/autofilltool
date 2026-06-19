@@ -100,6 +100,37 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/Mirror relevant vocabulary from JOB POSTING/);
   });
 
+  it('renders the question subtext under the TASK section', async () => {
+    const { user, system } = await buildPrompt(
+      {
+        question: 'Why do you want to work here?',
+        description:
+          'Be specific. Name a particular project and keep it under 200 words.',
+      },
+      null,
+    );
+    expect(user).toMatch(/=== TASK ===/);
+    expect(user).toMatch(/Additional instructions for this question:/);
+    expect(user).toMatch(/Name a particular project and keep it under 200 words/);
+    expect(system).toMatch(/Follow every instruction in TASK/);
+    expect(system).toMatch(/answer each one/);
+  });
+
+  it('omits the additional-instructions block when no subtext is present', async () => {
+    const { user } = await buildPrompt({ question: 'Why us?' }, null);
+    expect(user).not.toMatch(/Additional instructions for this question:/);
+  });
+
+  it('clips overlong question subtext defensively', async () => {
+    const big = 'B'.repeat(4000);
+    const { user } = await buildPrompt(
+      { question: 'q', description: big },
+      null,
+    );
+    expect(user).not.toMatch(/B{900}/);
+    expect(user).toMatch(/B+…/);
+  });
+
   it('orders sections candidate → posting → task with the question last', async () => {
     const { user } = await buildPrompt(
       {

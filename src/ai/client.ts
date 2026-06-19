@@ -12,6 +12,7 @@ export { extractResumeText };
 export type SuggestRequest = {
   question: string;
   label?: string;
+  description?: string;
   job?: { company?: string; role?: string; jobUrl?: string };
   jobDescription?: string;
   maxChars?: number;
@@ -108,6 +109,7 @@ export async function* dispatch(
 export type BuiltPrompt = { system: string; user: string };
 
 const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
+const QUESTION_DESCRIPTION_PROMPT_BUDGET = 800;
 
 export async function buildPrompt(
   req: SuggestRequest,
@@ -125,6 +127,9 @@ export async function buildPrompt(
     req.job && (req.job.company || req.job.role)
       ? `Applying for ${req.job.role ?? 'a role'}${req.job.company ? ` at ${req.job.company}` : ''}.`
       : '';
+  const description = req.description
+    ? truncate(req.description.trim(), QUESTION_DESCRIPTION_PROMPT_BUDGET)
+    : '';
 
   const resumeIsPlaceholder = !!resumeText && isResumePlaceholder(resumeText);
   const hasResumeContent = !!resumeText && !resumeIsPlaceholder;
@@ -137,7 +142,7 @@ export async function buildPrompt(
     'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE, JOB POSTING, and TASK.',
     "ABOUT THE CANDIDATE contains the user's résumé and is the only source of truth about the user's background.",
     "JOB POSTING contains the employer's description of the role.",
-    'TASK contains the question to answer.',
+    'TASK contains the question to answer, plus any instructions, constraints, or sub-questions attached to it.',
 
     "Hard rule on facts: every specific claim about the user (companies, titles, dates, employers, products, projects, technologies, metrics) MUST be present in ABOUT THE CANDIDATE. Do not invent or infer them. Do not import facts from JOB POSTING and present them as the user's own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.",
     'If the question cannot be fully answered from ABOUT THE CANDIDATE, prefer a partial honest answer over speculation. Write the strongest answer you can from what IS there rather than fabricating new facts.',
@@ -151,6 +156,7 @@ export async function buildPrompt(
     "Mirror relevant vocabulary from JOB POSTING when the user's actual experience supports it, but do not copy large portions of JOB POSTING.",
 
     'Answer the specific question directly. Do not summarize the entire résumé unless the question explicitly asks for a background overview.',
+    'Follow every instruction in TASK. If TASK lists multiple parts or sub-questions, answer each one. Respect the constraints it states (length limits, "give a specific example", required topics). When TASK shows "Additional instructions", treat them as part of the question, not optional context.',
     "Reuse the user's own facts (company names, role titles, metrics, technologies, dates) but rephrase them in natural first-person prose. Never wrap résumé content in quotation marks.",
 
     "Voice: concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
@@ -193,6 +199,9 @@ export async function buildPrompt(
   userParts.push('', '=== TASK ===');
   if (req.label) userParts.push('', `Question label: ${req.label}`);
   userParts.push('', `Question: ${req.question}`);
+  if (description) {
+    userParts.push('', 'Additional instructions for this question:', description);
+  }
 
   userParts.push(
     '',
@@ -208,6 +217,7 @@ export async function buildPrompt(
     resumeSections: countResumeSections(resumeText),
     resumeHead: resumeText.slice(0, 240),
     jdChars: jobDescription.length,
+    descChars: description.length,
     candidateIsSparse,
     userChars: user.length,
   });
@@ -234,6 +244,7 @@ export function estimateTokens(maxChars: number | undefined): number {
 
 export type ClassifyRequest = {
   question: string;
+  description?: string;
   fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
   options?: string[];
   jobDescription?: string;
@@ -427,6 +438,7 @@ export async function classifyField(
       {
         question: req.question,
         label: req.question,
+        ...(req.description ? { description: req.description } : {}),
         ...(req.job ? { job: req.job } : {}),
         ...(req.jobDescription ? { jobDescription: req.jobDescription } : {}),
       },
