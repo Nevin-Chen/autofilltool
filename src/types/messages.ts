@@ -33,6 +33,7 @@ export type AiClassifyMsg = {
   type: 'AI_CLASSIFY';
   request: {
     question: string;
+    description?: string;
     fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
     options?: string[];
     jobDescription?: string;

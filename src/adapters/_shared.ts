@@ -284,6 +284,57 @@ export function bestLabel(el: HTMLElement): string {
   return '';
 }
 
+const DESCRIPTION_SELECTOR =
+  '[class*="description" i], [class*="help" i], [class*="hint" i], [class*="sublabel" i], [class*="sub-label" i], [class*="subtext" i], [class*="instruction" i]';
+
+const DESCRIPTION_MAX = 600;
+
+export function fieldDescription(el: HTMLElement): string {
+  const doc = el.ownerDocument;
+  const label = bestLabel(el);
+
+  const describedBy = el.getAttribute('aria-describedby');
+  if (describedBy && doc) {
+    const parts: string[] = [];
+    for (const id of describedBy.split(/\s+/)) {
+      const ref = doc.getElementById(id);
+      if (ref && !ref.contains(el)) parts.push(textOf(ref));
+    }
+    const cleaned = descriptionMinusLabel(parts.join(' '), label);
+    if (cleaned) return clipDescription(cleaned);
+  }
+
+  let cursor: HTMLElement | null = el.parentElement;
+  for (let depth = 0; cursor && depth < 3; depth++, cursor = cursor.parentElement) {
+    if (depth > 0 && hasOtherFillableField(cursor, el)) break;
+    for (const candidate of Array.from(
+      cursor.querySelectorAll<HTMLElement>(DESCRIPTION_SELECTOR),
+    )) {
+      if (candidate.contains(el)) continue;
+      if (candidate.querySelector('input, textarea, select')) continue;
+      const cleaned = descriptionMinusLabel(textOf(candidate), label);
+      if (cleaned.length >= 8) return clipDescription(cleaned);
+    }
+  }
+  return '';
+}
+
+function descriptionMinusLabel(raw: string, label: string): string {
+  const text = raw.replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const l = label.replace(/\s+/g, ' ').trim();
+  if (!l) return text;
+  if (text === l) return '';
+  if (l.includes(text)) return '';
+  if (text.startsWith(l)) return text.slice(l.length).replace(/^[\s:*.\-–—]+/, '').trim();
+  return text;
+}
+
+function clipDescription(s: string): string {
+  if (s.length <= DESCRIPTION_MAX) return s;
+  return s.slice(0, DESCRIPTION_MAX - 1).trimEnd() + '…';
+}
+
 function pickUnclaimedLabel(scope: HTMLElement, target: HTMLElement): string {
   const candidates = scope.querySelectorAll<HTMLElement>('label, legend');
 

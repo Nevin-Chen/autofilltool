@@ -3,6 +3,7 @@ import type { JobContext } from './job-context';
 import type { Settings } from '@/profile/schema';
 import { getSettings } from '@/profile/store';
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
+import { fieldDescription } from '@/adapters/_shared';
 import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 
 const HOST_DATA_ATTR = 'data-autofilltool-suggest-host';
@@ -26,7 +27,7 @@ export function installSuggestButtons(
     if (!(field.el instanceof HTMLTextAreaElement)) continue;
     if (field.el.dataset[CAMEL_FLAG]) continue;
     field.el.dataset[CAMEL_FLAG] = '1';
-    attachButtonFor(field.el, field.label, ctx);
+    attachButtonFor(field.el, field.label, fieldDescription(field.el), ctx);
   }
 }
 
@@ -53,18 +54,8 @@ export async function guardedConnect(deps: {
 
 const CAMEL_FLAG = 'autofilltoolSuggestBound';
 
-export type SuggestMode = 'append' | 'replace';
-
-export function seedForMode(current: string, mode: SuggestMode): string {
-  if (mode === 'replace') return '';
-  if (current.trim().length === 0) return '';
-  return current.replace(/\s+$/, '') + '\n\n';
-}
-
 type PillHandlers = {
   onActivate: () => void;
-  onAppend: () => void;
-  onReplace: () => void;
 };
 
 type PillState =
@@ -161,93 +152,22 @@ function buildAutofillIcon(): SVGSVGElement {
 }
 
 function buildIdlePill(hasText: boolean, handlers: PillHandlers): HTMLElement {
-  if (!hasText) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pill';
-    btn.title = 'Draft an answer with AI';
-    const icon = document.createElement('span');
-    icon.className = 'icon';
-    icon.appendChild(buildAutofillIcon());
-    btn.append(icon, document.createTextNode('Autofill'));
-    btn.addEventListener('click', handlers.onReplace);
-    return btn;
-  }
-
-  const group = document.createElement('div');
-  group.className = 'pill-menu';
-
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pill';
-  btn.title = 'Choose how to autofill';
-  btn.setAttribute('aria-haspopup', 'menu');
-  btn.setAttribute('aria-expanded', 'false');
+  btn.title = hasText ? 'Replace with a fresh AI draft' : 'Draft an answer with AI';
   const icon = document.createElement('span');
   icon.className = 'icon';
   icon.appendChild(buildAutofillIcon());
-  const caret = document.createElement('span');
-  caret.className = 'caret-glyph';
-  caret.setAttribute('aria-hidden', 'true');
-  caret.textContent = '▾';
-  btn.append(icon, document.createTextNode('Autofill'), caret);
-
-  const menu = document.createElement('div');
-  menu.className = 'menu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-
-  let outside: ((e: Event) => void) | null = null;
-  const closeMenu = () => {
-    menu.hidden = true;
-    btn.setAttribute('aria-expanded', 'false');
-    if (outside) {
-      window.removeEventListener('pointerdown', outside, true);
-      outside = null;
-    }
-  };
-  const openMenu = () => {
-    menu.hidden = false;
-    btn.setAttribute('aria-expanded', 'true');
-
-    outside = (e: Event) => {
-      const root = menu.getRootNode();
-      const host = root instanceof ShadowRoot ? root.host : null;
-      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
-      if (host && !path.includes(host)) closeMenu();
-    };
-    window.addEventListener('pointerdown', outside, true);
-  };
-
-  const item = (text: string, run: () => void): HTMLButtonElement => {
-    const it = document.createElement('button');
-    it.type = 'button';
-    it.className = 'menu-item';
-    it.setAttribute('role', 'menuitem');
-    it.textContent = text;
-    it.addEventListener('click', () => {
-      closeMenu();
-      run();
-    });
-    return it;
-  };
-  menu.append(
-    item('Add to answer', handlers.onAppend),
-    item('Start over', handlers.onReplace),
-  );
-
-  btn.addEventListener('click', () => {
-    if (menu.hidden) openMenu();
-    else closeMenu();
-  });
-
-  group.append(btn, menu);
-  return group;
+  btn.append(icon, document.createTextNode(hasText ? 'Retry' : 'Autofill'));
+  btn.addEventListener('click', handlers.onActivate);
+  return btn;
 }
 
 function attachButtonFor(
   textarea: HTMLTextAreaElement,
   label: string,
+  description: string,
   ctx: JobContext,
 ): void {
   const host = document.createElement('div');
@@ -284,8 +204,6 @@ function attachButtonFor(
 
   const handlers: PillHandlers = {
     onActivate: () => void onActivate(),
-    onAppend: () => void onActivate('append'),
-    onReplace: () => void onActivate('replace'),
   };
 
   const setIdle = () => {
@@ -325,12 +243,16 @@ function attachButtonFor(
   window.addEventListener('scroll', reposition, { passive: true });
   window.addEventListener('resize', reposition);
 
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => reposition()).observe(textarea);
+  }
+
   const resetStream = () => {
     streaming = false;
     currentPort = null;
   };
 
-  async function onActivate(mode: SuggestMode = 'replace'): Promise<void> {
+  async function onActivate(): Promise<void> {
     if (streaming && currentPort) {
       try {
         currentPort.postMessage({ kind: 'cancel' });
@@ -354,7 +276,7 @@ function attachButtonFor(
     if (!port) return;
     currentPort = port;
 
-    setNativeValue(textarea, seedForMode(textarea.value, mode));
+    setNativeValue(textarea, '');
     dispatchInputEvents(textarea);
 
     streaming = true;
@@ -401,6 +323,7 @@ function attachButtonFor(
       req: {
         question: label || textarea.name || 'Open-ended question',
         label,
+        ...(description ? { description } : {}),
         ...(ctx.company || ctx.role
           ? { job: { company: ctx.company, role: ctx.role, jobUrl: ctx.jobUrl } }
           : {}),
@@ -476,31 +399,6 @@ function buildStyle(): HTMLStyleElement {
     .pill-failure .seg.retry:hover { background: rgba(255,255,255,0.06); }
 
     .pill.no-provider { background: #1e293b; }
-
-    .pill-menu {
-      pointer-events: auto;
-      position: relative;
-      display: inline-flex;
-    }
-    .pill-menu .caret-glyph { font-size: 11px; opacity: 0.85; margin-left: -2px; }
-
-    .menu {
-      position: absolute; top: calc(100% + 6px); right: 0;
-      min-width: 150px;
-      display: flex; flex-direction: column;
-      background: #0f172a; color: #f8fafc;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 10px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.30);
-      padding: 4px;
-    }
-    .menu[hidden] { display: none; }
-    .menu-item {
-      text-align: left; background: transparent; border: none; color: inherit;
-      font: inherit; font-weight: 600; cursor: pointer;
-      padding: 7px 9px; border-radius: 7px; white-space: nowrap;
-    }
-    .menu-item:hover { background: #1e293b; }
   `;
   return s;
 }

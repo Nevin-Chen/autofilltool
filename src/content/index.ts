@@ -16,7 +16,7 @@ import {
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
-import { isCompliancePattern, unclassifiedFromDetected } from '@/adapters/_shared';
+import { fieldDescription, isCompliancePattern, unclassifiedFromDetected } from '@/adapters/_shared';
 import type { UnclassifiedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResume } from '@/profile/store';
@@ -776,6 +776,7 @@ async function runAiFallbackQueue(
       try {
         const request: {
           question: string;
+          description?: string;
           fieldType: typeof u.fieldType;
           options?: string[];
           jobDescription?: string;
@@ -788,6 +789,10 @@ async function runAiFallbackQueue(
         };
         if (u.options) request.options = u.options;
         if (u.fieldType === 'textarea') {
+          if (u.el instanceof HTMLElement) {
+            const desc = fieldDescription(u.el);
+            if (desc) request.description = desc;
+          }
           if (ctx.jobDescription) request.jobDescription = ctx.jobDescription;
           if (ctx.company || ctx.role || ctx.jobUrl) {
             request.job = {

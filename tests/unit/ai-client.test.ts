@@ -100,6 +100,37 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/Mirror relevant vocabulary from JOB POSTING/);
   });
 
+  it('renders the question subtext under the TASK section', async () => {
+    const { user, system } = await buildPrompt(
+      {
+        question: 'Why do you want to work here?',
+        description:
+          'Be specific. Name a particular project and keep it under 200 words.',
+      },
+      null,
+    );
+    expect(user).toMatch(/=== TASK ===/);
+    expect(user).toMatch(/Additional instructions for this question:/);
+    expect(user).toMatch(/Name a particular project and keep it under 200 words/);
+    expect(system).toMatch(/Follow every instruction in TASK/);
+    expect(system).toMatch(/answer each one/);
+  });
+
+  it('omits the additional-instructions block when no subtext is present', async () => {
+    const { user } = await buildPrompt({ question: 'Why us?' }, null);
+    expect(user).not.toMatch(/Additional instructions for this question:/);
+  });
+
+  it('clips overlong question subtext defensively', async () => {
+    const big = 'B'.repeat(4000);
+    const { user } = await buildPrompt(
+      { question: 'q', description: big },
+      null,
+    );
+    expect(user).not.toMatch(/B{900}/);
+    expect(user).toMatch(/B+…/);
+  });
+
   it('orders sections candidate → posting → task with the question last', async () => {
     const { user } = await buildPrompt(
       {
@@ -142,6 +173,25 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/Never wrap résumé content in quotation marks/);
 
     expect(system).not.toMatch(/—/);
+  });
+
+  it('structures the system prompt into labelled sections, not one run-on line', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/\n/);
+    expect(system).toMatch(/OUTPUT RULES \(mandatory/);
+    expect(system).toMatch(/WRITING STYLE/);
+    expect(system).toMatch(/GROUNDING/);
+  });
+
+  it('gives positive punctuation guidance, not only the em-dash ban', async () => {
+    const { system } = await buildPrompt({ question: 'q' }, null);
+    expect(system).toMatch(/join clauses with a comma or a period/i);
+  });
+
+  it('restates the no-em-dash constraint at the tail of the user message (recency)', async () => {
+    const { user } = await buildPrompt({ question: 'Why us?' }, null);
+    const lastLine = user.trimEnd().split('\n').pop() ?? '';
+    expect(lastLine).toMatch(/do not use em dashes/i);
   });
 
   it('routes each question type to the right résumé section and adds a motivation case', async () => {

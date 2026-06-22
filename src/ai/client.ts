@@ -12,6 +12,7 @@ export { extractResumeText };
 export type SuggestRequest = {
   question: string;
   label?: string;
+  description?: string;
   job?: { company?: string; role?: string; jobUrl?: string };
   jobDescription?: string;
   maxChars?: number;
@@ -21,6 +22,8 @@ export type StreamEvent =
   | { kind: 'delta'; text: string }
   | { kind: 'done' }
   | { kind: 'error'; message: string };
+
+const WRITING_TEMPERATURE = 0.4;
 
 export async function* dispatch(
   req: SuggestRequest,
@@ -55,6 +58,7 @@ export async function* dispatch(
         system: prompt.system,
         user: prompt.user,
         maxTokens,
+        temperature: WRITING_TEMPERATURE,
       })) {
         yield { kind: 'delta', text };
       }
@@ -66,6 +70,7 @@ export async function* dispatch(
         system: prompt.system,
         user: prompt.user,
         maxTokens,
+        temperature: WRITING_TEMPERATURE,
       })) {
         yield { kind: 'delta', text };
       }
@@ -77,6 +82,7 @@ export async function* dispatch(
         system: prompt.system,
         user: prompt.user,
         maxTokens,
+        temperature: WRITING_TEMPERATURE,
       })) {
         yield { kind: 'delta', text };
       }
@@ -88,6 +94,7 @@ export async function* dispatch(
         system: prompt.system,
         user: prompt.user,
         maxTokens,
+        temperature: WRITING_TEMPERATURE,
         endpoint: settings.endpoint,
       })) {
         yield { kind: 'delta', text };
@@ -108,6 +115,7 @@ export async function* dispatch(
 export type BuiltPrompt = { system: string; user: string };
 
 const JOB_DESCRIPTION_PROMPT_BUDGET = 3000;
+const QUESTION_DESCRIPTION_PROMPT_BUDGET = 800;
 
 export async function buildPrompt(
   req: SuggestRequest,
@@ -125,53 +133,79 @@ export async function buildPrompt(
     req.job && (req.job.company || req.job.role)
       ? `Applying for ${req.job.role ?? 'a role'}${req.job.company ? ` at ${req.job.company}` : ''}.`
       : '';
+  const description = req.description
+    ? truncate(req.description.trim(), QUESTION_DESCRIPTION_PROMPT_BUDGET)
+    : '';
 
   const resumeIsPlaceholder = !!resumeText && isResumePlaceholder(resumeText);
   const hasResumeContent = !!resumeText && !resumeIsPlaceholder;
   const candidateIsSparse = !hasResumeContent;
 
-  const rules = [
-    'You are helping the user draft an answer to a job application question.',
-    "Write in the first person, in the user's authentic voice.",
-
-    'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE, JOB POSTING, and TASK.',
-    "ABOUT THE CANDIDATE contains the user's résumé and is the only source of truth about the user's background.",
-    "JOB POSTING contains the employer's description of the role.",
-    'TASK contains the question to answer.',
-
+  const groundingRules = [
     "Hard rule on facts: every specific claim about the user (companies, titles, dates, employers, products, projects, technologies, metrics) MUST be present in ABOUT THE CANDIDATE. Do not invent or infer them. Do not import facts from JOB POSTING and present them as the user's own experience. If a fact is not in ABOUT THE CANDIDATE, you do not have it.",
     'If the question cannot be fully answered from ABOUT THE CANDIDATE, prefer a partial honest answer over speculation. Write the strongest answer you can from what IS there rather than fabricating new facts.',
+  ];
 
+  const sectionRules = [
     'The résumé inside ABOUT THE CANDIDATE may be split into labelled sections (## CONTACT, ## SUMMARY, ## EXPERIENCE, ## SKILLS, ## PROJECTS, ## EDUCATION). Mine the section that matches the question.',
     "For behavioural questions ('tell me about a time', 'describe a situation', 'give an example'), pick a concrete real example from ## EXPERIENCE. Describe the situation, what was done, and the result.",
     'For technology questions, pull from ## SKILLS and ## EXPERIENCE.',
     'For education questions, use ## EDUCATION only.',
     "For motivation questions ('why this role', 'why this company'), connect specific details from the user's background to specific responsibilities, qualifications, or values in JOB POSTING. Do not invent personal history or experiences.",
+  ];
 
+  const answeringRules = [
     "Mirror relevant vocabulary from JOB POSTING when the user's actual experience supports it, but do not copy large portions of JOB POSTING.",
-
     'Answer the specific question directly. Do not summarize the entire résumé unless the question explicitly asks for a background overview.',
+    'Follow every instruction in TASK. If TASK lists multiple parts or sub-questions, answer each one. Respect the constraints it states (length limits, "give a specific example", required topics). When TASK shows "Additional instructions", treat them as part of the question, not optional context.',
     "Reuse the user's own facts (company names, role titles, metrics, technologies, dates) but rephrase them in natural first-person prose. Never wrap résumé content in quotation marks.",
+    "Match the question's tone.",
+    lengthHint,
+  ];
 
-    "Voice: concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
+  const styleRules = [
+    "Concrete over polished. Every paragraph needs at least one anchor a reader could check: a proper noun, a specific number, a named decision, a tool, a date. Words like 'various', 'meaningful', 'a range of', 'broad implications' do not count. If the most concrete thing in a paragraph is the candidate's name and a date, it is still too generic.",
     "Plain words. Do not reach for synonyms of basic words like problem, change, system, build, ship. Repeat the ordinary word when it is the right one. Do not use 'furthermore', 'moreover', 'additionally', 'in addition', 'thus', or 'hence' as transitions; use a pronoun or a new sentence instead.",
     "Do not perform. No keynote cadence, no mission-statement phrasing, no applause-line endings. No service-desk tone like 'Great question', 'I hope this helps', 'Feel free to reach out'. Start where the answer starts. Stop where it stops.",
     "Watch regularity. The most visible LLM tell is rhythmic sameness: identical paragraph arcs, the same punctuation move every paragraph, repeated 'not X, but Y' patterns, paragraph-closing type definitions like 'the kind of X where Y'. Break those patterns where they dominate, do not just mask them with random variation.",
     'Show concrete before generalizing. Lead with what happened, where it appeared, what constraint mattered, what failed or worked, then what it seems to mean. Do not open with an abstract diagnosis the reader has nothing concrete to attach to yet.',
     'Cut anything performative. Drop sentences whose only job is to announce the next sentence. Collapse paragraphs that restate each other. Replace the most generic clause with something specific, or delete it.',
+  ];
 
-    "Banned vocabulary (do not use in any form): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges').",
+  const outputRules = [
+    'Punctuation: join clauses with a comma or a period. For an aside or a pause, use a comma, parentheses, or a new sentence. These are the only options.',
     'Do not use em dashes. Use commas, parentheses, or separate sentences instead. Hyphens in compound words (front-end, data-driven) and en dashes in date ranges (2019-2022) are fine.',
-
-    "Match the question's tone.",
-    lengthHint,
-
+    "Banned vocabulary (do not use in any form): delve, delve into, leverage, leveraging, robust, seamless, seamlessly, game-changing, game-changer, unlock, unlock the power of, cutting-edge, holistic, synergy, passionate about, in today's fast-paced world, at the end of the day, foster a culture of, embark, navigate (used figuratively, e.g. 'navigate challenges').",
     candidateIsSparse
       ? 'ABOUT THE CANDIDATE is empty (no parseable résumé attached). Do NOT fabricate any experience, employer, role, or project. Return exactly this line and stop: [Please upload a résumé in the autofilltool options, then click Suggest again.]'
       : 'Return only the answer text. No preamble, no surrounding quotation marks, no markdown headings.',
   ];
 
-  const system = rules.join(' ');
+  const system = [
+    'You are helping the user draft an answer to a job application question.',
+    "Write in the first person, in the user's authentic voice.",
+    '',
+    'INPUT SECTIONS',
+    'The prompt has three sections marked with === HEADERS ===: ABOUT THE CANDIDATE, JOB POSTING, and TASK.',
+    "ABOUT THE CANDIDATE contains the user's résumé and is the only source of truth about the user's background.",
+    "JOB POSTING contains the employer's description of the role.",
+    'TASK contains the question to answer, plus any instructions, constraints, or sub-questions attached to it.',
+    '',
+    'GROUNDING',
+    ...groundingRules,
+    '',
+    'WHICH RÉSUMÉ SECTION TO USE',
+    ...sectionRules,
+    '',
+    'ANSWERING',
+    ...answeringRules,
+    '',
+    'WRITING STYLE',
+    ...styleRules,
+    '',
+    'OUTPUT RULES (mandatory, follow every one)',
+    ...outputRules,
+  ].join('\n');
 
   const userParts: string[] = [];
 
@@ -193,10 +227,13 @@ export async function buildPrompt(
   userParts.push('', '=== TASK ===');
   if (req.label) userParts.push('', `Question label: ${req.label}`);
   userParts.push('', `Question: ${req.question}`);
+  if (description) {
+    userParts.push('', 'Additional instructions for this question:', description);
+  }
 
   userParts.push(
     '',
-    'Write the answer now. Anchor every specific claim (companies, titles, dates, projects, technologies, metrics) in ABOUT THE CANDIDATE. Use JOB POSTING only to choose which of the candidate\'s experiences to highlight and which vocabulary to mirror.',
+    'Write the answer now. Anchor every specific claim (companies, titles, dates, projects, technologies, metrics) in ABOUT THE CANDIDATE. Use JOB POSTING only to choose which of the candidate\'s experiences to highlight and which vocabulary to mirror. Write in plain, concrete language, and do not use em dashes: join clauses with a comma or a period.',
   );
 
   const user = userParts.join('\n');
@@ -208,6 +245,7 @@ export async function buildPrompt(
     resumeSections: countResumeSections(resumeText),
     resumeHead: resumeText.slice(0, 240),
     jdChars: jobDescription.length,
+    descChars: description.length,
     candidateIsSparse,
     userChars: user.length,
   });
@@ -234,6 +272,7 @@ export function estimateTokens(maxChars: number | undefined): number {
 
 export type ClassifyRequest = {
   question: string;
+  description?: string;
   fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
   options?: string[];
   jobDescription?: string;
@@ -427,6 +466,7 @@ export async function classifyField(
       {
         question: req.question,
         label: req.question,
+        ...(req.description ? { description: req.description } : {}),
         ...(req.job ? { job: req.job } : {}),
         ...(req.jobDescription ? { jobDescription: req.jobDescription } : {}),
       },
