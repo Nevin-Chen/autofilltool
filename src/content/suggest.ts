@@ -227,7 +227,6 @@ function attachButtonFor(
       message !== undefined ? { kind: 'failure', message } : { kind: 'failure' },
       handlers,
     );
-    autoResetTimer = setTimeout(setIdle, 8000);
     reposition();
   };
   const setNoProvider = () => {

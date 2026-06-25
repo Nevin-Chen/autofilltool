@@ -1,8 +1,5 @@
-/** Proactive in-page fill trigger (FAB) with idle/filling/done phases. */
-// Reuses the pill's nav style (navy card, sky accents) + brand icon.
-// Buttons in closed Shadow DOM; idempotent injection, dismissible per-page.
-
 import type { AdapterId } from '@/profile/schema';
+import { cssEscape } from '@/adapters/_shared';
 
 const HOST_ID = 'autofilltool-trigger-host';
 
@@ -858,20 +855,91 @@ function readFieldValue(el: HTMLElement): string {
     const opt = el.options[el.selectedIndex];
     return (opt?.text ?? el.value ?? '').trim();
   }
-  // For combobox-style fields (react-select, etc.) the input is cleared after
-  // a selection commits; the displayed value lives in a sibling `single-value`
-  // element. Prefer that over the empty input value so the AI review pane
-  // shows what was selected instead of "(field is empty)".
   if (isComboboxTrigger(el)) {
     const v = extractComboboxValue(el);
     if (v) return v;
   }
+  if (el instanceof HTMLInputElement && (el.type === 'radio' || el.type === 'checkbox')) {
+    return readChoiceValue(el);
+  }
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     return (el.value ?? '').trim();
+  }
+  const buttons = Array.from(el.querySelectorAll<HTMLElement>('button'));
+  if (buttons.length > 0) {
+    const active = buttons.find(isActiveButton);
+    return active ? (active.textContent ?? '').trim() : '';
   }
   const aria = el.getAttribute('aria-label-value');
   if (aria) return aria.trim();
   return (el.textContent ?? '').trim();
+}
+
+function isActiveButton(b: HTMLElement): boolean {
+  if (b.getAttribute('aria-pressed') === 'true') return true;
+  if (b.getAttribute('aria-checked') === 'true') return true;
+  return /(?:^|[\s_-])active(?:[\s_-]|$)/i.test(b.className);
+}
+
+function readChoiceValue(el: HTMLInputElement): string {
+  if (el.type === 'radio') {
+    const root = el.form ?? el.ownerDocument;
+    const group = el.name
+      ? Array.from(
+          root.querySelectorAll<HTMLInputElement>(
+            `input[type="radio"][name="${cssEscape(el.name)}"]`,
+          ),
+        )
+      : [el];
+    const checked = group.find((r) => r.checked);
+    return checked ? choiceLabel(checked) : '';
+  }
+  const container = el.closest<HTMLElement>(
+    'fieldset, [role="group"], [role="radiogroup"], [data-field-entry-id], .ashby-application-form-field-entry',
+  );
+  let boxes: HTMLInputElement[];
+  if (container) {
+    boxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+  } else if (el.name) {
+    boxes = Array.from(
+      el.ownerDocument.querySelectorAll<HTMLInputElement>(
+        `input[type="checkbox"][name="${cssEscape(el.name)}"]`,
+      ),
+    );
+  } else {
+    boxes = [el];
+  }
+  const checked = boxes
+    .filter(isCheckboxSelected)
+    .map(choiceLabel)
+    .filter((s) => s.length > 0);
+  if (checked.length > 0) return checked.join(', ');
+  return isCheckboxSelected(el) ? choiceLabel(el) || 'Yes' : '';
+}
+
+function isCheckboxSelected(input: HTMLInputElement): boolean {
+  if (input.checked) return true;
+  if (input.getAttribute('aria-checked') === 'true') return true;
+  const wrap = input.parentElement;
+  return !!wrap && /(?:^|[\s_-])checked(?:[\s_-]|$)/i.test(wrap.className);
+}
+
+function choiceLabel(input: HTMLInputElement): string {
+  const id = input.id;
+  if (id) {
+    const lbl = input.ownerDocument.querySelector<HTMLLabelElement>(
+      `label[for="${cssEscape(id)}"]`,
+    );
+    const t = lbl ? (lbl.textContent ?? '').trim() : '';
+    if (t) return t;
+  }
+  const wrap = input.closest('label');
+  if (wrap) {
+    const t = (wrap.textContent ?? '').trim();
+    if (t) return t;
+  }
+  const v = (input.value ?? '').trim();
+  return v.toLowerCase() === 'on' ? '' : v;
 }
 
 function isComboboxTrigger(el: HTMLElement): boolean {
