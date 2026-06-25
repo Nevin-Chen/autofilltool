@@ -41,10 +41,10 @@ export type DetectedField = {
   kind: FieldKind;
   label: string;
   confidence: number;
-  widget?: 'native' | 'virtualizedDropdown';
+  widget?: 'native' | 'virtualizedDropdown' | 'buttonGroup';
 };
 
-export type UnclassifiedFieldType = 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
+export type UnclassifiedFieldType = 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox' | 'buttongroup';
 
 export type UnclassifiedField = {
   el: HTMLElement;

@@ -569,6 +569,7 @@ export function findUnclassifiedFields(
 
   const out: UnclassifiedField[] = [];
   const seenRadioGroups = new Set<string>();
+  const seenCheckboxEls = new WeakSet<HTMLElement>();
 
   const allCombos = Array.from(
     root.querySelectorAll<HTMLElement>('[role="combobox"], [aria-haspopup="listbox"]'),
@@ -601,13 +602,27 @@ export function findUnclassifiedFields(
       if (seenRadioGroups.has(name)) continue;
       seenRadioGroups.add(name);
       const groupOptions = collectRadioGroupOptions(root, name);
-      const label = bestLabel(el);
+      const label = groupQuestionLabel(el, groupOptions);
       if (!label) continue;
       out.push({ el, label, fieldType: 'radio', options: groupOptions });
       continue;
     }
 
-    if (el instanceof HTMLInputElement && el.type === 'checkbox') continue;
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+      if (seenCheckboxEls.has(el)) continue;
+      const boxes = collectCheckboxGroup(root, el);
+      for (const b of boxes) seenCheckboxEls.add(b);
+
+      if (boxes.length < 2) continue;
+      const optionLabels = boxes
+        .map((b) => bestLabel(b).trim())
+        .filter((s) => s.length > 0);
+      if (optionLabels.length < 2) continue;
+      const label = groupQuestionLabel(el, optionLabels);
+      if (!label || isConsentCheckboxLabel(label)) continue;
+      out.push({ el, label, fieldType: 'checkbox', options: optionLabels });
+      continue;
+    }
 
     const label = bestLabel(el);
     if (!label) continue;
@@ -636,6 +651,16 @@ export function findUnclassifiedFields(
 export function unclassifiedFromDetected(field: DetectedField): UnclassifiedField | null {
   const { el, label } = field;
   if (!label) return null;
+  if (field.widget === 'buttonGroup') {
+    const options: string[] = [];
+    if (el instanceof HTMLElement) {
+      for (const b of Array.from(el.querySelectorAll<HTMLElement>('button'))) {
+        const t = textOf(b).trim();
+        if (t && !options.includes(t)) options.push(t);
+      }
+    }
+    return { el, label, fieldType: 'buttongroup', options };
+  }
   if (field.widget === 'virtualizedDropdown') {
     return { el, label, fieldType: 'combobox' };
   }
@@ -706,6 +731,91 @@ function isVisibleForUnclassifiedDetection(el: HTMLElement): boolean {
   if (el.getAttribute('aria-hidden') === 'true') return false;
   if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
   return true;
+}
+
+const CONSENT_CHECKBOX_PATTERN =
+  /\b(i\s+(agree|consent|certify|acknowledge|confirm|authorize|accept|understand|attest)|agree to|consent to|terms\s+(of|and)|privacy\s+policy|i\s+have\s+read|opt[- ]?in|subscribe)\b/i;
+
+export function isConsentCheckboxLabel(label: string): boolean {
+  return CONSENT_CHECKBOX_PATTERN.test(label);
+}
+
+export function groupQuestionLabel(
+  rep: HTMLInputElement,
+  optionLabels: string[],
+): string {
+  const lowerOptions = new Set(
+    optionLabels.map((o) => o.trim().toLowerCase()).filter((s) => s.length > 0),
+  );
+
+  const viaGroup = groupLabelFor(rep);
+  if (viaGroup && !lowerOptions.has(viaGroup.toLowerCase())) return viaGroup;
+
+  const container = rep.closest<HTMLElement>(
+    'fieldset, [role="radiogroup"], [role="group"]',
+  );
+  if (container) {
+    const t = questionTitleWithin(container, lowerOptions);
+    if (t) return t;
+  }
+
+  let cursor: HTMLElement | null = rep.parentElement;
+  for (let depth = 0; cursor && depth < 4; depth++, cursor = cursor.parentElement) {
+    const t = questionTitleWithin(cursor, lowerOptions);
+    if (t) return t;
+  }
+
+  return bestLabel(rep);
+}
+
+function questionTitleWithin(scope: HTMLElement, lowerOptions: Set<string>): string {
+  const candidates = scope.querySelectorAll<HTMLElement>('legend, label');
+  for (const c of Array.from(candidates)) {
+    if (c instanceof HTMLLabelElement && labelTargetsChoiceInput(c)) continue;
+    const t = textOf(c);
+    if (!t) continue;
+    if (lowerOptions.has(t.toLowerCase())) continue;
+    return t;
+  }
+  return '';
+}
+
+function labelTargetsChoiceInput(label: HTMLLabelElement): boolean {
+  const forId = label.getAttribute('for');
+  if (forId) {
+    const ref = label.ownerDocument.getElementById(forId);
+    if (
+      ref instanceof HTMLInputElement &&
+      (ref.type === 'radio' || ref.type === 'checkbox')
+    ) {
+      return true;
+    }
+  }
+  return !!label.querySelector('input[type="radio"], input[type="checkbox"]');
+}
+
+export function collectCheckboxGroup(
+  root: Document,
+  el: HTMLInputElement,
+): HTMLInputElement[] {
+  const container = el.closest<HTMLElement>(
+    'fieldset, [role="group"], [role="radiogroup"]',
+  );
+  let boxes: HTMLInputElement[];
+  if (container) {
+    boxes = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
+  } else if (el.name) {
+    boxes = Array.from(
+      root.querySelectorAll<HTMLInputElement>(
+        `input[type="checkbox"][name="${cssEscape(el.name)}"]`,
+      ),
+    );
+  } else {
+    boxes = [el];
+  }
+  return boxes.filter((b) => isFillable(b));
 }
 
 export function defaultDetectAll(

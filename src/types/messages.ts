@@ -34,7 +34,7 @@ export type AiClassifyMsg = {
   request: {
     question: string;
     description?: string;
-    fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
+    fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox';
     options?: string[];
     jobDescription?: string;
     job?: { company?: string; role?: string; jobUrl?: string };

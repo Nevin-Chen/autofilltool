@@ -273,7 +273,7 @@ export function estimateTokens(maxChars: number | undefined): number {
 export type ClassifyRequest = {
   question: string;
   description?: string;
-  fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox';
+  fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox';
   options?: string[];
   jobDescription?: string;
   job?: { company?: string; role?: string; jobUrl?: string };
@@ -293,6 +293,9 @@ export function buildClassifyPrompt(
   const optionsBlock = (() => {
     if (!req.options || req.options.length === 0) return '';
     const lines = req.options.map((o) => `- ${o}`).join('\n');
+    if (req.fieldType === 'checkbox') {
+      return `\nAvailable options (return every one that applies, each copied verbatim, separated by commas):\n${lines}\n`;
+    }
     if (mode === 'preference') {
       return `\nAvailable options (you MUST return one of these verbatim):\n${lines}\n`;
     }
@@ -301,6 +304,8 @@ export function buildClassifyPrompt(
 
   const formatHint = (() => {
     switch (req.fieldType) {
+      case 'checkbox':
+        return 'Reply with the exact text of every option that applies, copied verbatim, separated by commas. No explanation, no markdown. If none apply, reply with the single word: SKIP';
       case 'radio':
       case 'select':
       case 'combobox':
@@ -489,7 +494,10 @@ function pickClassifyMode(req: ClassifyRequest): 'strict' | 'preference' {
 
   const opts = req.options ?? [];
   if (
-    (req.fieldType === 'radio' || req.fieldType === 'select' || req.fieldType === 'combobox') &&
+    (req.fieldType === 'radio' ||
+      req.fieldType === 'select' ||
+      req.fieldType === 'combobox' ||
+      req.fieldType === 'checkbox') &&
     opts.length >= 2 &&
     opts.length <= 30
   ) {
