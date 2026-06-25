@@ -738,6 +738,85 @@ describe('AI chip — skip-reason notes', () => {
     expect(__getAiAnswerTextForTests()).toBe('Yes');
   });
 
+  it('AI review pane shows only the active option of a button group, not "YesNo"', () => {
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <button class="_option_1svni_32 _active_1svni_57">Yes</button>
+      <button class="_option_1svni_32">No</button>
+      <input type="checkbox" tabindex="-1" name="q" />
+    `;
+    document.body.appendChild(container);
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Are you located within the continental US?', el: container },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('Yes');
+  });
+
+  it('AI review pane shows the selected radio option label, not "on"', () => {
+    const fs = document.createElement('fieldset');
+    fs.innerHTML = `
+      <input type="radio" id="r-yes" name="r" /><label for="r-yes">Yes</label>
+      <input type="radio" id="r-no" name="r" /><label for="r-no">No</label>
+    `;
+    document.body.appendChild(fs);
+    fs.querySelector<HTMLInputElement>('#r-no')!.checked = true;
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Authorized?', el: fs.querySelector<HTMLInputElement>('#r-yes')! },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('No');
+  });
+
+  it('AI review pane shows checked checkbox option labels, not "on"', () => {
+    const fs = document.createElement('fieldset');
+    fs.innerHTML = `
+      <input type="checkbox" id="t-react" name="t" /><label for="t-react">React</label>
+      <input type="checkbox" id="t-vue" name="t" /><label for="t-vue">Vue</label>
+      <input type="checkbox" id="t-svelte" name="t" /><label for="t-svelte">Svelte</label>
+    `;
+    document.body.appendChild(fs);
+    const react = fs.querySelector<HTMLInputElement>('#t-react')!;
+    react.checked = true;
+    fs.querySelector<HTMLInputElement>('#t-svelte')!.checked = true;
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Which have you used?', el: react },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('React, Svelte');
+  });
+
+  it('AI review pane joins an Ashby multi-select (per-option names, class-based checked state)', () => {
+    const entry = document.createElement('div');
+    entry.setAttribute('data-field-entry-id', 'langs');
+    entry.innerHTML = `
+      <fieldset class="ashby-application-form-field-entry">
+        <label class="ashby-application-form-question-title" for="langs">Which coding languages are you proficient in?</label>
+        <div class="_option"><span class="_container_1danv_28"><input type="checkbox" id="lc-0" name="C/C++"></span><label for="lc-0">C/C++</label></div>
+        <div class="_option"><span class="_container_1danv_28"><input type="checkbox" id="lc-1" name="Java"></span><label for="lc-1">Java</label></div>
+        <div class="_option"><span class="_container_1danv_28 _checked_1danv_87"><input type="checkbox" id="lc-2" name="JavaScript"></span><label for="lc-2" class="_checked_1258i_57">JavaScript</label></div>
+        <div class="_option"><span class="_container_1danv_28 _checked_1danv_87"><input type="checkbox" id="lc-3" name="Python"></span><label for="lc-3" class="_checked_1258i_57">Python</label></div>
+        <div class="_option"><span class="_container_1danv_28 _checked_1danv_87"><input type="checkbox" id="lc-4" name="Typescript"></span><label for="lc-4" class="_checked_1258i_57">Typescript</label></div>
+        <div class="_option"><span class="_container_1danv_28"><input type="checkbox" id="lc-5" name="Go"></span><label for="lc-5">Go</label></div>
+      </fieldset>
+    `;
+    document.body.appendChild(entry);
+    const rep = entry.querySelector<HTMLInputElement>('#lc-0')!;
+
+    showFillTriggerDone(baseStats, []);
+    setAiFallbackProgress(1, 0, [
+      { group: 'ai', label: 'Which coding languages are you proficient in?', el: rep },
+    ]);
+    __enterReviewForTests('ai');
+    expect(__getAiAnswerTextForTests()).toBe('JavaScript, Python, Typescript');
+  });
+
   it('AI review pane falls back to data-value when single-value child is absent', () => {
     const trigger = document.createElement('div');
     trigger.setAttribute('role', 'combobox');
