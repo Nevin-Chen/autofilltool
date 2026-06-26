@@ -8,7 +8,8 @@ import { genericAdapter } from '@/adapters/generic';
 import { ashbyAdapter } from '@/adapters/ashby';
 import { buildClassifyPrompt, parseClassifyResponse } from '@/ai/client';
 import { resolveAiOption } from '@/content/ai-fallback';
-import { harvestComboboxOptions } from '@/content/filler';
+import { harvestComboboxOptions, fillCheckboxGroup, fillButtonGroup } from '@/content/filler';
+import type { DetectedField } from '@/adapters/types';
 import { emptyProfile } from '@/profile/schema';
 
 describe('isCompliancePattern', () => {
@@ -599,5 +600,73 @@ describe('resolveAiOption', () => {
   it('returns null when nothing matches', () => {
     expect(resolveAiOption('Klingon', race)).toBeNull();
     expect(resolveAiOption('', yesNo)).toBeNull();
+  });
+});
+
+describe('fillCheckboxGroup', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+  });
+
+  it('ticks only the chosen options in the group', () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <label for="t">Which of these have you used?</label>
+          <input type="checkbox" id="t-react" name="t" /><label for="t-react">React</label>
+          <input type="checkbox" id="t-vue" name="t" /><label for="t-vue">Vue</label>
+          <input type="checkbox" id="t-svelte" name="t" /><label for="t-svelte">Svelte</label>
+        </fieldset>
+      </form>
+    `;
+    const rep = document.getElementById('t-react') as HTMLInputElement;
+    const action = fillCheckboxGroup(
+      rep,
+      ['React', 'Svelte'],
+      { forceOverwrite: true, suppressFlash: true },
+      { label: 'Which of these have you used?', kind: 'openEnded' },
+    );
+    expect(action.status).toBe('filled');
+    expect((document.getElementById('t-react') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('t-svelte') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('t-vue') as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe('fillButtonGroup', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+  });
+
+  function group(html: string): { field: DetectedField; clicked: string[] } {
+    document.body.innerHTML = html;
+    const container = document.querySelector<HTMLElement>('.opts')!;
+    const clicked: string[] = [];
+    for (const b of Array.from(container.querySelectorAll('button'))) {
+      b.addEventListener('click', () => clicked.push((b.textContent ?? '').trim()));
+    }
+    const field: DetectedField = {
+      el: container,
+      kind: 'authorizedToWorkInUS',
+      label: 'Are you authorized to work in the US?',
+      confidence: 1,
+      widget: 'buttonGroup',
+    };
+    return { field, clicked };
+  }
+
+  const yesno = `
+    <div class="opts">
+      <button>Yes</button>
+      <button>No</button>
+      <input type="checkbox" tabindex="-1" name="q" />
+    </div>
+  `;
+
+  it('clicks the button matching the value', () => {
+    const { field, clicked } = group(yesno);
+    const action = fillButtonGroup(field, 'No', { forceOverwrite: false, suppressFlash: true });
+    expect(action.status).toBe('filled');
+    expect(clicked).toEqual(['No']);
   });
 });

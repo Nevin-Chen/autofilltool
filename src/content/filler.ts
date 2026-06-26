@@ -1,4 +1,5 @@
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
+import { bestLabel } from '@/adapters/_shared';
 import type { DetectedField } from '@/adapters/types';
 
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
@@ -289,6 +290,145 @@ function fillRadio(
   target.click();
   if (!opts.suppressFlash) flashFilled(target);
   return { ...meta, status: 'filled' };
+}
+
+export function fillButtonGroup(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: FillOptions,
+): FillAction {
+  const meta: Meta = { label: field.label, kind: field.kind };
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { ...meta, status: 'skipped', note: 'no value in profile' };
+  }
+  if (!(field.el instanceof HTMLElement)) {
+    return { ...meta, status: 'unsupported', note: 'button group container missing' };
+  }
+
+  const buttons = Array.from(
+    field.el.querySelectorAll<HTMLButtonElement>('button'),
+  ).filter((b) => !looksLikeSubmit(b) && (b.textContent ?? '').trim().length > 0);
+  if (buttons.length === 0) {
+    return { ...meta, status: 'error', note: 'no option buttons in group' };
+  }
+
+  const want = String(rawValue).trim().toLowerCase();
+  const synonyms: Record<string, string[]> = {
+    yes: ['yes', 'true', 'y'],
+    no: ['no', 'false', 'n'],
+    true: ['yes', 'true', 'y'],
+    false: ['no', 'false', 'n'],
+  };
+  const targets = synonyms[want] ?? [want];
+  const textOfButton = (b: HTMLButtonElement) => (b.textContent ?? '').trim().toLowerCase();
+
+  let target = buttons.find((b) => targets.includes(textOfButton(b)));
+  if (!target) {
+    const prefix = buttons.filter((b) =>
+      targets.some((t) => textOfButton(b).startsWith(t)),
+    );
+    if (prefix.length === 1) target = prefix[0];
+  }
+  if (!target) {
+    const contains = buttons.filter((b) => {
+      const t = textOfButton(b);
+      return targets.some((x) => t.includes(x) || x.includes(t));
+    });
+    if (contains.length === 1) target = contains[0];
+  }
+  if (!target) {
+    return { ...meta, status: 'error', note: `no option matched "${String(rawValue)}"` };
+  }
+
+  const active = buttons.find(isButtonActive);
+  if (active && !opts.forceOverwrite) {
+    return {
+      ...meta,
+      status: 'skipped',
+      note: active === target ? 'already in desired state' : 'already filled',
+    };
+  }
+
+  target.click();
+  if (!opts.suppressFlash) flashFilled(target);
+  return { ...meta, status: 'filled' };
+}
+
+function isButtonActive(b: HTMLElement): boolean {
+  if (b.getAttribute('aria-pressed') === 'true') return true;
+  if (b.getAttribute('aria-checked') === 'true') return true;
+  return /(?:^|[\s_-])active(?:[\s_-]|$)/i.test(b.className);
+}
+
+export function fillCheckboxGroup(
+  rep: HTMLInputElement,
+  chosenLabels: string[],
+  opts: FillOptions,
+  meta: Meta,
+): FillAction {
+  const boxes = checkboxGroupForFill(rep).filter((b) => !looksLikeSubmit(b));
+  if (boxes.length === 0) {
+    return { ...meta, status: 'error', note: 'no checkboxes in group' };
+  }
+
+  let ticked = 0;
+  for (const want of chosenLabels) {
+    const target = matchCheckboxByLabel(boxes, want);
+    if (!target) continue;
+    if (!target.checked) {
+      target.click();
+      if (!opts.suppressFlash) flashFilled(target);
+    }
+    ticked++;
+  }
+
+  if (ticked === 0) {
+    return {
+      ...meta,
+      status: 'error',
+      note: `no checkbox matched "${chosenLabels.join(', ')}"`,
+    };
+  }
+  return { ...meta, status: 'filled' };
+}
+
+function checkboxGroupForFill(rep: HTMLInputElement): HTMLInputElement[] {
+  const container = rep.closest<HTMLElement>(
+    'fieldset, [role="group"], [role="radiogroup"], [data-field-entry-id], .ashby-application-form-field-entry',
+  );
+  if (container) {
+    const boxes = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
+    if (boxes.length > 0) return boxes;
+  }
+  if (rep.name) {
+    const byName = Array.from(
+      rep.ownerDocument.querySelectorAll<HTMLInputElement>(
+        `input[type="checkbox"][name="${cssEscape(rep.name)}"]`,
+      ),
+    );
+    if (byName.length > 0) return byName;
+  }
+  return [rep];
+}
+
+function matchCheckboxByLabel(
+  boxes: HTMLInputElement[],
+  want: string,
+): HTMLInputElement | null {
+  const target = want.trim().toLowerCase();
+  if (!target) return null;
+  for (const b of boxes) {
+    if (bestLabel(b).trim().toLowerCase() === target) return b;
+  }
+  for (const b of boxes) {
+    const candidates = [b.value, b.getAttribute('aria-label') ?? '', labelTextFor(b)]
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0);
+    if (candidates.includes(target)) return b;
+  }
+  return null;
 }
 
 function coerceBool(v: string | boolean | null | undefined): boolean | null {

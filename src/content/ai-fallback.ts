@@ -27,3 +27,21 @@ export function resolveAiOption(rawValue: string, options: string[]): string | n
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+export function parseMultiSelect(rawValue: string, options: string[]): string[] {
+  const parts = rawValue
+    .split(/[\n;,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const candidates = parts.length > 0 ? parts : [rawValue];
+  const picks: string[] = [];
+  for (const c of candidates) {
+    const resolved = resolveAiOption(c, options);
+    if (resolved && !picks.includes(resolved)) picks.push(resolved);
+  }
+  if (picks.length === 0) {
+    const resolved = resolveAiOption(rawValue, options);
+    if (resolved) picks.push(resolved);
+  }
+  return picks;
+}

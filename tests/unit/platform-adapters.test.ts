@@ -606,6 +606,41 @@ describe('ashbyAdapter — fixture', () => {
     expect(groupFields.length).toBe(1);
     expect(groupFields[0]?.kind).toBe('willingToRelocate');
   });
+
+  it('detectAll surfaces a custom (no-keyword) radio question with its real label, not the first option', () => {
+    const { unclassified } = ashbyAdapter.detectAll!(document);
+    const u = unclassified.find((x) => x.el.id === 'live-prev-applied-yes');
+    expect(u?.fieldType).toBe('radio');
+    expect(u?.label).toBe('Have you previously applied to this company?');
+    expect(u?.options).toEqual(['Yes', 'No']);
+  });
+
+  it('detectAll surfaces a multi-option checkbox question with its options', () => {
+    const { unclassified } = ashbyAdapter.detectAll!(document);
+    const u = unclassified.find((x) => x.fieldType === 'checkbox');
+    expect(u?.label).toBe('Which of these have you worked with? (Select all that apply)');
+    expect(u?.options).toEqual(['React', 'Vue']);
+  });
+
+  it('detectAll never surfaces the lone consent checkbox', () => {
+    const { unclassified } = ashbyAdapter.detectAll!(document);
+    expect(unclassified.some((u) => u.el.id === 'live-certify-input')).toBe(false);
+  });
+
+  it('detectFields classifies a keyword-matched <button> group (Yes/No) as a buttonGroup widget', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const entry = document.querySelector('[data-field-entry-id="live-workauth"]')!;
+    const f = fields.find((x) => entry.contains(x.el) && x.widget === 'buttonGroup');
+    expect(f, 'work-auth button group should be detected').toBeDefined();
+    expect(f?.kind).toBe('authorizedToWorkInUS');
+    expect(f?.el.querySelectorAll('button').length).toBe(2);
+  });
+
+  it('does not double-surface a classified button group in detectAll', () => {
+    const { unclassified } = ashbyAdapter.detectAll!(document);
+    const entry = document.querySelector('[data-field-entry-id="live-workauth"]')!;
+    expect(unclassified.some((u) => entry.contains(u.el))).toBe(false);
+  });
 });
 
 describe('workdayAdapter — fixture', () => {

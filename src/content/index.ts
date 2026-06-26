@@ -9,6 +9,8 @@ import { pickAdapter } from './detector';
 import {
   fillField,
   fillVirtualizedDropdown,
+  fillCheckboxGroup,
+  fillButtonGroup,
   harvestComboboxOptions,
   isFileAlreadyAttached,
   markThinking,
@@ -22,7 +24,7 @@ import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResume } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
 import { sendToBackground } from '@/lib/messaging';
-import { resolveAiOption } from './ai-fallback';
+import { resolveAiOption, parseMultiSelect } from './ai-fallback';
 import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
@@ -446,6 +448,8 @@ async function runFill(forceFromMsg?: boolean) {
         forceOverwrite,
         suppressFlash: animate,
       });
+    } else if (field.widget === 'buttonGroup') {
+      action = fillButtonGroup(field, value, { forceOverwrite, suppressFlash: animate });
     } else {
       action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
     }
@@ -487,6 +491,8 @@ async function runFill(forceFromMsg?: boolean) {
         forceOverwrite,
         suppressFlash: animate,
       });
+    } else if (field.widget === 'buttonGroup') {
+      action = fillButtonGroup(field, value, { forceOverwrite, suppressFlash: animate });
     } else {
       action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
     }
@@ -774,17 +780,19 @@ async function runAiFallbackQueue(
 
       let resp: AiClassifyResponse;
       try {
+        const fieldTypeForAi =
+          u.fieldType === 'buttongroup' ? 'radio' : u.fieldType;
         const request: {
           question: string;
           description?: string;
-          fieldType: typeof u.fieldType;
+          fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox';
           options?: string[];
           jobDescription?: string;
           job?: { company?: string; role?: string; jobUrl?: string };
           wasClassified?: boolean;
         } = {
           question: u.label,
-          fieldType: u.fieldType,
+          fieldType: fieldTypeForAi,
           wasClassified: u.wasClassified,
         };
         if (u.options) request.options = u.options;
@@ -831,10 +839,56 @@ async function runAiFallbackQueue(
         continue;
       }
 
+      if (u.fieldType === 'checkbox' && u.options && u.options.length > 0) {
+        const picks = parseMultiSelect(value, u.options);
+        if (picks.length === 0) {
+          pillAiFallback(filledByAi, total - i - 1, [
+            {
+              group: 'ai',
+              label: u.label,
+              el: u.el,
+              note: `AI suggested "${value}" but it didn't match any option. Pick one manually.`,
+            },
+          ]);
+          continue;
+        }
+        let action: FillAction | null = null;
+        try {
+          if (u.el instanceof HTMLInputElement) {
+            action = fillCheckboxGroup(
+              u.el,
+              picks,
+              { forceOverwrite, suppressFlash: true },
+              { label: u.label, kind: 'openEnded' },
+            );
+          }
+        } catch (err) {
+          log.warn('AI fallback checkbox fill failed', err);
+        }
+        if (action && action.status === 'filled') {
+          filledByAi++;
+          if (animate && u.el instanceof HTMLElement) applyFlash(u.el);
+          pillAiFallback(filledByAi, total - i - 1, [
+            { group: 'ai', label: u.label, el: u.el },
+          ]);
+          continue;
+        }
+        pillAiFallback(filledByAi, total - i - 1, [
+          {
+            group: 'ai',
+            label: u.label,
+            el: u.el,
+            note: 'AI returned an answer but the checkboxes rejected it — fill it in manually.',
+          },
+        ]);
+        continue;
+      }
+
       if (
         (u.fieldType === 'radio' ||
           u.fieldType === 'select' ||
-          u.fieldType === 'combobox') &&
+          u.fieldType === 'combobox' ||
+          u.fieldType === 'buttongroup') &&
         u.options &&
         u.options.length > 0
       ) {
@@ -866,6 +920,11 @@ async function runAiFallbackQueue(
         let action: FillAction;
         if (u.fieldType === 'combobox') {
           action = await fillVirtualizedDropdown(fakeField, value, {
+            forceOverwrite,
+            suppressFlash: true,
+          });
+        } else if (u.fieldType === 'buttongroup') {
+          action = fillButtonGroup(fakeField, value, {
             forceOverwrite,
             suppressFlash: true,
           });
