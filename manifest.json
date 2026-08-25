@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.3.0",
-  "description": "Local-first autofill for online job applications. You stay in control of submission.",
+  "version": "1.4.0",
+  "description": "A somewhat lazy tool to amke the most out of local models and AI subscriptions for customized outputs on job applications",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",

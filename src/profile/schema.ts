@@ -88,9 +88,16 @@ export const AiProviderSchema = z.enum([
   'anthropic',
   'gemini',
   'ollama',
+  'claude-bridge',
   'none',
 ]);
 export type AiProvider = z.infer<typeof AiProviderSchema>;
+
+const KEYLESS_PROVIDERS = new Set<string>(['ollama', 'claude-bridge']);
+
+export function providerNeedsKey(provider: string): boolean {
+  return provider !== 'none' && !KEYLESS_PROVIDERS.has(provider);
+}
 
 export const AiSettingsSchema = z.object({
   provider: AiProviderSchema.default('none'),

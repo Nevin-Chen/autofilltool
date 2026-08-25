@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AiProvider, AiSettings } from '@/profile/schema';
-import { activeApiKey } from '@/profile/schema';
+import { activeApiKey, providerNeedsKey } from '@/profile/schema';
 import {
   hasOriginPermission,
   requestOriginPermission,
@@ -12,12 +12,29 @@ import {
   OLLAMA_DEFAULT_MODEL,
   resolveOriginForPermission,
 } from '@/ai/providers/ollama';
+import {
+  CLAUDE_BRIDGE_DEFAULT_BASE,
+  CLAUDE_BRIDGE_DEFAULT_MODEL,
+} from '@/ai/providers/claude-bridge';
 import { Section } from './Section';
 
-const REMOTE_PROVIDER_HOSTS: Record<
-  Exclude<AiProvider, 'none' | 'ollama'>,
-  string
-> = {
+type LocalProvider = 'ollama' | 'claude-bridge';
+type RemoteProvider = Exclude<AiProvider, 'none' | LocalProvider>;
+
+function isLocalProvider(p: AiProvider): p is LocalProvider {
+  return p === 'ollama' || p === 'claude-bridge';
+}
+
+function needsKey(p: AiProvider): p is RemoteProvider {
+  return providerNeedsKey(p);
+}
+
+const LOCAL_PROVIDER_BASE: Record<LocalProvider, string> = {
+  ollama: OLLAMA_DEFAULT_BASE,
+  'claude-bridge': CLAUDE_BRIDGE_DEFAULT_BASE,
+};
+
+const REMOTE_PROVIDER_HOSTS: Record<RemoteProvider, string> = {
   openai: 'https://api.openai.com/',
   anthropic: 'https://api.anthropic.com/',
   gemini: 'https://generativelanguage.googleapis.com/',
@@ -28,15 +45,16 @@ const PROVIDER_DEFAULT_MODELS: Record<Exclude<AiProvider, 'none'>, string> = {
   anthropic: 'claude-3-5-haiku-20241022',
   gemini: 'gemini-2.5-flash',
   ollama: OLLAMA_DEFAULT_MODEL,
+  'claude-bridge': CLAUDE_BRIDGE_DEFAULT_MODEL,
 };
 
-const PROVIDER_KEY_HINT: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
+const PROVIDER_KEY_HINT: Record<RemoteProvider, string> = {
   openai: 'sk-…',
   anthropic: 'sk-ant-…',
   gemini: 'AIza…',
 };
 
-const PROVIDER_KEY_URL: Record<Exclude<AiProvider, 'none' | 'ollama'>, string> = {
+const PROVIDER_KEY_URL: Record<RemoteProvider, string> = {
   openai: 'https://platform.openai.com/api-keys',
   anthropic: 'https://console.anthropic.com/settings/keys',
   gemini: 'https://aistudio.google.com/app/apikey',
@@ -75,8 +93,10 @@ export function AISection({
 
   const providerHost = useMemo(() => {
     if (settings.provider === 'none') return null;
-    if (settings.provider === 'ollama') {
-      return resolveOriginForPermission(settings.endpoint || OLLAMA_DEFAULT_BASE);
+    if (isLocalProvider(settings.provider)) {
+      return resolveOriginForPermission(
+        settings.endpoint || LOCAL_PROVIDER_BASE[settings.provider],
+      );
     }
     return REMOTE_PROVIDER_HOSTS[settings.provider];
   }, [settings.provider, settings.endpoint]);
@@ -159,7 +179,7 @@ export function AISection({
       setStatus({ kind: 'error', text: 'Pick a provider first.' });
       return;
     }
-    if (settings.provider !== 'ollama' && !activeApiKey(settings)) {
+    if (needsKey(settings.provider) && !activeApiKey(settings)) {
       setStatus({ kind: 'error', text: 'Add an API key first.' });
       return;
     }
@@ -255,7 +275,31 @@ export function AISection({
               Ollama (local)
               {savedProvider === 'ollama' && <CurrentTag />}
             </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="ai-provider"
+                checked={settings.provider === 'claude-bridge'}
+                onChange={() => setProvider('claude-bridge')}
+              />
+              Claude Code (local bridge)
+              {savedProvider === 'claude-bridge' && <CurrentTag />}
+            </label>
           </div>
+          {settings.provider === 'claude-bridge' && (
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Drafts run through your Claude Code subscription, not an API key.
+              Does not use Ollama. Start the bridge with{' '}
+              <code className="font-mono">npm run bridge</code>, then leave the
+              endpoint below at{' '}
+              <span className="font-mono">{CLAUDE_BRIDGE_DEFAULT_BASE}</span>.
+              Models: <span className="font-mono">opus</span>,{' '}
+              <span className="font-mono">sonnet</span>, or{' '}
+              <span className="font-mono">haiku</span>. See{' '}
+              <span className="font-mono">bridge/README.md</span> for setup and
+              the writing-voice spec.
+            </p>
+          )}
           {settings.provider === 'gemini' && (
             <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
               <span className="font-mono">gemini-2.5-flash</span> is
@@ -292,7 +336,7 @@ export function AISection({
 
         {settings.provider !== 'none' && (
           <>
-            {settings.provider !== 'ollama' && (
+            {needsKey(settings.provider) && (
               <label className="block text-sm">
                 <span className="mb-1 block text-slate-700 dark:text-slate-200">
                   API key
@@ -316,7 +360,7 @@ export function AISection({
               </label>
             )}
 
-            {settings.provider === 'ollama' && (
+            {isLocalProvider(settings.provider) && (
               <label className="block text-sm">
                 <span className="mb-1 block text-slate-700 dark:text-slate-200">
                   Endpoint
@@ -407,7 +451,7 @@ export function AISection({
                 disabled={
                   !granted ||
                   testing ||
-                  (settings.provider !== 'ollama' && !activeApiKey(settings))
+                  (needsKey(settings.provider) && !activeApiKey(settings))
                 }
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
               >

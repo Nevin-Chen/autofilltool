@@ -25,6 +25,7 @@ import {
   OLLAMA_DEFAULT_BASE,
   resolveOriginForPermission,
 } from '@/ai/providers/ollama';
+import { CLAUDE_BRIDGE_DEFAULT_BASE } from '@/ai/providers/claude-bridge';
 import {
   AI_PORT_NAME,
   isAiClientMsg,
@@ -310,7 +311,12 @@ chrome.runtime.onConnect.addListener((port) => {
                   resolveOriginForPermission(
                     settings.ai.endpoint || OLLAMA_DEFAULT_BASE,
                   ) ?? ''
-                : '';
+                : settings.ai.provider === 'claude-bridge'
+                  ?
+                    resolveOriginForPermission(
+                      settings.ai.endpoint || CLAUDE_BRIDGE_DEFAULT_BASE,
+                    ) ?? ''
+                  : '';
       if (providerHost) {
         const permitted = await hasOriginPermission(providerHost);
         if (!permitted) {
