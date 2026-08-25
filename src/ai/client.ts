@@ -1,9 +1,13 @@
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
-import { activeApiKey } from '@/profile/schema';
+import { activeApiKey, providerNeedsKey } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
 import { streamGemini, GEMINI_DEFAULT_MODEL } from './providers/gemini';
 import { streamOllama, OLLAMA_DEFAULT_MODEL } from './providers/ollama';
+import {
+  streamClaudeBridge,
+  CLAUDE_BRIDGE_DEFAULT_MODEL,
+} from './providers/claude-bridge';
 import { extractResumeText, isResumePlaceholder } from './resume-text';
 import { log } from '@/lib/logger';
 
@@ -38,7 +42,7 @@ export async function* dispatch(
     return;
   }
   const apiKey = activeApiKey(settings);
-  if (settings.provider !== 'ollama' && !apiKey) {
+  if (providerNeedsKey(settings.provider) && !apiKey) {
     yield {
       kind: 'error',
       message: 'No AI provider configured. Open Options → AI to add a key.',
@@ -83,6 +87,19 @@ export async function* dispatch(
         user: prompt.user,
         maxTokens,
         temperature: WRITING_TEMPERATURE,
+      })) {
+        yield { kind: 'delta', text };
+      }
+    } else if (settings.provider === 'claude-bridge') {
+      const model = settings.model || CLAUDE_BRIDGE_DEFAULT_MODEL;
+      for await (const text of streamClaudeBridge({
+        apiKey,
+        model,
+        system: prompt.system,
+        user: prompt.user,
+        maxTokens,
+        temperature: WRITING_TEMPERATURE,
+        endpoint: settings.endpoint,
       })) {
         yield { kind: 'delta', text };
       }
@@ -462,7 +479,7 @@ export async function classifyField(
   resume: ResumeRecord | null = null,
 ): Promise<string | null> {
   if (settings.provider === 'none') return null;
-  if (settings.provider !== 'ollama' && !activeApiKey(settings)) return null;
+  if (providerNeedsKey(settings.provider) && !activeApiKey(settings)) return null;
 
   const useWritingPrompt =
     req.fieldType === 'textarea' && (req.jobDescription || resume);
@@ -558,6 +575,20 @@ async function classifyDirect(
         user: prompt.user,
         maxTokens,
         temperature,
+      })) {
+        accumulated += text;
+        if (accumulated.length > accumulationCap) break;
+      }
+    } else if (settings.provider === 'claude-bridge') {
+      const model = settings.model || CLAUDE_BRIDGE_DEFAULT_MODEL;
+      for await (const text of streamClaudeBridge({
+        apiKey,
+        model,
+        system: prompt.system,
+        user: prompt.user,
+        maxTokens,
+        temperature,
+        endpoint: settings.endpoint,
       })) {
         accumulated += text;
         if (accumulated.length > accumulationCap) break;

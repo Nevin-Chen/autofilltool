@@ -4,6 +4,7 @@ import {
   SettingsSchema,
   ResumeRecordSchema,
   SubmissionRecordSchema,
+  providerNeedsKey,
 } from './schema';
 
 type MigrationFn = (raw: unknown) => unknown;
@@ -23,12 +24,7 @@ const settingsMigrations: Record<number, MigrationFn> = {
       aiRaw.apiKeys && typeof aiRaw.apiKeys === 'object'
         ? { ...(aiRaw.apiKeys as Record<string, string>) }
         : {};
-    if (
-      oldKey &&
-      provider !== 'none' &&
-      provider !== 'ollama' &&
-      !apiKeys[provider]
-    ) {
+    if (oldKey && providerNeedsKey(provider) && !apiKeys[provider]) {
       apiKeys[provider] = oldKey;
     }
     return { ...r, ai: { ...aiRaw, apiKeys } };
