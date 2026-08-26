@@ -1,17 +1,7 @@
-/**
- * Best-effort {company, role, jobUrl} from a posting page, to pre-fill the
- * "Mark submitted" form. Conservative: never throws; fields stay empty when no
- * reliable signal is found.
- */
-
 export type JobContext = {
   company: string;
   role: string;
   jobUrl: string;
-  /**
-   * Posting body text as AI Suggest context, filled by the caller from the
-   * adapter's `getJobDescription`. `extractJobContext` leaves it empty.
-   */
   jobDescription: string;
 };
 
@@ -24,24 +14,19 @@ export function extractJobContext(doc: Document, url: URL): JobContext {
   };
 }
 
-/* -------------------------------------------------------------- role */
-
 function extractRole(doc: Document): string {
-  // 1. OpenGraph / Twitter card titles are usually clean.
+  const fromLd = readJobPostingLd(doc);
+  if (fromLd?.title) return fromLd.title;
+
   const og = metaContent(doc, 'meta[property="og:title"]');
   if (og) return cleanTitle(og);
   const tw = metaContent(doc, 'meta[name="twitter:title"]');
   if (tw) return cleanTitle(tw);
 
-  // 2. JSON-LD JobPosting if present.
-  const fromLd = readJobPostingLd(doc);
-  if (fromLd?.title) return fromLd.title;
-
-  // 3. Common ATS / job-page selectors.
   const selectors = [
-    'h1.posting-headline h2', // Lever
-    '.posting-headline h2', // Lever (older)
-    'h1[data-automation-id="jobPostingHeader"]', // Workday
+    'h1.posting-headline h2',
+    '.posting-headline h2',
+    'h1[data-automation-id="jobPostingHeader"]',
     '[data-testid="job-title"]',
     '[data-test="jobTitle"]',
     '.job-title',
@@ -53,30 +38,21 @@ function extractRole(doc: Document): string {
     if (t) return cleanTitle(t);
   }
 
-  // 4. <title> last (noisy); split on "Role — Company" separators if present.
   const title = doc.title;
   const split = title.match(/^(.+?)\s*[|\-–—]\s*.+$/);
   return cleanTitle(split?.[1] ?? title);
 }
 
-/* -------------------------------------------------------------- company */
-
 function extractCompany(doc: Document, url: URL): string {
   const fromLd = readJobPostingLd(doc);
   if (fromLd?.company) return fromLd.company;
 
-  // ATS host heuristics run BEFORE og:site_name because embedded ATS iframes
-  // (e.g. Greenhouse mounted inside a company career page) set og:site_name to
-  // generic template text like "Embed". The URL path/subdomain is the
-  // reliable signal in those cases.
   const fromAts = companyFromAtsUrl(url);
   if (fromAts) return fromAts;
 
-  // OpenGraph site_name is usually the company on company-owned posting pages.
   const og = metaContent(doc, 'meta[property="og:site_name"]');
   if (og) return og.trim();
 
-  // Fallback: document title's "Role — Company" pattern.
   const t = doc.title;
   const m = t.match(/^(.+?)\s*[|\-–—]\s*(.+)$/);
   if (m?.[2]) return cleanTitle(m[2]);
@@ -84,17 +60,6 @@ function extractCompany(doc: Document, url: URL): string {
   return '';
 }
 
-/**
- * Pull the company slug out of a known ATS URL: first path segment for
- * Greenhouse / Lever / Ashby, hostname subdomain for Workday. Returns null on
- * miss so the caller can fall through to lower-confidence signals.
- *
- * Greenhouse special case: the embed-widget posting URL is
- * `boards.greenhouse.io/embed/job_app?for={company}&token={id}`, where the
- * first path segment is the literal "embed" and the company lives in the
- * `for` query param. Without this, the iframe would surface "Embed" as the
- * company.
- */
 function companyFromAtsUrl(url: URL): string | null {
   if (url.hostname.endsWith('greenhouse.io')) {
     if (url.pathname.startsWith('/embed/')) {
@@ -116,10 +81,12 @@ function companyFromAtsUrl(url: URL): string | null {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
+  if (url.hostname.endsWith('applytojob.com')) {
+    const sub = url.hostname.split('.')[0];
+    if (sub) return titleCase(sub.replace(/-/g, ' '));
+  }
   return null;
 }
-
-/* -------------------------------------------------------------- JSON-LD */
 
 function readJobPostingLd(doc: Document): { title?: string; company?: string } | null {
   const scripts = doc.querySelectorAll<HTMLScriptElement>(
@@ -171,8 +138,6 @@ function findJobPosting(value: unknown): Loose | null {
   return null;
 }
 
-/* -------------------------------------------------------------- helpers */
-
 function metaContent(doc: Document, selector: string): string {
   const el = doc.querySelector(selector);
   const c = el?.getAttribute('content') ?? '';
@@ -184,7 +149,6 @@ function textOf(el: Element | null): string {
 }
 
 function cleanTitle(raw: string): string {
-  // Strip "Apply for X" / "Careers - X" prefixes.
   return raw
     .replace(/^\s*(apply for|apply to|application for|careers?\s*[-:])\s+/i, '')
     .trim();

@@ -1,8 +1,6 @@
 # AutoFillTool
 
-A local-first Chrome extension (Manifest V3) that autofills job application forms on Greenhouse, Lever, Ashby, and Workday. Résumés are attached automatically and open-ended questions are drafted with the AI provider of your choice. You always click Submit.
-
-<!-- Screenshot: drop a Cloudinary (or any) image URL here, e.g. ![Screenshot](https://...) -->
+A somewhat lazy tool to make the most out of local models and AI subscriptions for customized outputs on job applications.
 
 ## Links
 
@@ -11,27 +9,27 @@ A local-first Chrome extension (Manifest V3) that autofills job application form
 ## Features
 
 #### **Auto-fill**
-- Per-ATS selectors for Greenhouse, Lever, Ashby, and Workday, with a heuristic fallback for any other form
-- Skips fields that already have a value; **Force overwrite** toggle for re-runs
-- Fills embedded ATS iframes on company career pages, not just the ATS domain itself
-- Filled fields flash briefly so you can see what changed
+- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, and JazzHR, with a heuristic fallback for anything else
+- Skips fields that already have a value. **Force overwrite** if you want it to go over them again
+- Fills ATS iframes embedded in company career pages, not just the ATS domain itself
+- Filled fields flash so you can see what it touched
 
 #### **Résumé Attachment**
-- PDF, DOCX, or TXT up to 5 MB, stored locally and attached to the file input as if you had selected it
+- PDF, DOCX, or TXT up to 5 MB. Stored locally, attached to the file input as if you picked it yourself
 
 #### **AI Suggest**
-- A ✨ button next to every open-ended textarea streams a draft into the field
-- Grounded in the scraped job description, your extracted résumé text, and your profile
-- Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription via the local bridge
+- Adds a "Suggest" textarea form fields
+- It reads the job description off the page, the text out of your résumé, and your profile before writing
+- Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription through the local bridge
 
 #### **Submission Tracking**
-- Logs each apply to local history, browsable from the popup, exportable to CSV
-- Optional push to a Google Sheet you own via Apps Script
-- Optional auto-log that watches for your own submission to succeed
+- Every apply goes to local history, browsable from the popup, exportable to CSV
+- Optional push to a Google Sheet you own, via Apps Script
+- Optional auto-log that watches for your submission to go through and logs it for you
 
 #### **Safety**
 - The filler refuses to click anything labelled Submit, Apply now, or Send application
-- Adapters are pure detection: they never write to storage and never touch the network
+- Adapters only detect. They never write to storage and never touch the network
 
 ## Tech Stack
 
@@ -52,16 +50,16 @@ A local-first Chrome extension (Manifest V3) that autofills job application form
 
 **Fill flow:**
 - Popup → background worker → content script injected into every frame
-- The background picks target frames: if any subframe is an ATS host, only those get filled, so a company's newsletter signup on the parent page is left alone
-- An adapter is selected per frame, fields are classified, then written via the native value setter so React's value tracker fires
+- The background picks which frames to fill: if a subframe is an ATS host, only those get it, so the company's newsletter signup on the parent page is left alone
+- Each frame picks an adapter, classifies its fields, then writes through the native value setter so React's value tracker fires
 
 **AI Suggest flow:**
 - Content script opens a long-lived `ai-suggest` port to the background worker
-- The background is the only place that talks to an external host; it builds the prompt from résumé text, job description, and profile, then streams token deltas back
-- Nothing is sent unless you configured a provider and granted its host permission
+- The background worker is the only code that talks to an outside host. It builds the prompt from your résumé text, the job description, and your profile, then streams the tokens back
+- Nothing goes out unless you picked a provider and granted its host permission
 
 **Submission logging:**
-- "Mark submitted" (or the opt-in submit watcher) writes to local history and, if configured, POSTs to your Apps Script webhook
+- "Mark submitted" (or the opt-in submit watcher) writes to local history, and POSTs to your Apps Script webhook if you set one up
 
 ## Prerequisites
 
@@ -93,7 +91,7 @@ A local-first Chrome extension (Manifest V3) that autofills job application form
 
 5. **Use it**
 
-   Open a job application, click the extension icon → **Fill this page**. Review what was filled, draft any open-ended answers with ✨, then submit yourself.
+   Open a job application, click the extension icon → **Fill this page**. Check what it filled, draft any open-ended answers with ✨, then submit it yourself.
 
 For a distributable zip: `npm run package`.
 
@@ -126,7 +124,7 @@ npm run bridge         # start on http://localhost:11435
 npm run bridge:stop    # stop it from anywhere
 ```
 
-Then select **Claude Code (local bridge)** in Options. Endpoint and model prefill. Full setup, including the writing-voice spec, is in [bridge/README.md](bridge/README.md).
+Then pick **Claude Code (local bridge)** in Options. Endpoint and model prefill. Full setup, including the writing-voice spec, is in [bridge/README.md](bridge/README.md).
 
 ### What gets sent to the provider
 
@@ -136,11 +134,11 @@ Then select **Claude Code (local bridge)** in Options. Endpoint and model prefil
 - Extracted résumé text
 - The scraped job description
 
-Nothing leaves the background worker except the request to the provider URL you authorised.
+Nothing leaves the extension except that one request, to the provider URL you granted permission for.
 
 ## Google Sheets Logging (optional)
 
-Forwards each tracked submission to a Google Sheet via an Apps Script web app **you own**. Nothing is sent unless you configure it. Create a Sheet, add an Apps Script `doPost` web app deployed as "Anyone with the link", then paste the `/exec` URL into **Options → Tracking** and click **Test**.
+Forwards each tracked submission to a Google Sheet via an Apps Script web app **you own**. Nothing is sent unless you set it up. Create a Sheet, add an Apps Script `doPost` web app deployed as "Anyone with the link", then paste the `/exec` URL into **Options → Tracking** and click **Test**.
 
 ## Testing
 
@@ -152,7 +150,7 @@ npm run lint       # eslint
 
 ### Environment Variables
 
-The extension itself needs none. All configuration lives in the Options page and is stored in `chrome.storage.local`.
+The extension itself needs none. Everything you configure lives in the Options page and is stored in `chrome.storage.local`.
 
 The Claude Code bridge reads these, all optional:
 
@@ -173,9 +171,9 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `storage` | Persist profile, settings, résumé, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the currently focused tab from the popup |
-| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, and Workday forms |
+| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, and JazzHR forms |
 
-**Optional**, requested on demand and revocable from Options:
+**Optional**, asked for when you need them and revocable from Options:
 
 | Host | Why |
 |------|-----|
@@ -191,7 +189,7 @@ No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
 
 - API keys, webhook URLs, and résumé bytes live in `chrome.storage.local`, never `chrome.storage.sync`
 - No analytics, no telemetry, no remote error reporting
-- AI requests go directly from your browser to the provider you chose
+- AI requests go straight from your browser to the provider you picked
 - The webhook POSTs only to the URL you paste in
 
 ## Project Layout
@@ -200,7 +198,7 @@ No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
 src/
 ├── background/   MV3 service worker (the only code that talks to external hosts)
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
-├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday + generic)
+├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client
@@ -210,7 +208,7 @@ src/
 bridge/           Local Claude Code subscription bridge (not part of the extension build)
 ```
 
-## Features Roadmap
+## Roadmap
 
 - Per-site allowlist for persistent injection without a click
 - Cache the job description across Workday's multi-page wizard
@@ -218,10 +216,10 @@ bridge/           Local Claude Code subscription bridge (not part of the extensi
 
 ## Notes
 
-Three constraints drove the design:
+Three rules I stuck to:
 
-- **Local-first.** No backend ships with the extension. Network calls are limited to the page you are on, the AI provider you chose, and your own Apps Script webhook.
-- **User-in-the-loop.** The filler never clicks Submit. The `SUBMIT_DENY` guard in `src/content/filler.ts` enforces it.
+- **Local-first.** No backend ships with the extension. The only network calls are the page you're on, the AI provider you picked, and your own Apps Script webhook.
+- **User-in-the-loop.** The filler never clicks Submit. `SUBMIT_DENY` in `src/content/filler.ts` is what enforces it.
 - **Safe autofill.** Skip non-empty fields by default, write through the native value setter so React registers the change, then dispatch `input` → `change` → `blur`.
 
 ## Author

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.4.0",
-  "description": "A somewhat lazy tool to amke the most out of local models and AI subscriptions for customized outputs on job applications",
+  "version": "1.4.1",
+  "description": "A somewhat lazy tool to make the most out of local models and AI subscriptions for customized outputs on job applications",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -19,6 +19,7 @@
     "https://*.ashbyhq.com/*",
     "https://jobs.ashbyhq.com/*",
     "https://*.myworkdayjobs.com/*",
+    "https://*.applytojob.com/*",
     "<all_urls>"
   ],
   "optional_host_permissions": [
@@ -61,7 +62,8 @@
         "https://jobs.lever.co/*",
         "https://*.ashbyhq.com/*",
         "https://jobs.ashbyhq.com/*",
-        "https://*.myworkdayjobs.com/*"
+        "https://*.myworkdayjobs.com/*",
+        "https://*.applytojob.com/*"
       ],
       "js": [
         "src/content/index.ts"
