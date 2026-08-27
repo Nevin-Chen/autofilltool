@@ -35,6 +35,8 @@ export const DemographicsSchema = z.object({
   pronouns: z.string().nullable().default(null),
   ethnicity: z.string().nullable().default(null),
   race: z.string().nullable().default(null),
+  sexualOrientation: z.string().nullable().default(null),
+  transgender: z.string().nullable().default(null),
   veteranStatus: z.string().nullable().default(null),
   disabilityStatus: z.string().nullable().default(null),
 });

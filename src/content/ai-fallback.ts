@@ -1,3 +1,19 @@
+import { isCompliancePattern } from '@/adapters/_shared';
+
+export const COMPLIANCE_SKIP_NOTE =
+  'Skipped: EEO/visa question with no saved answer. Add one on the Options page, or let the AI answer these from the popup.';
+
+export function mayAnswerComplianceField(args: {
+  label: string;
+  savedSelfId: string | boolean | null | undefined;
+  includeCompliance: boolean;
+}): boolean {
+  const saved = typeof args.savedSelfId === 'string' ? args.savedSelfId.trim() : '';
+  if (saved) return true;
+  if (args.includeCompliance) return true;
+  return !isCompliancePattern(args.label);
+}
+
 export function resolveAiOption(rawValue: string, options: string[]): string | null {
   const v = rawValue.trim().toLowerCase();
   if (!v) return null;

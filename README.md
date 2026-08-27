@@ -24,6 +24,11 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - It reads the job description off the page, the text out of your résumé, and your profile before writing
 - Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription through the local bridge
 
+#### **Voluntary Self-Identification**
+- Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options
+- Forms word these questions their own way ("Male" in your profile against a list of Man / Woman / Non-binary), so a saved answer is matched to whichever option the form offers rather than typed in literally
+- Nothing here is ever guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
+
 #### **Submission Tracking**
 - Every apply goes to local history, browsable from the popup, exportable to CSV
 - Optional push to a Google Sheet you own, via Apps Script
@@ -132,7 +137,7 @@ Then pick **Claude Code (local bridge)** in Options. Endpoint and model prefill.
 
 - The question and label from the page
 - Company, role, and job URL if the adapter could read them
-- A short profile summary (name, links, saved answers, cover-letter blurb)
+- A short profile summary (name, links, saved answers, cover-letter blurb, and self-identification answers when a form asks for them)
 - Extracted résumé text
 - The scraped job description
 

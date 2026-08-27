@@ -18,8 +18,12 @@ import {
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
-import { fieldDescription, isCompliancePattern, unclassifiedFromDetected } from '@/adapters/_shared';
-import type { UnclassifiedField } from '@/adapters/types';
+import {
+  fieldDescription,
+  selfIdKindFromLabel,
+  unclassifiedFromDetected,
+} from '@/adapters/_shared';
+import type { SelfIdKind, UnclassifiedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResumeLibrary } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -30,7 +34,12 @@ import {
 } from '@/profile/resume-select';
 import type { ResumeLibrary, ResumeVariant, Settings } from '@/profile/schema';
 import { sendToBackground } from '@/lib/messaging';
-import { resolveAiOption, parseMultiSelect } from './ai-fallback';
+import {
+  resolveAiOption,
+  parseMultiSelect,
+  mayAnswerComplianceField,
+  COMPLIANCE_SKIP_NOTE,
+} from './ai-fallback';
 import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
@@ -487,7 +496,7 @@ async function runFill(forceFromMsg?: boolean) {
         reviewItems.push({ group: 'filled', label: action.label, el: field.el });
       } else if (action.status === 'skipped') {
         reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
-        if (action.note === 'no value in profile') {
+        if (isRetryableSkip(action.note)) {
           const u = unclassifiedFromDetected(field);
           if (u) skippedForAi.push(u);
         }
@@ -530,7 +539,7 @@ async function runFill(forceFromMsg?: boolean) {
       if (animate) applyFlash(field.el);
     } else if (action.status === 'skipped') {
       reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
-      if (action.note === 'no value in profile') {
+      if (isRetryableSkip(action.note)) {
         const u = unclassifiedFromDetected(field);
         if (u) skippedForAi.push(u);
       }
@@ -700,7 +709,9 @@ async function runFill(forceFromMsg?: boolean) {
         skippedForAi.map((u) => u.el),
       );
       const seen = new WeakSet<HTMLElement>();
-      const queue: Array<UnclassifiedField & { wasClassified: boolean }> = [];
+      const queue: Array<
+        UnclassifiedField & { wasClassified: boolean; selfIdKind?: SelfIdKind }
+      > = [];
       const preSkipped: ReviewableField[] = [];
       const candidates: UnclassifiedField[] = [
         ...skippedForAi,
@@ -710,15 +721,20 @@ async function runFill(forceFromMsg?: boolean) {
         if (!(u.el instanceof HTMLElement)) continue;
         if (seen.has(u.el)) continue;
         seen.add(u.el);
+        const selfIdKind = selfIdKindFromLabel(u.label);
+        const savedSelfId = selfIdKind ? valueForField(profile, selfIdKind) : null;
         if (
-          !settings.ai.fallbackIncludeCompliance &&
-          isCompliancePattern(u.label)
+          !mayAnswerComplianceField({
+            label: u.label,
+            savedSelfId,
+            includeCompliance: settings.ai.fallbackIncludeCompliance,
+          })
         ) {
           preSkipped.push({
             group: 'ai',
             label: u.label,
             el: u.el,
-            note: 'Skipped: compliance/EEO question. Turn on "Include compliance questions" in Options to let the AI answer.',
+            note: COMPLIANCE_SKIP_NOTE,
           });
           continue;
         }
@@ -731,7 +747,11 @@ async function runFill(forceFromMsg?: boolean) {
           });
           continue;
         }
-        queue.push({ ...u, wasClassified: classifiedEls.has(u.el) });
+        queue.push({
+          ...u,
+          wasClassified: classifiedEls.has(u.el),
+          ...(selfIdKind ? { selfIdKind } : {}),
+        });
       }
       queue.sort((a, b) => {
         const at = a.fieldType === 'textarea' ? 1 : 0;
@@ -767,8 +787,17 @@ async function runFill(forceFromMsg?: boolean) {
   };
 }
 
+function isRetryableSkip(note: string | undefined): boolean {
+  if (!note) return false;
+  return (
+    note === 'no value in profile' ||
+    note.startsWith('no option matched') ||
+    note === 'dropdown popup did not appear'
+  );
+}
+
 async function runAiFallbackQueue(
-  queue: Array<UnclassifiedField & { wasClassified: boolean }>,
+  queue: Array<UnclassifiedField & { wasClassified: boolean; selfIdKind?: SelfIdKind }>,
   preSkipped: ReviewableField[],
   runId: number,
   animate: boolean,
@@ -822,11 +851,13 @@ async function runAiFallbackQueue(
           jobDescription?: string;
           job?: { company?: string; role?: string; jobUrl?: string };
           wasClassified?: boolean;
+          selfIdKind?: SelfIdKind;
         } = {
           question: u.label,
           fieldType: fieldTypeForAi,
           wasClassified: u.wasClassified,
         };
+        if (u.selfIdKind) request.selfIdKind = u.selfIdKind;
         if (u.options) request.options = u.options;
         if (u.fieldType === 'textarea') {
           if (u.el instanceof HTMLElement) {

@@ -239,7 +239,7 @@ export function PopupApp() {
               />
               <span>
                 <span className="font-medium text-slate-800 dark:text-slate-100">
-                  Include EEO and visa questions
+                  Answer EEO and visa questions left blank in Options
                 </span>
               </span>
             </label>

@@ -622,7 +622,7 @@ describe('fillVirtualizedDropdown', () => {
     expect(action.note).not.toMatch(/already filled/);
   });
 
-  it("presses Enter on the trigger as a fallback when no [role=option] surfaces after typing", async () => {
+  it("reports skipped, and clears its own search text, when no [role=option] matches", async () => {
     const wrapper = document.createElement('div');
     const input = document.createElement('input');
     input.id = 'q_auth';
@@ -649,8 +649,47 @@ describe('fillVirtualizedDropdown', () => {
     };
 
     const action = await fillVirtualizedDropdown(field, 'Yes', { timeoutMs: 50 });
-    expect(action.status).toBe('filled');
-    expect(action.note).toMatch(/Enter/);
-    expect(keys).toContain('Enter');
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/no option matched/i);
+    expect(keys).not.toContain('Enter');
+    expect(input.value).toBe('');
+  });
+
+  it("does not commit an arbitrary option when the profile value matches none of them", async () => {
+    const wrapper = document.createElement('div');
+    const input = document.createElement('input');
+    input.id = 'q_veteran';
+    input.type = 'text';
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-controls', 'q_veteran-listbox');
+    wrapper.appendChild(input);
+    document.body.appendChild(wrapper);
+
+    const portal = document.createElement('div');
+    portal.id = 'q_veteran-listbox';
+    portal.setAttribute('role', 'listbox');
+    for (const text of ['Yes', 'No', "I don't wish to answer"]) {
+      const opt = document.createElement('div');
+      opt.setAttribute('role', 'option');
+      opt.textContent = text;
+      portal.appendChild(opt);
+    }
+    document.body.appendChild(portal);
+
+    const field: DetectedField = {
+      el: input,
+      kind: 'veteranStatus',
+      label: 'Are you a veteran or active member of the United States Armed Forces?',
+      confidence: 1,
+      widget: 'virtualizedDropdown',
+    };
+
+    const action = await fillVirtualizedDropdown(
+      field,
+      'I am not a protected veteran',
+      { timeoutMs: 50 },
+    );
+    expect(action.status).toBe('skipped');
+    expect(action.note).toMatch(/no option matched/i);
   });
 });

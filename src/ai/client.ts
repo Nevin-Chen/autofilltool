@@ -1,4 +1,5 @@
 import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
+import type { SelfIdKind } from '@/adapters/types';
 import { activeApiKey, providerNeedsKey } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
 import { streamAnthropic, ANTHROPIC_DEFAULT_MODEL } from './providers/anthropic';
@@ -295,17 +296,23 @@ export type ClassifyRequest = {
   jobDescription?: string;
   job?: { company?: string; role?: string; jobUrl?: string };
   wasClassified?: boolean;
+  selfIdKind?: SelfIdKind;
 };
 
 export type BuiltClassifyPrompt = { system: string; user: string };
 
+export type ClassifyMode = 'strict' | 'preference' | 'selfId';
+
 export function buildClassifyPrompt(
   req: ClassifyRequest,
   profile: Profile,
-  opts: { mode?: 'strict' | 'preference' } = {},
+  opts: { mode?: ClassifyMode } = {},
 ): BuiltClassifyPrompt {
   const profileSummary = summarizeProfileForClassifier(profile);
   const mode = opts.mode ?? 'strict';
+  const savedSelfId = req.selfIdKind
+    ? savedSelfIdAnswer(profile, req.selfIdKind)
+    : '';
 
   const optionsBlock = (() => {
     if (!req.options || req.options.length === 0) return '';
@@ -319,6 +326,17 @@ export function buildClassifyPrompt(
     return `\nAvailable options (you MUST return one of these verbatim, or "SKIP"):\n${lines}\n`;
   })();
 
+  const selfIdBlock =
+    mode === 'selfId'
+      ? [
+          '',
+          savedSelfId
+            ? `The user's saved answer to this question: ${savedSelfId}`
+            : 'The user has not saved an answer to this question.',
+          '',
+        ].join('\n')
+      : '';
+
   const formatHint = (() => {
     switch (req.fieldType) {
       case 'checkbox':
@@ -329,9 +347,15 @@ export function buildClassifyPrompt(
         return mode === 'preference'
           ? 'Reply with ONLY the exact text of one option from the list above, copied verbatim. No quotes, no explanation, no leading bullet, no markdown.'
           : 'Reply with ONLY the exact text of one option from the list above, copied verbatim. No quotes, no explanation, no leading bullet, no markdown. If none apply, reply with the single word: SKIP';
+      case 'text':
+        if (mode === 'selfId') {
+          return 'Return the saved answer as a short value. Plain text only, no surrounding quotes. If there is no saved answer, reply with the single word: SKIP';
+        }
+        return mode === 'preference'
+          ? 'Return a single short value (a word or short phrase) that a typical candidate would put here. Plain text only, no surrounding quotes.'
+          : 'Return a single short value (a word or short phrase). Plain text only, no surrounding quotes.';
       case 'textarea':
         return 'Return a short paragraph (1-3 sentences). Plain text only.';
-      case 'text':
       default:
         return mode === 'preference'
           ? 'Return a single short value (a word or short phrase) that a typical candidate would put here. Plain text only, no surrounding quotes.'
@@ -340,7 +364,9 @@ export function buildClassifyPrompt(
   })();
 
   const system =
-    mode === 'preference'
+    mode === 'selfId'
+      ? SELF_ID_SYSTEM_PROMPT
+      : mode === 'preference'
       ? [
           'YOU MUST ANSWER THIS QUESTION. The user is filling out a job application and every field needs a value. Pick the most reasonable answer that a typical candidate would give.',
           'Reply with ONLY the value (or the exact text of one option if a list is provided). No explanation, no preamble, no apologies, no markdown.',
@@ -362,6 +388,7 @@ export function buildClassifyPrompt(
   const user = [
     `Form field type: ${req.fieldType}`,
     `Question: ${req.question}`,
+    selfIdBlock,
     optionsBlock,
     'User profile:',
     profileSummary || '(empty profile)',
@@ -372,6 +399,51 @@ export function buildClassifyPrompt(
     .join('\n');
 
   return { system, user };
+}
+
+const SELF_ID_SYSTEM_PROMPT = [
+  "You are transcribing the user's saved voluntary self-identification answer onto a job application form. You are NOT deciding what the answer should be.",
+  'Reply with ONLY the value, or the exact text of one option if a list is given. No explanation, no preamble, no quotes, no markdown.',
+  '',
+  'The profile and the form word the same answer differently. Map the saved answer to the closest option:',
+  ' - Gender "Male" maps to "Man"; "Female" maps to "Woman".',
+  ' - Ethnicity is stored as the answer to "Are you Hispanic or Latino?". "Yes" maps to the Hispanic or Latino/a/x option. "No" means the answer is the saved Race instead.',
+  ' - Race "Black or African American" maps to "Black or of African descent"; "White" maps to "White or European"; "Asian" maps to "East Asian", "South Asian" or "Southeast Asian"; "American Indian or Alaska Native" maps to "Native American or Indigenous"; "Native Hawaiian or Other Pacific Islander" maps to "Pacific Islander".',
+  ' - Veteran status "I am not a protected veteran" maps to "No"; "I identify as one or more of the classifications of a protected veteran" maps to "Yes".',
+  ' - Disability status "Yes, I have a disability (or previously had a disability)" maps to "Yes"; "No, I don\'t have a disability and have not had one in the past" maps to "No".',
+  '',
+  'Hard rules:',
+  ' - Never contradict the saved answer. If the profile says No, do not answer Yes.',
+  ' - If there is no saved answer for this question, or the saved answer is a decline ("Decline to self-identify", "I don\'t wish to answer"), pick the option that declines to answer: "I don\'t wish to answer", "Prefer not to say", "Decline to self-identify", "I don\'t wish to answer" or the closest equivalent on the list.',
+  ' - If there is no saved answer and no decline option on the list, reply with the single word: SKIP',
+  ' - Never infer a demographic answer from the name, résumé, location, or anything else. Only the saved answer or a decline.',
+].join('\n');
+
+function savedSelfIdAnswer(profile: Profile, kind: SelfIdKind): string {
+  const d = profile.demographics;
+  switch (kind) {
+    case 'gender':
+      return d.gender ?? '';
+    case 'pronouns':
+      return d.pronouns ?? '';
+    case 'ethnicity':
+      return d.ethnicity ? `Hispanic or Latino: ${d.ethnicity}` : '';
+    case 'race':
+      return d.race ?? '';
+    case 'sexualOrientation':
+      return d.sexualOrientation ?? '';
+    case 'transgender':
+      return d.transgender ? `Identifies as transgender: ${d.transgender}` : '';
+    case 'veteranStatus':
+      return d.veteranStatus ?? '';
+    case 'disabilityStatus':
+      return d.disabilityStatus ?? '';
+    default: {
+      const _: never = kind;
+      void _;
+      return '';
+    }
+  }
 }
 
 export function parseClassifyResponse(
@@ -464,8 +536,10 @@ export function summarizeProfileForClassifier(profile: Profile): string {
 
   push('Gender', profile.demographics.gender);
   push('Pronouns', profile.demographics.pronouns);
-  push('Ethnicity', profile.demographics.ethnicity);
+  push('Hispanic or Latino', profile.demographics.ethnicity);
   push('Race', profile.demographics.race);
+  push('Sexual orientation', profile.demographics.sexualOrientation);
+  push('Identifies as transgender', profile.demographics.transgender);
   push('Veteran status', profile.demographics.veteranStatus);
   push('Disability status', profile.demographics.disabilityStatus);
 
@@ -482,7 +556,7 @@ export async function classifyField(
   if (providerNeedsKey(settings.provider) && !activeApiKey(settings)) return null;
 
   const useWritingPrompt =
-    req.fieldType === 'textarea' && (req.jobDescription || resume);
+    !req.selfIdKind && req.fieldType === 'textarea' && (req.jobDescription || resume);
   if (useWritingPrompt) {
     const prompt = await buildPrompt(
       {
@@ -506,7 +580,8 @@ export async function classifyField(
   });
 }
 
-function pickClassifyMode(req: ClassifyRequest): 'strict' | 'preference' {
+function pickClassifyMode(req: ClassifyRequest): ClassifyMode {
+  if (req.selfIdKind) return 'selfId';
   if (req.wasClassified !== false) return 'strict';
 
   const opts = req.options ?? [];

@@ -1,4 +1,5 @@
 import type { Profile, Settings, SubmissionRecord } from '@/profile/schema';
+import type { SelfIdKind } from '@/adapters/types';
 
 export type GetProfileMsg = { type: 'GET_PROFILE' };
 export type GetSettingsMsg = { type: 'GET_SETTINGS' };
@@ -41,6 +42,7 @@ export type AiClassifyMsg = {
     jobDescription?: string;
     job?: { company?: string; role?: string; jobUrl?: string };
     wasClassified?: boolean;
+    selfIdKind?: SelfIdKind;
   };
 };
 
