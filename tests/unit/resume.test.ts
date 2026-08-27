@@ -4,6 +4,8 @@ import {
   resumeRecordToFile,
   bytesToBase64,
   base64ToBytes,
+  labelFromFilename,
+  resumeLibraryBytes,
 } from '@/profile/resume';
 
 describe('base64 round-trip', () => {
@@ -43,5 +45,31 @@ describe('fileToResumeRecord / resumeRecordToFile', () => {
     const f = new File([new Uint8Array([0])], 'mystery.bin', { type: '' });
     const record = await fileToResumeRecord(f);
     expect(record.mimeType).toBe('application/octet-stream');
+  });
+});
+
+describe('labelFromFilename', () => {
+  it('drops the extension and separators, keeping the user\'s casing', () => {
+    expect(labelFromFilename('Nevin_Chen-backend.pdf')).toBe('Nevin Chen backend');
+    expect(labelFromFilename('resume.docx')).toBe('resume');
+  });
+
+  it('falls back when the name has nothing to show', () => {
+    expect(labelFromFilename('.pdf')).toBe('Resume');
+  });
+
+  it('truncates a name too long for the picker', () => {
+    const label = labelFromFilename(`${'a'.repeat(90)}.pdf`);
+    expect(label).toHaveLength(60);
+    expect(label.endsWith('…')).toBe(true);
+  });
+});
+
+describe('resumeLibraryBytes', () => {
+  it('sums the stored base64 payloads', () => {
+    expect(
+      resumeLibraryBytes([{ bytesBase64: 'AAAA' }, { bytesBase64: 'BB' }]),
+    ).toBe(6);
+    expect(resumeLibraryBytes([])).toBe(0);
   });
 });

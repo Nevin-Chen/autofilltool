@@ -1,12 +1,19 @@
 import {
   CURRENT_SCHEMA_VERSION,
+  MAX_RESUME_VARIANTS,
+  RESUME_LIBRARY_BUDGET_BYTES,
+  ResumeLibrarySchema,
   type Profile,
   type Settings,
-  type ResumeRecord,
+  type ResumeLibrary,
+  type ResumeVariant,
   type SubmissionRecord,
   emptyProfile,
   defaultSettings,
+  emptyResumeLibrary,
 } from './schema';
+import { resumeLibraryBytes } from './resume';
+import { pruneCompanyChoices } from './resume-select';
 import {
   migrateProfile,
   migrateSettings,
@@ -70,23 +77,80 @@ export async function setSettings(settings: Settings): Promise<void> {
   await rawSet(STORAGE_KEYS.settings, wrap(settings));
 }
 
-export async function getResume(): Promise<ResumeRecord | null> {
+export async function getResumeLibrary(): Promise<ResumeLibrary> {
   const env = await rawGet<unknown>(STORAGE_KEYS.resume);
-  if (!env) return null;
+  if (!env) return emptyResumeLibrary();
   try {
     return migrateResume(env.data, env.schemaVersion ?? 0);
   } catch (err) {
-    console.warn('[autofilltool] resume failed validation; ignoring', err);
-    return null;
+    console.warn('[autofilltool] resume library failed validation; ignoring', err);
+    return emptyResumeLibrary();
   }
 }
 
-export async function setResume(record: ResumeRecord): Promise<void> {
-  await rawSet(STORAGE_KEYS.resume, wrap(record));
+export async function setResumeLibrary(library: ResumeLibrary): Promise<void> {
+  await rawSet(STORAGE_KEYS.resume, wrap(ResumeLibrarySchema.parse(library)));
 }
 
-export async function clearResume(): Promise<void> {
-  await chrome.storage.local.remove(STORAGE_KEYS.resume);
+export async function addResumeVariant(variant: ResumeVariant): Promise<ResumeLibrary> {
+  const library = await getResumeLibrary();
+  if (library.variants.length >= MAX_RESUME_VARIANTS) {
+    throw new Error(
+      `You can store ${MAX_RESUME_VARIANTS} resumes. Remove one to add another.`,
+    );
+  }
+  const projected = resumeLibraryBytes([...library.variants, variant]);
+  if (projected > RESUME_LIBRARY_BUDGET_BYTES) {
+    throw new Error(
+      'Not enough local storage left for another resume. Remove one first.',
+    );
+  }
+  const next: ResumeLibrary = {
+    variants: [...library.variants, variant],
+    activeId: library.activeId ?? variant.id,
+  };
+  await setResumeLibrary(next);
+  return next;
+}
+
+export async function updateResumeVariant(
+  id: string,
+  patch: Partial<Omit<ResumeVariant, 'id'>>,
+): Promise<ResumeLibrary> {
+  const library = await getResumeLibrary();
+  const next: ResumeLibrary = {
+    ...library,
+    variants: library.variants.map((v) => (v.id === id ? { ...v, ...patch } : v)),
+  };
+  await setResumeLibrary(next);
+  return next;
+}
+
+export async function setDefaultResume(id: string): Promise<ResumeLibrary> {
+  const library = await getResumeLibrary();
+  if (!library.variants.some((v) => v.id === id)) return library;
+  const next: ResumeLibrary = { ...library, activeId: id };
+  await setResumeLibrary(next);
+  return next;
+}
+
+export async function removeResumeVariant(id: string): Promise<ResumeLibrary> {
+  const library = await getResumeLibrary();
+  const variants = library.variants.filter((v) => v.id !== id);
+  const next: ResumeLibrary = {
+    variants,
+    activeId: library.activeId === id ? (variants[0]?.id ?? null) : library.activeId,
+  };
+  await setResumeLibrary(next);
+
+  const settings = await getSettings();
+  const pruned = pruneCompanyChoices(settings.resume.companyChoices, next);
+  if (
+    Object.keys(pruned).length !== Object.keys(settings.resume.companyChoices).length
+  ) {
+    await setSettings({ ...settings, resume: { ...settings.resume, companyChoices: pruned } });
+  }
+  return next;
 }
 
 export async function getHistory(): Promise<SubmissionRecord[]> {

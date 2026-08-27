@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react';
-import { fileToResumeRecord } from '@/profile/resume';
+import { fileToResumeVariant, resumeLibraryBytes } from '@/profile/resume';
 import {
-  getResume,
-  setResume as persistResume,
-  clearResume as removeResume,
+  getResumeLibrary,
+  addResumeVariant,
+  updateResumeVariant,
+  removeResumeVariant,
+  setDefaultResume,
 } from '@/profile/store';
-import type { ResumeRecord } from '@/profile/schema';
+import {
+  MAX_RESUME_VARIANTS,
+  RESUME_LIBRARY_BUDGET_BYTES,
+  emptyResumeLibrary,
+  type ResumeLibrary,
+  type ResumeVariant,
+} from '@/profile/schema';
+import { defaultVariant } from '@/profile/resume-select';
 import {
   extractResumeText,
   isResumePlaceholder,
@@ -28,23 +37,22 @@ type Status =
   | { kind: 'error'; text: string };
 
 export function ResumeSection() {
-  const [resume, setResumeState] = useState<ResumeRecord | null>(null);
+  const [library, setLibrary] = useState<ResumeLibrary>(emptyResumeLibrary());
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const r = await getResume();
+      const lib = await getResumeLibrary();
       if (cancelled) return;
-      setResumeState(r);
-      if (r && !r.extractedText) {
+      setLibrary(lib);
+      for (const variant of lib.variants) {
+        if (variant.extractedText) continue;
         try {
-          const text = await extractResumeText(r);
+          const text = await extractResumeText(variant);
           if (cancelled) return;
           if (text && !isResumePlaceholder(text)) {
-            const updated: ResumeRecord = { ...r, extractedText: text };
-            await persistResume(updated);
-            if (!cancelled) setResumeState(updated);
+            setLibrary(await updateResumeVariant(variant.id, { extractedText: text }));
           }
         } catch {}
       }
@@ -62,7 +70,7 @@ export function ResumeSection() {
     if (file.size > MAX_BYTES) {
       setStatus({
         kind: 'error',
-        text: `File is ${formatBytes(file.size)} — limit is ${formatBytes(MAX_BYTES)}.`,
+        text: `File is ${formatBytes(file.size)}, limit is ${formatBytes(MAX_BYTES)}.`,
       });
       return;
     }
@@ -78,23 +86,23 @@ export function ResumeSection() {
 
     setStatus({ kind: 'info', text: 'Reading file…' });
     try {
-      const base = await fileToResumeRecord(file);
+      const variant = await fileToResumeVariant(file);
+      setLibrary(await addResumeVariant(variant));
+
       setStatus({ kind: 'info', text: 'Parsing résumé…' });
-      let extractedText: string | undefined;
+      let extracted = false;
       try {
-        const text = await extractResumeText(base);
-        if (text && !isResumePlaceholder(text)) extractedText = text;
+        const text = await extractResumeText(variant);
+        if (text && !isResumePlaceholder(text)) {
+          setLibrary(await updateResumeVariant(variant.id, { extractedText: text }));
+          extracted = true;
+        }
       } catch {}
-      const record: ResumeRecord = extractedText
-        ? { ...base, extractedText }
-        : base;
-      await persistResume(record);
-      setResumeState(record);
       setStatus({
         kind: 'ok',
-        text: extractedText
-          ? 'Resume saved locally. Text extracted for Suggest.'
-          : 'Resume saved locally. Text extraction failed; Suggest will be limited.',
+        text: extracted
+          ? `Saved "${variant.label}" locally. Text extracted for Suggest.`
+          : `Saved "${variant.label}" locally. Text extraction failed; Suggest will be limited.`,
       });
     } catch (err) {
       setStatus({
@@ -104,57 +112,113 @@ export function ResumeSection() {
     }
   };
 
-  const onRemove = async () => {
-    await removeResume();
-    setResumeState(null);
-    setStatus({ kind: 'info', text: 'Resume removed.' });
+  const onRename = async (variant: ResumeVariant, label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed || trimmed === variant.label) return;
+    setLibrary(await updateResumeVariant(variant.id, { label: trimmed }));
   };
+
+  const onMakeDefault = async (id: string) => {
+    setLibrary(await setDefaultResume(id));
+  };
+
+  const onRemove = async (variant: ResumeVariant) => {
+    setLibrary(await removeResumeVariant(variant.id));
+    setStatus({ kind: 'info', text: `Removed "${variant.label}".` });
+  };
+
+  const active = defaultVariant(library);
+  const used = resumeLibraryBytes(library.variants);
+  const full = library.variants.length >= MAX_RESUME_VARIANTS;
 
   return (
     <Section
-      title="Resume"
-      hint={`Stored locally in your browser. Attached to file inputs on application pages when you click Fill. ${ACCEPTED_LABEL}, up to ${formatBytes(MAX_BYTES)}.`}
+      title="Resumes"
+      hint={`Stored locally in your browser. The default is attached when you click Fill; the popup lets you pick a different one for a company. ${ACCEPTED_LABEL}, up to ${formatBytes(MAX_BYTES)} each, ${MAX_RESUME_VARIANTS} max.`}
     >
       <div className="space-y-3">
-        {resume ? (
-          <div className="rounded-md border border-slate-200 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="font-medium text-slate-800 dark:text-slate-100">
-              {resume.filename}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {resume.mimeType || 'unknown type'} · {formatBytes(resume.size)} ·
-              uploaded {new Date(resume.uploadedAt).toLocaleString()}
-            </div>
-            <div className="mt-2 flex gap-2">
-              <label className="cursor-pointer rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500">
-                Replace…
-                <input
-                  type="file"
-                  accept={ACCEPTED_LABEL}
-                  onChange={onPick}
-                  className="hidden"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={onRemove}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ) : (
-          <label className="inline-flex cursor-pointer items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500">
-            Upload resume…
+        {library.variants.length > 0 && (
+          <ul className="space-y-2">
+            {library.variants.map((variant) => {
+              const isDefault = variant.id === active?.id;
+              return (
+                <li
+                  key={variant.id}
+                  className="rounded-md border border-slate-200 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                >
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name="default-resume"
+                      className="mt-1.5"
+                      checked={isDefault}
+                      onChange={() => void onMakeDefault(variant.id)}
+                      aria-label={`Use ${variant.label} by default`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <input
+                        type="text"
+                        defaultValue={variant.label}
+                        onBlur={(e) => {
+                          if (!e.target.value.trim()) e.target.value = variant.label;
+                          void onRename(variant, e.target.value);
+                        }}
+                        aria-label="Resume label"
+                        className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-slate-800 hover:border-slate-300 focus:border-sky-500 focus:outline-none dark:text-slate-100 dark:hover:border-slate-600"
+                      />
+                      <div className="px-1 text-xs text-slate-500 dark:text-slate-400">
+                        {variant.filename} · {formatBytes(variant.size)} · uploaded{' '}
+                        {new Date(variant.uploadedAt).toLocaleDateString()}
+                        {isDefault && (
+                          <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                            · default
+                          </span>
+                        )}
+                      </div>
+                      {!variant.extractedText && (
+                        <div className="px-1 text-xs text-amber-700 dark:text-amber-400">
+                          No text extracted; Suggest can&apos;t read this one.
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void onRemove(variant)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="flex items-center gap-3">
+          <label
+            className={
+              full
+                ? 'inline-flex cursor-not-allowed items-center rounded-md bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                : 'inline-flex cursor-pointer items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500'
+            }
+          >
+            {library.variants.length === 0 ? 'Upload resume…' : 'Add another…'}
             <input
               type="file"
               accept={ACCEPTED_LABEL}
               onChange={onPick}
+              disabled={full}
               className="hidden"
             />
           </label>
-        )}
+          {library.variants.length > 0 && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {library.variants.length} of {MAX_RESUME_VARIANTS} ·{' '}
+              {formatBytes(used)} of {formatBytes(RESUME_LIBRARY_BUDGET_BYTES)} used
+            </span>
+          )}
+        </div>
 
         {status.kind !== 'idle' && (
           <div

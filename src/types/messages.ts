@@ -29,6 +29,8 @@ export type TestWebhookMsg = { type: 'TEST_WEBHOOK' };
 
 export type ShowNoticeMsg = { type: 'SHOW_NOTICE'; text: string };
 
+export type ResolveResumeMsg = { type: 'RESOLVE_RESUME' };
+
 export type AiClassifyMsg = {
   type: 'AI_CLASSIFY';
   request: {
@@ -52,6 +54,7 @@ export type RequestMessage =
   | ClearHistoryMsg
   | TestWebhookMsg
   | ShowNoticeMsg
+  | ResolveResumeMsg
   | AiClassifyMsg;
 
 export type Ok<T> = { ok: true; value: T };
@@ -86,6 +89,10 @@ export type GetHistoryResponse = Result<SubmissionRecord[]>;
 export type ClearHistoryResponse = Result<{ cleared: true }>;
 export type TestWebhookResponse = Result<{ status: number }>;
 export type ShowNoticeResponse = Result<{ shown: boolean }>;
+export type ResolveResumeResponse = Result<{
+  variantId: string | null;
+  companyKey: string;
+}>;
 export type AiClassifyResponse = Result<{ value: string | null }>;
 
 export interface MessageMap {
@@ -98,6 +105,7 @@ export interface MessageMap {
   CLEAR_HISTORY: ClearHistoryResponse;
   TEST_WEBHOOK: TestWebhookResponse;
   SHOW_NOTICE: ShowNoticeResponse;
+  RESOLVE_RESUME: ResolveResumeResponse;
   AI_CLASSIFY: AiClassifyResponse;
 }
 
@@ -116,6 +124,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'CLEAR_HISTORY' ||
     t === 'TEST_WEBHOOK' ||
     t === 'SHOW_NOTICE' ||
+    t === 'RESOLVE_RESUME' ||
     t === 'AI_CLASSIFY'
   );
 }

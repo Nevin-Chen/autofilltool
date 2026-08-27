@@ -2,10 +2,13 @@ import {
   CURRENT_SCHEMA_VERSION,
   ProfileSchema,
   SettingsSchema,
-  ResumeRecordSchema,
+  ResumeLibrarySchema,
   SubmissionRecordSchema,
   providerNeedsKey,
 } from './schema';
+import { labelFromFilename } from './resume';
+
+export const LEGACY_RESUME_VARIANT_ID = 'imported-resume';
 
 type MigrationFn = (raw: unknown) => unknown;
 
@@ -30,7 +33,24 @@ const settingsMigrations: Record<number, MigrationFn> = {
     return { ...r, ai: { ...aiRaw, apiKeys } };
   },
 };
-const resumeMigrations: Record<number, MigrationFn> = {};
+const resumeMigrations: Record<number, MigrationFn> = {
+  2: (raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const r = raw as Record<string, unknown>;
+    if (Array.isArray(r.variants)) return r;
+    if (typeof r.filename !== 'string' || !r.filename) return raw;
+    return {
+      variants: [
+        {
+          ...r,
+          id: LEGACY_RESUME_VARIANT_ID,
+          label: labelFromFilename(r.filename),
+        },
+      ],
+      activeId: LEGACY_RESUME_VARIANT_ID,
+    };
+  },
+};
 const historyMigrations: Record<number, MigrationFn> = {};
 
 function runMigrations(
@@ -58,7 +78,7 @@ export function migrateSettings(raw: unknown, fromVersion: number) {
 
 export function migrateResume(raw: unknown, fromVersion: number) {
   const migrated = runMigrations(raw, fromVersion, resumeMigrations);
-  return ResumeRecordSchema.parse(migrated);
+  return ResumeLibrarySchema.parse(migrated);
 }
 
 export function migrateHistory(raw: unknown, fromVersion: number) {

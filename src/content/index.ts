@@ -21,8 +21,14 @@ import { valueForField } from './mapping';
 import { fieldDescription, isCompliancePattern, unclassifiedFromDetected } from '@/adapters/_shared';
 import type { UnclassifiedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
-import { getProfile, getSettings, getResume } from '@/profile/store';
+import { getProfile, getSettings, getResumeLibrary } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
+import {
+  companyKeyFromUrl,
+  resolveResumeVariant,
+  variantById,
+} from '@/profile/resume-select';
+import type { ResumeLibrary, ResumeVariant, Settings } from '@/profile/schema';
 import { sendToBackground } from '@/lib/messaging';
 import { resolveAiOption, parseMultiSelect } from './ai-fallback';
 import { showLoggedToast, showNoticeToast } from './overlay';
@@ -412,6 +418,27 @@ function initialize(): void {
   });
 }
 
+async function resumeForThisPage(
+  library: ResumeLibrary,
+  settings: Settings,
+): Promise<ResumeVariant | null> {
+  if (library.variants.length === 0) return null;
+  try {
+    const res = await sendToBackground({ type: 'RESOLVE_RESUME' });
+    if (res.ok) {
+      const picked = variantById(library, res.value.variantId);
+      if (picked) return picked;
+    }
+  } catch (err) {
+    log.debug('resume resolution fell back to this frame', err);
+  }
+  return resolveResumeVariant(
+    library,
+    settings.resume.companyChoices,
+    companyKeyFromUrl(location.href),
+  );
+}
+
 async function runFill(forceFromMsg?: boolean) {
   if (!isExtensionContextValid()) {
     notifyInvalidContext();
@@ -421,11 +448,12 @@ async function runFill(forceFromMsg?: boolean) {
   const adapter = pickAdapter(url, document);
   const fields = adapter.detectFields(document);
 
-  const [profile, settings, resume] = await Promise.all([
+  const [profile, settings, library] = await Promise.all([
     getProfile(),
     getSettings(),
-    getResume(),
+    getResumeLibrary(),
   ]);
+  const resume = await resumeForThisPage(library, settings);
   const forceOverwrite = forceFromMsg ?? settings.forceOverwrite;
   const animate = settings.ui.animateFill && !prefersReducedMotion();
   const runId = animate ? beginRun() : 0;
@@ -530,7 +558,11 @@ async function runFill(forceFromMsg?: boolean) {
             label: 'Resume',
             kind: 'resume',
             status: ok ? 'filled' : 'skipped',
-            note: ok ? `attached ${resume.filename}` : 'no resume input found on page',
+            note: ok
+              ? `attached ${resume.filename}${
+                  library.variants.length > 1 ? ` (${resume.label})` : ''
+                }`
+              : 'no resume input found on page',
           });
         } catch (err) {
           resumeStatus = 'notFound';

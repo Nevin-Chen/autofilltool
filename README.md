@@ -16,6 +16,8 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 
 #### **Résumé Attachment**
 - PDF, DOCX, or TXT up to 5 MB. Stored locally, attached to the file input as if you picked it yourself
+- Keep up to 5 labelled résumés (backend, ML, new grad) and mark one as the default
+- Pick a different one for a company in the popup and it sticks: the next posting from that company uses the same résumé
 
 #### **AI Suggest**
 - Adds a "Suggest" textarea form fields
@@ -168,7 +170,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 
 | Permission | Why |
 |------------|-----|
-| `storage` | Persist profile, settings, résumé, and history locally |
+| `storage` | Persist profile, settings, résumés, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the currently focused tab from the popup |
 | Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, and JazzHR forms |
