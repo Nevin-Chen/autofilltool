@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "A somewhat lazy tool to make the most out of local models and AI subscriptions for customized outputs on job applications",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -20,6 +20,8 @@
     "https://jobs.ashbyhq.com/*",
     "https://*.myworkdayjobs.com/*",
     "https://*.applytojob.com/*",
+    "https://*.workable.com/*",
+    "https://apply.workable.com/*",
     "<all_urls>"
   ],
   "optional_host_permissions": [
@@ -63,7 +65,9 @@
         "https://*.ashbyhq.com/*",
         "https://jobs.ashbyhq.com/*",
         "https://*.myworkdayjobs.com/*",
-        "https://*.applytojob.com/*"
+        "https://*.applytojob.com/*",
+        "https://*.workable.com/*",
+        "https://apply.workable.com/*"
       ],
       "js": [
         "src/content/index.ts"

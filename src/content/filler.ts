@@ -284,12 +284,19 @@ function fillRadio(
   if (!target) {
     return { ...meta, status: 'error', note: `no radio matched "${want}"` };
   }
-  if (target.checked && !opts.forceOverwrite) {
+  if (radioIsChecked(target) && !opts.forceOverwrite) {
     return { ...meta, status: 'skipped', note: 'already in desired state' };
   }
   target.click();
   if (!opts.suppressFlash) flashFilled(target);
   return { ...meta, status: 'filled' };
+}
+
+function radioIsChecked(el: HTMLInputElement): boolean {
+  const aria = el.closest('[role="radio"]')?.getAttribute('aria-checked');
+  if (aria === 'true') return true;
+  if (aria === 'false') return false;
+  return el.checked;
 }
 
 export function fillButtonGroup(

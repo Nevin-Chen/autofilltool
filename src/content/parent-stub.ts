@@ -27,7 +27,7 @@ if (!window[STUB_GUARD]) {
 }
 
 const ATS_HOST_RE =
-  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com)$/i;
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com)$/i;
 
 function install(): void {
   let activeSource: MessageEventSource | null = null;

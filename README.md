@@ -9,7 +9,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 ## Features
 
 #### **Auto-fill**
-- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, and JazzHR, with a heuristic fallback for anything else
+- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, and Workable, with a heuristic fallback for anything else
 - Skips fields that already have a value. **Force overwrite** if you want it to go over them again
 - Fills ATS iframes embedded in company career pages, not just the ATS domain itself
 - Filled fields flash so you can see what it touched
@@ -178,7 +178,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `storage` | Persist profile, settings, résumés, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the currently focused tab from the popup |
-| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, and JazzHR forms |
+| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, and Workable forms |
 
 **Optional**, asked for when you need them and revocable from Options:
 
@@ -205,7 +205,7 @@ No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
 src/
 ├── background/   MV3 service worker (the only code that talks to external hosts)
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
-├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR + generic)
+├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client

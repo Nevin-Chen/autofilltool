@@ -29,7 +29,7 @@ describe('manifest content_scripts — invariants', () => {
     expect(manifest.content_scripts[0]!.run_at).toBe('document_idle');
   });
 
-  it('matches the five ATS hosts and their canonical subdomains', () => {
+  it('matches the six ATS hosts and their canonical subdomains', () => {
     const matches = manifest.content_scripts[0]!.matches;
     expect(matches).toContain('https://*.greenhouse.io/*');
     expect(matches).toContain('https://job-boards.greenhouse.io/*');
@@ -37,6 +37,8 @@ describe('manifest content_scripts — invariants', () => {
     expect(matches).toContain('https://*.ashbyhq.com/*');
     expect(matches).toContain('https://*.myworkdayjobs.com/*');
     expect(matches).toContain('https://*.applytojob.com/*');
+    expect(matches).toContain('https://*.workable.com/*');
+    expect(matches).toContain('https://apply.workable.com/*');
   });
 
   it('second entry exists for parent-stub bundling (never-match)', () => {

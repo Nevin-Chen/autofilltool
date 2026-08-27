@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="subdomain" content="parallaxlabs" />
+    <meta name="domain" content="workable.com" />
+    <title>Backend Engineer - Parallax Labs - Application</title>
+  </head>
+  <body>
+    <h1 data-ui="job-title">Backend Engineer</h1>
+    <div data-ui="job-department">Platform</div>
+    <div data-ui="job-location">Boston, Massachusetts, United States</div>
+
+    <form data-ui="application-form">
+      <section data-ui="section">
+        <h2>Personal information</h2>
+        <div data-ui="section-fields">
+          <label>
+            <span id="firstname_label">First name</span>
+            <input id="firstname" data-ui="firstname" name="firstname" aria-labelledby="firstname_label" type="text" />
+          </label>
+          <label>
+            <span id="lastname_label">Last name</span>
+            <input id="lastname" data-ui="lastname" name="lastname" aria-labelledby="lastname_label" type="text" />
+          </label>
+          <label>
+            <span id="email_label">Email</span>
+            <input id="email" data-ui="email" name="email" aria-labelledby="email_label" type="email" />
+          </label>
+
+          <div data-ui="phone">
+            <label>
+              <span>Phone</span>
+              <div class="iti__flag-container">
+                <div
+                  role="combobox"
+                  aria-haspopup="listbox"
+                  aria-controls="iti-0__country-listbox"
+                  aria-expanded="false"
+                  aria-label="Telephone country code"
+                  tabindex="0"
+                >
+                  +1
+                </div>
+                <ul id="iti-0__country-listbox" role="listbox">
+                  <li role="option" data-country-code="us">United States +1</li>
+                  <li role="option" data-country-code="gb">United Kingdom +44</li>
+                </ul>
+              </div>
+              <input name="phone" type="tel" autocomplete="off" class="iti__tel-input" />
+            </label>
+          </div>
+
+          <label>
+            <span id="address_label">Address</span>
+            <input id="address" data-ui="address" name="address" aria-labelledby="address_label" aria-describedby="address_helper" type="text" />
+          </label>
+          <span id="address_helper">
+            Include your city, region, and country, so that employers can easily manage your application.
+          </span>
+
+          <div style="position: absolute; width: 1px; height: 1px; overflow: hidden">
+            <label><input id="city" name="city" type="text" aria-hidden="true" tabindex="-1" /></label>
+          </div>
+          <div style="position: absolute; width: 1px; height: 1px; overflow: hidden">
+            <label><input id="postcode" name="postcode" type="text" aria-hidden="true" tabindex="-1" /></label>
+          </div>
+          <div style="position: absolute; width: 1px; height: 1px; overflow: hidden">
+            <label><input id="country" name="country" type="text" aria-hidden="true" tabindex="-1" /></label>
+          </div>
+        </div>
+      </section>
+
+      <section data-ui="section">
+        <h2>Profile</h2>
+        <div data-ui="section-fields">
+          <span id="resume_label">Resume</span>
+          <label for="input_files_input_ZUrhyB1BL5" id="description_input_ZUrhyB1BL5">Choose file</label>
+          <input
+            data-ui="resume"
+            id="input_files_input_ZUrhyB1BL5"
+            type="file"
+            tabindex="-1"
+            aria-labelledby="resume_label description_input_ZUrhyB1BL5"
+            accept=".pdf,.doc,.docx,.odt,.rtf"
+          />
+        </div>
+      </section>
+
+      <section data-ui="section">
+        <h2>Details</h2>
+        <div data-ui="section-fields">
+          <label>
+            <span id="cover_letter_label">Cover letter</span>
+            <textarea id="cover_letter" data-ui="cover_letter" name="cover_letter" aria-labelledby="cover_letter_label"></textarea>
+          </label>
+
+          <label>
+            <span id="CA_4412_label">What are your salary expectations (in USD)?</span>
+            <input id="CA_4412" data-ui="CA_4412" name="CA_4412" aria-labelledby="CA_4412_label" type="text" />
+          </label>
+
+          <div>
+            <span id="relocate_label">Are you willing to relocate for this role?</span>
+            <fieldset role="radiogroup" data-ui="QA_88120001" aria-labelledby="relocate_label">
+              <div data-ui="option" role="radio" aria-checked="false" id="wrapper_relocate_yes">
+                <label>
+                  <input id="relocate_yes" type="radio" name="QA_88120001" value="true" tabindex="-1" aria-hidden="true" />
+                  <span id="radio_label_relocate_yes">YES</span>
+                </label>
+              </div>
+              <div data-ui="option" role="radio" aria-checked="false" id="wrapper_relocate_no">
+                <label>
+                  <input id="relocate_no" type="radio" name="QA_88120001" value="false" tabindex="-1" aria-hidden="true" />
+                  <span id="radio_label_relocate_no">NO</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div>
+            <span id="onsite_label">Can you be in our Boston office 3 days a week?</span>
+            <fieldset role="radiogroup" data-ui="QA_88120002" aria-labelledby="onsite_label">
+              <div data-ui="option" role="radio" aria-checked="false" id="wrapper_onsite_yes">
+                <label>
+                  <input id="onsite_yes" type="radio" name="QA_88120002" value="true" tabindex="-1" aria-hidden="true" />
+                  <span id="radio_label_onsite_yes">YES</span>
+                </label>
+              </div>
+              <div data-ui="option" role="radio" aria-checked="false" id="wrapper_onsite_no">
+                <label>
+                  <input id="onsite_no" type="radio" name="QA_88120002" value="false" tabindex="-1" aria-hidden="true" />
+                  <span id="radio_label_onsite_no">NO</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <label>
+            <span id="QA_88120003_label">In two sentences or less, what are you looking for in your next role?</span>
+            <textarea id="QA_88120003" data-ui="QA_88120003" name="QA_88120003" aria-labelledby="QA_88120003_label"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <button data-ui="apply-button" type="submit">Submit application</button>
+    </form>
+  </body>
+</html>
