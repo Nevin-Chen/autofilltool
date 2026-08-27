@@ -1,4 +1,11 @@
-import type { FieldKind, DetectedField, DetectionResult, UnclassifiedField } from './types';
+import type {
+  FieldKind,
+  DetectedField,
+  DetectionResult,
+  UnclassifiedField,
+  SelfIdKind,
+} from './types';
+import { isSelfIdKind } from './types';
 import { attachFile } from '@/content/filler';
 
 export type Context = {
@@ -100,13 +107,25 @@ export const KEYWORD_RULES: ReadonlyArray<{
   re: RegExp;
   confidence: number;
 }> = [
-  { kind: 'firstName', re: /\b(first[\s_-]*name|given[\s_-]*name|forename)\b/, confidence: 0.85 },
-  { kind: 'lastName', re: /\b(last[\s_-]*name|family[\s_-]*name|surname)\b/, confidence: 0.85 },
+  { kind: 'transgender', re: /\btransgender\b/, confidence: 0.8 },
+  { kind: 'sexualOrientation', re: /\bsexual orientation\b/, confidence: 0.8 },
+  { kind: 'pronouns', re: /\bpronoun/, confidence: 0.7 },
+  {
+    kind: 'ethnicity',
+    re: /\b(hispanic|latino|latina|latinx)\b/,
+    confidence: 0.7,
+  },
+  { kind: 'race', re: /\brac(e|ial)\b/, confidence: 0.7 },
+  { kind: 'veteranStatus', re: /\b(veteran|military|armed forces)\b/, confidence: 0.7 },
+  { kind: 'disabilityStatus', re: /\bdisab(ility|ilities|led)\b/, confidence: 0.7 },
+  { kind: 'gender', re: /\b(gender|sex)\b/, confidence: 0.65 },
   {
     kind: 'preferredName',
-    re: /\b(preferred[\s_-]*name|nickname|goes by|name you go by)\b/,
+    re: /\b(preferred[\s_-]*(first[\s_-]*)?name|nickname|goes by|name you go by)\b/,
     confidence: 0.8,
   },
+  { kind: 'firstName', re: /\b(first[\s_-]*name|given[\s_-]*name|forename)\b/, confidence: 0.85 },
+  { kind: 'lastName', re: /\b(last[\s_-]*name|family[\s_-]*name|surname)\b/, confidence: 0.85 },
   { kind: 'fullName', re: /\b(full[\s_-]*name|legal[\s_-]*name|your name)\b/, confidence: 0.75 },
   { kind: 'email', re: /\b(e[\s_-]?mail|email address)\b/, confidence: 0.85 },
   {
@@ -181,16 +200,6 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(school|university|college|institution|alma[\s_-]*mater)\b/,
     confidence: 0.75,
   },
-  { kind: 'gender', re: /\b(gender|sex)\b/, confidence: 0.65 },
-  { kind: 'pronouns', re: /\bpronoun/, confidence: 0.7 },
-  {
-    kind: 'ethnicity',
-    re: /\b(hispanic|latino|latina|latinx)\b/,
-    confidence: 0.7,
-  },
-  { kind: 'race', re: /\brace\b/, confidence: 0.7 },
-  { kind: 'veteranStatus', re: /\b(veteran|military)\b/, confidence: 0.7 },
-  { kind: 'disabilityStatus', re: /\bdisab(ility|led)\b/, confidence: 0.7 },
 ];
 
 export function fromKeywords(haystack: string): Classification | null {
@@ -484,7 +493,7 @@ export const JOB_DESCRIPTION_CHAR_BUDGET = 3000;
 export function clipJobDescription(raw: string): string {
   const collapsed = raw
     .split(/\r?\n/)
-    .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim()) // collapse inline runs per line
+    .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -547,11 +556,25 @@ export function hasSubmissionConfirmText(doc: Document): boolean {
   return SUBMISSION_CONFIRM_RE.test(text);
 }
 
-export const COMPLIANCE_PATTERN =
-  /race|ethnic|hispanic|latino|disab|veteran|military|sponsor|visa|work[- ]?auth|authoriz(ed|ation)?\s+to\s+work|h-?1b|green card|citizen/i;
+export const SELF_ID_PATTERN =
+  /gender|\bsex|pronoun|race|racial|ethnic|hispanic|latin[aox]|transgender|lgbt|disab|veteran|military|armed forces|self[- ]?identif/i;
+
+export const WORK_ELIGIBILITY_PATTERN =
+  /sponsor|visa|work[- ]?auth|authoriz(ed|ation)?\s+to\s+work|h-?1b|green card|citizen/i;
+
+export const COMPLIANCE_PATTERN = new RegExp(
+  `${SELF_ID_PATTERN.source}|${WORK_ELIGIBILITY_PATTERN.source}`,
+  'i',
+);
 
 export function isCompliancePattern(label: string): boolean {
   return COMPLIANCE_PATTERN.test(label);
+}
+
+export function selfIdKindFromLabel(label: string): SelfIdKind | null {
+  const hit = fromKeywords(normalize(label));
+  if (!hit) return null;
+  return isSelfIdKind(hit.kind) ? hit.kind : null;
 }
 
 export function findUnclassifiedFields(

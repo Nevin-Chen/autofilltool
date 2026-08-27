@@ -451,10 +451,6 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Phrases that mean the same opt-out across EEO forms. Profile-side and
-// option-side wordings rarely match exactly ("do not wish to answer" vs
-// "I do not want to answer" vs "Decline to self-identify"), so we treat any
-// phrase in the group as equivalent for radio resolution.
 const RADIO_SYNONYM_GROUPS: ReadonlyArray<readonly string[]> = [
   [
     'decline to self-identify',
@@ -635,18 +631,30 @@ export async function fillVirtualizedDropdown(
         setNativeValue(trigger, prefix);
         dispatchInputEvents(trigger);
         filteredOption = await waitForOption(listbox, prefix, FILTERED_OPTION_TIMEOUT_MS);
-        if (!filteredOption) {
-          filteredOption = listbox.querySelector<HTMLElement>(
-            '[role="option"]:not([aria-disabled="true"])',
-          );
-        }
       }
     }
+
+    if (!filteredOption) {
+      setNativeValue(trigger, '');
+      dispatchInputEvents(trigger);
+      closeCombobox(trigger, false);
+      return {
+        label,
+        kind,
+        status: 'skipped',
+        note: `no option matched "${truncate(want, 60)}"`,
+      };
+    }
+
     pressEnter(trigger);
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
     if (!opts.suppressFlash) flashFilled(trigger);
-    const noteText = filteredOption ? textOfNode(filteredOption) : want;
-    return { label, kind, status: 'filled', note: `committed "${noteText}" via Enter` };
+    return {
+      label,
+      kind,
+      status: 'filled',
+      note: `committed "${textOfNode(filteredOption)}" via Enter`,
+    };
   }
 
   const option = pickListboxOption(listbox, want);
@@ -789,7 +797,8 @@ function comboboxHasValue(trigger: HTMLElement): boolean {
   for (let depth = 0; cursor && depth < 4; depth++, cursor = cursor.parentElement) {
     const dataValue = cursor.getAttribute('data-value');
     if (dataValue && dataValue.trim()) return true;
-    if (cursor.querySelector('[class*="single-value" i]')) return true;
+    if (cursor.querySelector('[class*="single-value" i], [class*="multi-value" i]'))
+      return true;
     if (cursor.querySelector('[class*="placeholder" i]')) return false;
   }
   if (trigger instanceof HTMLInputElement) return false;

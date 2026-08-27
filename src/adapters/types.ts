@@ -27,6 +27,8 @@ export type FieldKind =
   | 'pronouns'
   | 'ethnicity'
   | 'race'
+  | 'sexualOrientation'
+  | 'transgender'
   | 'veteranStatus'
   | 'disabilityStatus'
   | 'school'
@@ -35,6 +37,23 @@ export type FieldKind =
   | 'gradYear'
   | 'coverLetter'
   | 'openEnded';
+
+export const SELF_ID_KINDS = [
+  'gender',
+  'pronouns',
+  'ethnicity',
+  'race',
+  'sexualOrientation',
+  'transgender',
+  'veteranStatus',
+  'disabilityStatus',
+] as const satisfies ReadonlyArray<FieldKind>;
+
+export type SelfIdKind = (typeof SELF_ID_KINDS)[number];
+
+export function isSelfIdKind(kind: string): kind is SelfIdKind {
+  return (SELF_ID_KINDS as ReadonlyArray<string>).includes(kind);
+}
 
 export type DetectedField = {
   el: HTMLElement;

@@ -329,6 +329,38 @@ export function OptionsApp() {
                 })
               }
             />
+            <TextField
+              label="Pronouns"
+              value={profile.demographics.pronouns ?? ''}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  pronouns: v,
+                })
+              }
+            />
+            <SelectField
+              label="Sexual orientation"
+              value={profile.demographics.sexualOrientation}
+              options={SEXUAL_ORIENTATION_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  sexualOrientation: v,
+                })
+              }
+            />
+            <SelectField
+              label="Do you identify as transgender?"
+              value={profile.demographics.transgender}
+              options={TRANSGENDER_OPTIONS}
+              onChange={(v) =>
+                updateProfile('demographics', {
+                  ...profile.demographics,
+                  transgender: v,
+                })
+              }
+            />
             <SelectField
               label="Veteran status"
               value={profile.demographics.veteranStatus}
@@ -560,6 +592,19 @@ const RACE_OPTIONS = [
   'Two or More Races',
   'Decline to self-identify',
 ];
+
+const SEXUAL_ORIENTATION_OPTIONS = [
+  'Heterosexual',
+  'Gay',
+  'Lesbian',
+  'Bisexual or pansexual',
+  'Queer',
+  'Asexual',
+  'Prefer to self-describe',
+  "I don't wish to answer",
+];
+
+const TRANSGENDER_OPTIONS = ['Yes', 'No', "I don't wish to answer"];
 
 const VETERAN_OPTIONS = [
   'I am not a protected veteran',

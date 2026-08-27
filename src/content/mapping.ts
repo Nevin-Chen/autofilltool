@@ -59,6 +59,10 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.demographics.ethnicity;
     case 'race':
       return profile.demographics.race;
+    case 'sexualOrientation':
+      return profile.demographics.sexualOrientation;
+    case 'transgender':
+      return profile.demographics.transgender;
     case 'veteranStatus':
       return profile.demographics.veteranStatus;
     case 'disabilityStatus':
