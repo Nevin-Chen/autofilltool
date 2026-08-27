@@ -9,16 +9,25 @@ import {
   getProfile,
   getSettings,
   getHistory,
-  getResume,
+  getResumeLibrary,
   pushHistory,
   clearHistory,
 } from '@/profile/store';
+import {
+  companyKeyFromUrl,
+  resolveResumeVariant,
+} from '@/profile/resume-select';
 import {
   isRequestMessage,
   type RequestMessage,
   type ResponseFor,
 } from '@/types/messages';
-import { SubmissionRecordSchema, type SubmissionRecord } from '@/profile/schema';
+import {
+  SubmissionRecordSchema,
+  type Settings,
+  type SubmissionRecord,
+  type ResumeVariant,
+} from '@/profile/schema';
 import { postSubmission, postTestPing } from '@/tracking/sheets-webhook';
 import { dispatch as dispatchAi, classifyField } from '@/ai/client';
 import {
@@ -34,7 +43,22 @@ import {
 import { hasOriginPermission } from '@/lib/permissions';
 import { startKeepAlive } from './keepalive';
 
-async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>> {
+async function resumeForSender(
+  sender: chrome.runtime.MessageSender | undefined,
+  settings: Settings,
+): Promise<{ variant: ResumeVariant | null; companyKey: string }> {
+  const library = await getResumeLibrary();
+  const companyKey = companyKeyFromUrl(sender?.tab?.url ?? sender?.url ?? '');
+  return {
+    variant: resolveResumeVariant(library, settings.resume.companyChoices, companyKey),
+    companyKey,
+  };
+}
+
+async function handle(
+  msg: RequestMessage,
+  sender?: chrome.runtime.MessageSender,
+): Promise<ResponseFor<RequestMessage>> {
   switch (msg.type) {
     case 'PING':
       return { ok: true, value: { pong: true, at: new Date().toISOString() } };
@@ -159,6 +183,12 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
     case 'SHOW_NOTICE':
       return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
+    case 'RESOLVE_RESUME': {
+      const settings = await getSettings();
+      const { variant, companyKey } = await resumeForSender(sender, settings);
+      return { ok: true, value: { variantId: variant?.id ?? null, companyKey } };
+    }
+
     case 'AI_CLASSIFY': {
       try {
         const [settings, profile] = await Promise.all([getSettings(), getProfile()]);
@@ -166,7 +196,9 @@ async function handle(msg: RequestMessage): Promise<ResponseFor<RequestMessage>>
           return { ok: true, value: { value: null } };
         }
         const resume =
-          msg.request.fieldType === 'textarea' ? await getResume() : null;
+          msg.request.fieldType === 'textarea'
+            ? (await resumeForSender(sender, settings)).variant
+            : null;
         const value = await classifyField(msg.request, settings.ai, profile, resume);
         return { ok: true, value: { value } };
       } catch (err) {
@@ -273,11 +305,11 @@ async function ensureContentScriptInAllFrames(
 }
 
 chrome.runtime.onMessage.addListener(
-  respondAsync<unknown, ResponseFor<RequestMessage>>(async (raw) => {
+  respondAsync<unknown, ResponseFor<RequestMessage>>(async (raw, sender) => {
     if (!isRequestMessage(raw)) {
       return { ok: false, error: 'Malformed message' } as ResponseFor<RequestMessage>;
     }
-    return handle(raw);
+    return handle(raw, sender);
   }),
 );
 
@@ -299,12 +331,12 @@ chrome.runtime.onConnect.addListener((port) => {
     });
 
     async function runSuggest(p: chrome.runtime.Port, req: typeof raw.req) {
-      const [settings, resume] = await Promise.all([
-        getSettings(),
-        getResume(),
-      ]);
+      const settings = await getSettings();
+      const { variant: resume, companyKey } = await resumeForSender(p.sender, settings);
       log.debug('Suggest: resume snapshot from storage', {
         present: !!resume,
+        label: resume?.label ?? null,
+        companyKey,
         filename: resume?.filename ?? null,
         mimeType: resume?.mimeType ?? null,
         size: resume?.size ?? 0,

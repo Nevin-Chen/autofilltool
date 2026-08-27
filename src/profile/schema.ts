@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 
 export const AddressSchema = z.object({
   line1: z.string().default(''),
@@ -129,6 +129,11 @@ export const UiSettingsSchema = z.object({
 });
 export type UiSettings = z.infer<typeof UiSettingsSchema>;
 
+export const ResumeSettingsSchema = z.object({
+  companyChoices: z.record(z.string(), z.string()).default({}),
+});
+export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
+
 export const SettingsSchema = z.object({
   enabledAdapters: z.array(AdapterIdSchema).default([
     'greenhouse',
@@ -143,6 +148,7 @@ export const SettingsSchema = z.object({
   ai: AiSettingsSchema.default({}),
   tracking: TrackingSettingsSchema.default({}),
   ui: UiSettingsSchema.default({}),
+  resume: ResumeSettingsSchema.default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -155,6 +161,25 @@ export const ResumeRecordSchema = z.object({
   extractedText: z.string().optional(),
 });
 export type ResumeRecord = z.infer<typeof ResumeRecordSchema>;
+
+export const ResumeVariantSchema = ResumeRecordSchema.extend({
+  id: z.string().min(1),
+  label: z.string().min(1),
+});
+export type ResumeVariant = z.infer<typeof ResumeVariantSchema>;
+
+export const ResumeLibrarySchema = z.object({
+  variants: z.array(ResumeVariantSchema),
+  activeId: z.string().nullable().default(null),
+});
+export type ResumeLibrary = z.infer<typeof ResumeLibrarySchema>;
+
+export function emptyResumeLibrary(): ResumeLibrary {
+  return { variants: [], activeId: null };
+}
+
+export const MAX_RESUME_VARIANTS = 5;
+export const RESUME_LIBRARY_BUDGET_BYTES = 8 * 1024 * 1024;
 
 export const SubmissionStatusSchema = z.enum([
   'filled',
@@ -190,7 +215,7 @@ export type SettingsEnvelope = z.infer<typeof SettingsEnvelopeSchema>;
 
 export const ResumeEnvelopeSchema = z.object({
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),
-  data: ResumeRecordSchema,
+  data: ResumeLibrarySchema,
 });
 export type ResumeEnvelope = z.infer<typeof ResumeEnvelopeSchema>;
 

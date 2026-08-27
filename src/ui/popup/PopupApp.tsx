@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react';
 import { sendToBackground } from '@/lib/messaging';
-import { getSettings, setSettings } from '@/profile/store';
-import type { SubmissionRecord, Settings } from '@/profile/schema';
+import { getSettings, setSettings, getResumeLibrary } from '@/profile/store';
+import {
+  emptyResumeLibrary,
+  type SubmissionRecord,
+  type Settings,
+  type ResumeLibrary,
+} from '@/profile/schema';
+import {
+  companyKeyFromUrl,
+  defaultVariant,
+  resolveResumeVariant,
+  withCompanyChoice,
+} from '@/profile/resume-select';
 import { toCsv, csvFilename } from '@/lib/history-export';
 
 type TabInfo = {
@@ -19,6 +30,7 @@ export function PopupApp() {
   const [cursor, setCursor] = useState(0);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [settings, setSettingsState] = useState<Settings | null>(null);
+  const [library, setLibrary] = useState<ResumeLibrary>(emptyResumeLibrary());
 
   useEffect(() => {
     (async () => {
@@ -43,6 +55,7 @@ export function PopupApp() {
         if (h.ok) setHistory(h.value);
         const s = await getSettings();
         setSettingsState(s);
+        setLibrary(await getResumeLibrary());
       } catch (err) {
         setPingErr(err instanceof Error ? err.message : String(err));
       }
@@ -75,6 +88,25 @@ export function PopupApp() {
     URL.revokeObjectURL(url);
   };
 
+  const companyKey = tab ? companyKeyFromUrl(tab.url) : '';
+  const pickedResume =
+    settings && resolveResumeVariant(library, settings.resume.companyChoices, companyKey);
+
+  const onPickResume = async (variantId: string) => {
+    if (!settings) return;
+    await updateSettings({
+      resume: {
+        ...settings.resume,
+        companyChoices: withCompanyChoice(
+          settings.resume.companyChoices,
+          companyKey,
+          variantId,
+          library,
+        ),
+      },
+    });
+  };
+
   const updateSettings = async (updates: Partial<Settings>) => {
     if (!settings) return;
     const next = { ...settings, ...updates };
@@ -94,6 +126,33 @@ export function PopupApp() {
           {tab ? tab.host : 'no active tab'}
         </div>
       </header>
+
+      {settings && companyKey && library.variants.length > 1 && (
+        <div className="mb-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <label
+            htmlFor="resume-variant"
+            className="block text-xs font-medium text-slate-800 dark:text-slate-100"
+          >
+            Resume
+          </label>
+          <select
+            id="resume-variant"
+            value={pickedResume?.id ?? ''}
+            onChange={(e) => void onPickResume(e.target.value)}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {library.variants.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+                {v.id === defaultVariant(library)?.id ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Remembered for {companyLabel(companyKey)}
+          </div>
+        </div>
+      )}
 
       {settings && (
         <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
@@ -353,6 +412,11 @@ export function PopupApp() {
       </button>
     </div>
   );
+}
+
+function companyLabel(companyKey: string): string {
+  const slash = companyKey.indexOf('/');
+  return slash === -1 ? companyKey : companyKey.slice(slash + 1);
 }
 
 function relativeTime(iso: string): string {

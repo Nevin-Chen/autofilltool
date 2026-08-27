@@ -1,15 +1,10 @@
-/**
- * Resume file helpers. Resumes are stored as base64 in chrome.storage.local
- * via the ResumeRecord envelope. At fill time we reconstitute a real File so
- * the page's <input type="file"> sees it as if the user had picked it.
- */
+import {
+  ResumeRecordSchema,
+  ResumeVariantSchema,
+  type ResumeRecord,
+  type ResumeVariant,
+} from './schema';
 
-import { ResumeRecordSchema, type ResumeRecord } from './schema';
-
-/**
- * Read a browser File into a ResumeRecord. The File is consumed via
- * arrayBuffer() and stored as base64 (chrome.storage.local can't hold Blobs).
- */
 export async function fileToResumeRecord(file: File): Promise<ResumeRecord> {
   const buf = await file.arrayBuffer();
   const bytesBase64 = bytesToBase64(new Uint8Array(buf));
@@ -20,18 +15,30 @@ export async function fileToResumeRecord(file: File): Promise<ResumeRecord> {
     bytesBase64,
     uploadedAt: new Date().toISOString(),
   };
-  // Validate before returning; safer than trusting upstream callers.
   return ResumeRecordSchema.parse(record);
 }
 
-/**
- * Rebuild a File from a stored record. Used by the content-side filler when
- * attaching the resume to <input type="file"> via a DataTransfer.
- */
+export async function fileToResumeVariant(
+  file: File,
+  label?: string,
+): Promise<ResumeVariant> {
+  const base = await fileToResumeRecord(file);
+  return ResumeVariantSchema.parse({
+    ...base,
+    id: crypto.randomUUID(),
+    label: label?.trim() || labelFromFilename(file.name),
+  });
+}
+
+export function labelFromFilename(filename: string): string {
+  const base = filename.replace(/\.[^.]+$/, '');
+  const cleaned = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return 'Resume';
+  return cleaned.length > 60 ? `${cleaned.slice(0, 59).trimEnd()}…` : cleaned;
+}
+
 export function resumeRecordToFile(record: ResumeRecord): File {
   const bytes = base64ToBytes(record.bytesBase64);
-  // Copy into a fresh ArrayBuffer so the BlobPart type narrows to ArrayBuffer
-  // (TS 5.5 typings reject the wider ArrayBufferLike from Uint8Array.buffer).
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return new File([buffer], record.filename, {
@@ -40,12 +47,12 @@ export function resumeRecordToFile(record: ResumeRecord): File {
   });
 }
 
-/* ------------------------------------------------------ base64 helpers */
+export function resumeLibraryBytes(
+  variants: ReadonlyArray<Pick<ResumeRecord, 'bytesBase64'>>,
+): number {
+  return variants.reduce((sum, v) => sum + v.bytesBase64.length, 0);
+}
 
-/**
- * Browser-safe base64 encoding for binary data. Chunked because btoa on a
- * very long string can blow the stack in some engines.
- */
 export function bytesToBase64(bytes: Uint8Array): string {
   const CHUNK = 0x8000;
   let binary = '';
