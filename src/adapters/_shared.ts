@@ -120,13 +120,13 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.85,
   },
   {
-    kind: 'authorizedToWorkInUS',
-    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
+    kind: 'requiresSponsorship',
+    re: /\b(require|need|request).*\b(sponsor|sponsorship|visa)\b/,
     confidence: 0.8,
   },
   {
-    kind: 'requiresSponsorship',
-    re: /\b(require|need|request).*\b(sponsor|sponsorship|visa)\b/,
+    kind: 'authorizedToWorkInUS',
+    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
     confidence: 0.8,
   },
   {

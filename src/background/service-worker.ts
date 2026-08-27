@@ -226,7 +226,13 @@ async function ensureContentScriptInAllFrames(
     target: { tabId, allFrames: true },
     func: () => {
       const doc = document;
-      let atsHint: 'greenhouse' | 'lever' | 'ashby' | 'workday' | null = null;
+      let atsHint:
+        | 'greenhouse'
+        | 'lever'
+        | 'ashby'
+        | 'workday'
+        | 'jazzhr'
+        | null = null;
       if (
         doc.getElementById('grnhse_app') ||
         doc.getElementById('grnhse_iframe') ||
@@ -240,6 +246,12 @@ async function ensureContentScriptInAllFrames(
         atsHint = 'lever';
       } else if (doc.querySelector('[data-testid="FieldEntry"]')) {
         atsHint = 'ashby';
+      } else if (
+        doc.querySelector(
+          'form[data-test="form_submit_new_resume"], input[name^="resumator-"]',
+        )
+      ) {
+        atsHint = 'jazzhr';
       } else if (doc.querySelector('[data-automation-id]')) {
         atsHint = 'workday';
       }
@@ -376,7 +388,7 @@ self.addEventListener('activate', () => {
 });
 
 const ATS_HOST_RE =
-  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com)$/i;
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com)$/i;
 
 function isAtsUrl(raw: string | undefined): boolean {
   if (!raw) return false;

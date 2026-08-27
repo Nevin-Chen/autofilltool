@@ -68,6 +68,15 @@ describe('probeAtsHint', () => {
     ).toBe('workday');
   });
 
+  it('detects JazzHR via the resumator- prefix', () => {
+    expect(
+      probeAtsHint(docWith('<input name="resumator-firstname-value" />')),
+    ).toBe('jazzhr');
+    expect(
+      probeAtsHint(docWith('<form data-test="form_submit_new_resume"></form>')),
+    ).toBe('jazzhr');
+  });
+
   it('returns null for arbitrary pages', () => {
     expect(probeAtsHint(docWith('<p>Hello world</p>'))).toBeNull();
     expect(probeAtsHint(docWith(''))).toBeNull();
@@ -81,6 +90,9 @@ describe('isAtsFrameUrl', () => {
     expect(isAtsFrameUrl('https://jobs.lever.co/stripe/abc')).toBe(true);
     expect(isAtsFrameUrl('https://jobs.ashbyhq.com/stripe/job-xyz')).toBe(true);
     expect(isAtsFrameUrl('https://nvidia.myworkdayjobs.com/Careers')).toBe(true);
+    expect(isAtsFrameUrl('https://x.applytojob.com/apply/ByZk')).toBe(
+      true,
+    );
   });
 
   it('matches greenhouse custom subdomains', () => {
