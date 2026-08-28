@@ -77,6 +77,12 @@ describe('probeAtsHint', () => {
     ).toBe('jazzhr');
   });
 
+  it('detects Workable via the application-form marker', () => {
+    expect(
+      probeAtsHint(docWith('<form data-ui="application-form"></form>')),
+    ).toBe('workable');
+  });
+
   it('returns null for arbitrary pages', () => {
     expect(probeAtsHint(docWith('<p>Hello world</p>'))).toBeNull();
     expect(probeAtsHint(docWith(''))).toBeNull();

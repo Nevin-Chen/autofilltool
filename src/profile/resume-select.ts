@@ -4,6 +4,7 @@ const SHARED_ATS_HOSTS: ReadonlyArray<RegExp> = [
   /(^|\.)greenhouse\.io$/i,
   /(^|\.)lever\.co$/i,
   /(^|\.)ashbyhq\.com$/i,
+  /(^|\.)workable\.com$/i,
 ];
 
 export function companyKeyFromUrl(url: URL | string): string {

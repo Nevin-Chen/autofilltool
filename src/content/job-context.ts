@@ -27,6 +27,7 @@ function extractRole(doc: Document): string {
     'h1.posting-headline h2',
     '.posting-headline h2',
     'h1[data-automation-id="jobPostingHeader"]',
+    'h1[data-ui="job-title"]',
     '[data-testid="job-title"]',
     '[data-test="jobTitle"]',
     '.job-title',
@@ -84,6 +85,10 @@ function companyFromAtsUrl(url: URL): string | null {
   if (url.hostname.endsWith('applytojob.com')) {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
+  }
+  if (url.hostname.endsWith('workable.com')) {
+    const m = url.pathname.match(/^\/([^/]+)\//);
+    if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
   return null;
 }
