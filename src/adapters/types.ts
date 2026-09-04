@@ -7,6 +7,8 @@ export type FieldKind =
   | 'preferredName'
   | 'email'
   | 'phone'
+  | 'phoneCountry'
+  | 'phoneNational'
   | 'addressLine1'
   | 'addressLine2'
   | 'city'

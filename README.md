@@ -10,6 +10,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 
 #### **Auto-fill**
 - Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, and Workable, with a heuristic fallback for anything else
+- Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
 - Skips fields that already have a value. **Force overwrite** if you want it to go over them again
 - Fills ATS iframes embedded in company career pages, not just the ATS domain itself
 - Filled fields flash so you can see what it touched

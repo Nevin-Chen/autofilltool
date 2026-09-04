@@ -273,17 +273,19 @@ describe('greenhouseAdapter — new redesign fixture', () => {
   it("does not detect the phone-input country-code picker as kind=country", () => {
     document.body.innerHTML = `
       <form>
-        <div class="phone-input__country">
-          <div class="select">
-            <div class="select__container">
-              <label id="country-label" for="country">Country</label>
-              <div class="select-shell">
-                <div>
-                  <div class="select__control">
-                    <div class="select__value-container">
-                      <div class="select__input-container">
-                        <input role="combobox" type="text" id="country"
-                               aria-labelledby="country-label" />
+        <fieldset class="phone-input">
+          <div class="phone-input__country">
+            <div class="select">
+              <div class="select__container">
+                <label id="country-label" for="country">Country</label>
+                <div class="select-shell">
+                  <div>
+                    <div class="select__control">
+                      <div class="select__value-container">
+                        <div class="select__input-container">
+                          <input role="combobox" type="text" id="country"
+                                 aria-labelledby="country-label" />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -291,8 +293,10 @@ describe('greenhouseAdapter — new redesign fixture', () => {
               </div>
             </div>
           </div>
-        </div>
-        <input type="tel" name="phone" />
+          <div class="phone-input__phone">
+            <input type="tel" name="phone" />
+          </div>
+        </fieldset>
         <div>
           <label for="addr-country">Country</label>
           <input role="combobox" type="text" id="addr-country"
@@ -306,6 +310,9 @@ describe('greenhouseAdapter — new redesign fixture', () => {
     const country = fields.filter((f) => f.kind === 'country');
     expect(country.length, 'exactly one country field (the address one)').toBe(1);
     expect(country[0]?.el.id).toBe('addr-country');
+
+    const phoneCountry = fields.find((f) => f.kind === 'phoneCountry');
+    expect(phoneCountry?.el.id, 'the dial-code picker gets its own kind').toBe('country');
   });
 
   it("deduplicates the same kind across the combobox walk and the input walk (country shouldn't appear as both filled and skipped)", () => {
@@ -464,6 +471,59 @@ describe('greenhouseAdapter — new redesign fixture', () => {
     const textarea = document.querySelector('textarea')!;
     const textareaField = fields.find((f) => f.el === textarea);
     expect(textareaField?.label).not.toBe('First Name *');
+  });
+});
+
+describe('greenhouseAdapter — phone widget fixture (fubo.tv / job-boards embed)', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = loadFixture('greenhouse-phone-widget.html');
+  });
+
+  it('classifies the fields by id when nothing carries a name attribute', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+    const expected: Array<[string, FieldKind]> = [
+      ['first_name', 'firstName'],
+      ['email', 'email'],
+      ['gender', 'gender'],
+    ];
+    for (const [id, kind] of expected) {
+      const f = find(fields, (el) => el.id === id);
+      expect(f, `missing field for id="${id}"`).toBeDefined();
+      expect(f?.kind).toBe(kind);
+    }
+  });
+
+  it('splits the phone fieldset into a dial-code picker and a national number', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+
+    const country = fields.find((f) => f.el.id === 'country');
+    expect(country?.kind).toBe('phoneCountry');
+    expect(
+      country?.widget,
+      'react-select has to be committed via the dropdown filler, not a text write',
+    ).toBe('virtualizedDropdown');
+
+    const phone = fields.find((f) => f.el.id === 'phone');
+    expect(phone?.kind).toBe('phoneNational');
+  });
+
+  it('never classifies the dial-code picker as the address country', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+    expect(fields.filter((f) => f.kind === 'country')).toEqual([]);
+  });
+
+  it("leaves react-select's hidden requiredInput and toggle button alone", () => {
+    const result = greenhouseAdapter.detectAll!(document);
+    const touched = [...result.classified, ...result.unclassified].map((f) => f.el);
+    const proxy = document.querySelector('.remix-css-1a0ro4n-requiredInput')!;
+    expect(touched).not.toContain(proxy);
+    expect(touched.filter((el) => el.closest('fieldset.phone-input')).length).toBe(2);
+  });
+
+  it('still classifies a react-select outside the phone widget as a normal dropdown', () => {
+    const fields = greenhouseAdapter.detectFields(document);
+    const gender = fields.find((f) => f.el.id === 'gender');
+    expect(gender?.widget).toBe('virtualizedDropdown');
   });
 });
 

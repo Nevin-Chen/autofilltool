@@ -63,3 +63,35 @@ describe('valueForField — cityAndRegion composition', () => {
     expect(valueForField(withAddress({ city: '', region: '' }), 'cityAndRegion')).toBeNull();
   });
 });
+
+describe('valueForField — phone split for widgets with their own dial-code picker', () => {
+  function withPhone(phone: string, phoneCountry: string, country = ''): Profile {
+    const p = emptyProfile();
+    return { ...p, phone, phoneCountry, address: { ...p.address, country } };
+  }
+
+  it('keeps the dial code on a plain phone input but strips it for the national field', () => {
+    const p = withPhone('+1 4155551234', 'US');
+    expect(valueForField(p, 'phone')).toBe('+1 4155551234');
+    expect(valueForField(p, 'phoneNational')).toBe('4155551234');
+    expect(valueForField(p, 'phoneCountry')).toBe('United States');
+  });
+
+  it('infers the dial-code country from the number when no country was picked', () => {
+    const p = withPhone('+44 7700900123', '');
+    expect(valueForField(p, 'phoneCountry')).toBe('United Kingdom');
+    expect(valueForField(p, 'phoneNational')).toBe('7700900123');
+  });
+
+  it('falls back to the address country when the number carries no dial code', () => {
+    const p = withPhone('4155551234', '', 'United States');
+    expect(valueForField(p, 'phoneCountry')).toBe('United States');
+    expect(valueForField(p, 'phoneNational')).toBe('4155551234');
+  });
+
+  it('returns null for both when no phone is stored, so the filler skips them', () => {
+    const p = withPhone('', '');
+    expect(valueForField(p, 'phoneNational')).toBeNull();
+    expect(valueForField(p, 'phoneCountry')).toBeNull();
+  });
+});
