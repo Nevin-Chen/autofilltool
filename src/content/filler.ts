@@ -1,5 +1,5 @@
 import { setNativeValue, dispatchInputEvents } from '@/lib/events';
-import { bestLabel } from '@/adapters/_shared';
+import { bestLabel, findLocateButton } from '@/adapters/_shared';
 import type { DetectedField } from '@/adapters/types';
 
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
@@ -682,6 +682,88 @@ export async function fillVirtualizedDropdown(
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
   if (!opts.suppressFlash) flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
+}
+
+const LOCATE_RESULT_TIMEOUT_MS = 4000;
+
+export async function fillViaLocateButton(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: VirtualizedDropdownOptions = {},
+): Promise<FillAction> {
+  const { el: trigger, kind, label } = field;
+
+  if (!opts.forceOverwrite && comboboxHasValue(trigger)) {
+    return { label, kind, status: 'skipped', note: 'already filled' };
+  }
+
+  const button = findLocateButton(trigger);
+  if (!button || looksLikeSubmit(button)) {
+    return fillVirtualizedDropdown(field, rawValue, opts);
+  }
+
+  if (await geolocationBlocked()) {
+    return fillVirtualizedDropdown(field, rawValue, opts);
+  }
+
+  try {
+    button.click();
+  } catch (err) {
+    void err;
+    return fillVirtualizedDropdown(field, rawValue, opts);
+  }
+
+  const located = await waitForComboboxValue(
+    trigger,
+    opts.timeoutMs ?? LOCATE_RESULT_TIMEOUT_MS,
+  );
+  if (located) {
+    if (!opts.suppressFlash) flashFilled(trigger);
+    return { label, kind, status: 'filled', note: `used the form's "${textOfNode(button)}" button` };
+  }
+
+  const fallback = await fillVirtualizedDropdown(field, rawValue, opts);
+  if (fallback.status === 'skipped' && fallback.note === 'no value in profile') {
+    return { ...fallback, note: 'the page never returned a location' };
+  }
+  return fallback;
+}
+
+async function geolocationBlocked(): Promise<boolean> {
+  try {
+    const perms = navigator.permissions;
+    if (!perms?.query) return false;
+    const status = await perms.query({ name: 'geolocation' as PermissionName });
+    return status.state === 'denied';
+  } catch {
+    return false;
+  }
+}
+
+function waitForComboboxValue(trigger: HTMLElement, timeoutMs: number): Promise<boolean> {
+  if (comboboxHasValue(trigger)) return Promise.resolve(true);
+  const scope = trigger.closest<HTMLElement>('form') ?? trigger.ownerDocument.body;
+  if (!scope) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: boolean) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const observer = new MutationObserver(() => {
+      if (comboboxHasValue(trigger)) finish(true);
+    });
+    observer.observe(scope, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
 }
 
 const FILTERED_OPTION_TIMEOUT_MS = 400;

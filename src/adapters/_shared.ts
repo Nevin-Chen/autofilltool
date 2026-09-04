@@ -684,7 +684,7 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
     }
     return { el, label, fieldType: 'buttongroup', options };
   }
-  if (field.widget === 'virtualizedDropdown') {
+  if (field.widget === 'virtualizedDropdown' || field.widget === 'locateButton') {
     return { el, label, fieldType: 'combobox' };
   }
   if (el instanceof HTMLSelectElement) {
@@ -848,4 +848,18 @@ export function defaultDetectAll(
   const classified = adapter.detectFields(root);
   const unclassified = findUnclassifiedFields(root, classified);
   return { classified, unclassified };
+}
+
+const LOCATE_BUTTON_RE =
+  /^(locate me|use (my|current) location|use my current location|current location|detect (my )?location|find me)$/i;
+
+export function findLocateButton(trigger: HTMLElement): HTMLButtonElement | null {
+  const scope = trigger.closest('form') ?? trigger.ownerDocument.body;
+  if (!scope) return null;
+  for (const btn of Array.from(scope.querySelectorAll<HTMLButtonElement>('button'))) {
+    if (btn.disabled) continue;
+    if (LOCATE_BUTTON_RE.test(textOf(btn))) return btn;
+    if (LOCATE_BUTTON_RE.test((btn.getAttribute('aria-label') ?? '').trim())) return btn;
+  }
+  return null;
 }
