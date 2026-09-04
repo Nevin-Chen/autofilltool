@@ -15,8 +15,10 @@ const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: 
   { field: 'first_name', kind: 'firstName', confidence: 0.99 },
   { field: 'last_name', kind: 'lastName', confidence: 0.99 },
   { field: 'email', kind: 'email', confidence: 0.99 },
-  { field: 'phone', kind: 'phone', confidence: 0.99 },
 ];
+
+const PHONE_WIDGET_SELECTOR =
+  '[class*="phone-input" i], [class~="iti"], [class*="iti__"]';
 
 const LABEL_HINTS: ReadonlyArray<{ re: RegExp; kind: FieldKind; confidence: number }> = [
   { re: /linkedin/i, kind: 'linkedin', confidence: 0.95 },
@@ -41,7 +43,9 @@ export const greenhouseAdapter: PlatformAdapter = {
     const raw = detectFieldsRaw(root);
     return {
       classified: sortByDomOrder(dedupeByKind(raw)),
-      unclassified: findUnclassifiedFields(root, raw),
+      unclassified: findUnclassifiedFields(root, raw).filter(
+        (u) => !isPhoneWidgetChrome(u.el),
+      ),
     };
   },
   fillResume,
@@ -84,10 +88,15 @@ function detectFieldsRaw(root: Document): DetectedField[] {
       if (byId instanceof HTMLElement) el = byId;
     }
     if (el && isFillable(el) && !seen.has(el)) {
-      const label = textForLabel(root, el.id) || textOfNearbyLabel(el) || field;
+      const label = labelOf(root, el) || field;
       out.push({ el, kind, label, confidence });
       seen.add(el);
     }
+  }
+
+  for (const field of detectPhoneFields(root)) {
+    out.push(field);
+    seen.add(field.el);
   }
 
   const allCombos = Array.from(
@@ -101,7 +110,7 @@ function detectFieldsRaw(root: Document): DetectedField[] {
   for (const el of innermost) {
     if (seen.has(el)) continue;
 
-    if (isInsidePhoneWidget(el)) continue;
+    if (isPhoneWidgetChrome(el)) continue;
     const ctx = collectContext(el);
     const hinted = LABEL_HINTS.find((h) => h.re.test(ctx.label) || h.re.test(ctx.haystack));
     const classified = hinted ?? classifyByHeuristics(el, ctx);
@@ -121,6 +130,7 @@ function detectFieldsRaw(root: Document): DetectedField[] {
   )) {
     if (seen.has(el)) continue;
     if (!isFillable(el)) continue;
+    if (isPhoneWidgetChrome(el)) continue;
 
     const ctx = collectContext(el);
     const hinted = LABEL_HINTS.find((h) => h.re.test(ctx.label) || h.re.test(ctx.haystack));
@@ -174,8 +184,69 @@ function score(f: DetectedField): number {
   return (f.widget === 'virtualizedDropdown' ? 1 : 0) + f.confidence;
 }
 
-function isInsidePhoneWidget(el: HTMLElement): boolean {
-  return !!el.closest('[class*="phone-input" i], [class*="iti__"]');
+function isPhoneWidgetChrome(el: HTMLElement): boolean {
+  return !!el.closest(PHONE_WIDGET_SELECTOR);
+}
+
+function detectPhoneFields(root: Document): DetectedField[] {
+  const phone = findPhoneInput(root);
+  if (!phone || !isFillable(phone)) return [];
+  const label = labelOf(root, phone) || 'phone';
+
+  const widget = phoneWidgetRoot(phone);
+  const country = widget ? phoneCountryControl(widget) : null;
+  if (!country) {
+    return [{ el: phone, kind: 'phone', label, confidence: 0.99 }];
+  }
+
+  return [
+    {
+      el: country,
+      kind: 'phoneCountry',
+      label: labelOf(root, country) || 'country',
+      confidence: 0.99,
+      ...(country instanceof HTMLSelectElement
+        ? {}
+        : { widget: 'virtualizedDropdown' as const }),
+    },
+    { el: phone, kind: 'phoneNational', label, confidence: 0.99 },
+  ];
+}
+
+function phoneWidgetRoot(el: HTMLElement): HTMLElement | null {
+  let widget: HTMLElement | null = null;
+  let cursor = el.closest<HTMLElement>(PHONE_WIDGET_SELECTOR);
+  while (cursor) {
+    widget = cursor;
+    cursor = cursor.parentElement?.closest<HTMLElement>(PHONE_WIDGET_SELECTOR) ?? null;
+  }
+  return widget;
+}
+
+function findPhoneInput(root: Document): HTMLElement | null {
+  const byName = root.querySelector<HTMLElement>(
+    'input[name="phone"], select[name="phone"], textarea[name="phone"]',
+  );
+  if (byName) return byName;
+  const byId = root.getElementById('phone');
+  return byId instanceof HTMLElement ? byId : null;
+}
+
+function phoneCountryControl(widget: HTMLElement): HTMLElement | null {
+  const combos = Array.from(
+    widget.querySelectorAll<HTMLElement>('[role="combobox"], [aria-haspopup="listbox"]'),
+  );
+  const innermost = combos.filter(
+    (el) => !combos.some((other) => other !== el && el.contains(other)),
+  );
+  const combo = innermost[0];
+  if (combo) return combo;
+  const select = widget.querySelector<HTMLSelectElement>('select');
+  return select && isFillable(select) ? select : null;
+}
+
+function labelOf(root: Document, el: HTMLElement): string {
+  return textForLabel(root, el.id) || textOfNearbyLabel(el);
 }
 
 async function fillResume(file: File, root: Document): Promise<boolean> {

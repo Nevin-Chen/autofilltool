@@ -1,5 +1,6 @@
 import type { Profile } from '@/profile/schema';
 import type { FieldKind } from '@/adapters/types';
+import { countryByIso, splitPhone } from '@/lib/countries';
 
 export function valueForField(profile: Profile, kind: FieldKind): string | boolean | null {
   switch (kind) {
@@ -15,6 +16,10 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.email || null;
     case 'phone':
       return profile.phone || null;
+    case 'phoneCountry':
+      return phoneCountryName(profile);
+    case 'phoneNational':
+      return splitPhone(profile.phone, profile.phoneCountry).national || null;
 
     case 'addressLine1':
       return profile.address.line1 || null;
@@ -89,6 +94,13 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return null;
     }
   }
+}
+
+function phoneCountryName(profile: Profile): string | null {
+  const { iso } = splitPhone(profile.phone, profile.phoneCountry);
+  const named = countryByIso(iso)?.name;
+  if (named) return named;
+  return profile.address.country || null;
 }
 
 function yesNo(v: boolean | null): string | null {
