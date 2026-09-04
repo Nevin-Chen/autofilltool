@@ -9,6 +9,7 @@ import { pickAdapter } from './detector';
 import {
   fillField,
   fillVirtualizedDropdown,
+  fillViaLocateButton,
   fillCheckboxGroup,
   fillButtonGroup,
   harvestComboboxOptions,
@@ -480,7 +481,12 @@ async function runFill(forceFromMsg?: boolean) {
     const field = fields[i]!;
     const value = valueForField(profile, field.kind);
     let action: FillAction;
-    if (field.widget === 'virtualizedDropdown') {
+    if (field.widget === 'locateButton') {
+      action = await fillViaLocateButton(field, value, {
+        forceOverwrite,
+        suppressFlash: animate,
+      });
+    } else if (field.widget === 'virtualizedDropdown') {
       action = await fillVirtualizedDropdown(field, value, {
         forceOverwrite,
         suppressFlash: animate,
@@ -523,7 +529,12 @@ async function runFill(forceFromMsg?: boolean) {
   for (const field of newFields) {
     const value = valueForField(profile, field.kind);
     let action: FillAction;
-    if (field.widget === 'virtualizedDropdown') {
+    if (field.widget === 'locateButton') {
+      action = await fillViaLocateButton(field, value, {
+        forceOverwrite,
+        suppressFlash: animate,
+      });
+    } else if (field.widget === 'virtualizedDropdown') {
       action = await fillVirtualizedDropdown(field, value, {
         forceOverwrite,
         suppressFlash: animate,
@@ -792,7 +803,8 @@ function isRetryableSkip(note: string | undefined): boolean {
   return (
     note === 'no value in profile' ||
     note.startsWith('no option matched') ||
-    note === 'dropdown popup did not appear'
+    note === 'dropdown popup did not appear' ||
+    note === 'the page never returned a location'
   );
 }
 

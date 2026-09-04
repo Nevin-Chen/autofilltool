@@ -62,7 +62,7 @@ export type DetectedField = {
   kind: FieldKind;
   label: string;
   confidence: number;
-  widget?: 'native' | 'virtualizedDropdown' | 'buttonGroup';
+  widget?: 'native' | 'virtualizedDropdown' | 'buttonGroup' | 'locateButton';
 };
 
 export type UnclassifiedFieldType = 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox' | 'buttongroup';

@@ -9,6 +9,7 @@ import {
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
   findUnclassifiedFields,
+  findLocateButton,
 } from './_shared';
 
 const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: number }> = [
@@ -19,6 +20,13 @@ const KNOWN_FIELDS: ReadonlyArray<{ field: string; kind: FieldKind; confidence: 
 
 const PHONE_WIDGET_SELECTOR =
   '[class*="phone-input" i], [class~="iti"], [class*="iti__"]';
+
+const LOCATION_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>([
+  'city',
+  'cityAndRegion',
+  'region',
+  'addressLine1',
+]);
 
 const LABEL_HINTS: ReadonlyArray<{ re: RegExp; kind: FieldKind; confidence: number }> = [
   { re: /linkedin/i, kind: 'linkedin', confidence: 0.95 },
@@ -120,7 +128,7 @@ function detectFieldsRaw(root: Document): DetectedField[] {
       kind: classified.kind,
       label: ctx.label,
       confidence: classified.confidence,
-      widget: 'virtualizedDropdown',
+      widget: hasLocateButton(el, classified.kind) ? 'locateButton' : 'virtualizedDropdown',
     });
     seen.add(el);
   }
@@ -181,7 +189,13 @@ function normalizeDedupeLabel(label: string): string {
 }
 
 function score(f: DetectedField): number {
-  return (f.widget === 'virtualizedDropdown' ? 1 : 0) + f.confidence;
+  const rich = f.widget === 'virtualizedDropdown' || f.widget === 'locateButton';
+  return (rich ? 1 : 0) + f.confidence;
+}
+
+function hasLocateButton(el: HTMLElement, kind: FieldKind): boolean {
+  if (!LOCATION_KINDS.has(kind)) return false;
+  return !!findLocateButton(el);
 }
 
 function isPhoneWidgetChrome(el: HTMLElement): boolean {
