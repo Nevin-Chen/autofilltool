@@ -30,6 +30,8 @@ export type TestWebhookMsg = { type: 'TEST_WEBHOOK' };
 
 export type ShowNoticeMsg = { type: 'SHOW_NOTICE'; text: string };
 
+export type RouteChangedMsg = { type: 'ROUTE_CHANGED'; url: string };
+
 export type ResolveResumeMsg = { type: 'RESOLVE_RESUME' };
 
 export type AiClassifyMsg = {
@@ -56,6 +58,7 @@ export type RequestMessage =
   | ClearHistoryMsg
   | TestWebhookMsg
   | ShowNoticeMsg
+  | RouteChangedMsg
   | ResolveResumeMsg
   | AiClassifyMsg;
 
@@ -91,6 +94,7 @@ export type GetHistoryResponse = Result<SubmissionRecord[]>;
 export type ClearHistoryResponse = Result<{ cleared: true }>;
 export type TestWebhookResponse = Result<{ status: number }>;
 export type ShowNoticeResponse = Result<{ shown: boolean }>;
+export type RouteChangedResponse = Result<{ rearmed: boolean }>;
 export type ResolveResumeResponse = Result<{
   variantId: string | null;
   companyKey: string;
@@ -107,6 +111,7 @@ export interface MessageMap {
   CLEAR_HISTORY: ClearHistoryResponse;
   TEST_WEBHOOK: TestWebhookResponse;
   SHOW_NOTICE: ShowNoticeResponse;
+  ROUTE_CHANGED: RouteChangedResponse;
   RESOLVE_RESUME: ResolveResumeResponse;
   AI_CLASSIFY: AiClassifyResponse;
 }
@@ -126,6 +131,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'CLEAR_HISTORY' ||
     t === 'TEST_WEBHOOK' ||
     t === 'SHOW_NOTICE' ||
+    t === 'ROUTE_CHANGED' ||
     t === 'RESOLVE_RESUME' ||
     t === 'AI_CLASSIFY'
   );

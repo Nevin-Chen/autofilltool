@@ -45,6 +45,7 @@ import { showLoggedToast, showNoticeToast } from './overlay';
 import {
   showFillTrigger,
   removeFillTrigger,
+  resetFillTriggerForNavigation,
   setFillTriggerFilling,
   setFillTriggerProgress,
   showFillTriggerDone,
@@ -76,10 +77,14 @@ const IS_IFRAME = (() => {
   }
 })();
 
+const TRIGGER_OBSERVE_MS = 30_000;
+const TRIGGER_OBSERVE_DEBOUNCE_MS = 250;
 const PARENT_RETRY_MS = 500;
 const PARENT_MAX_RETRIES = 5;
 let parentAckReceived = false;
 let pendingParentFillHandler: (() => void) | null = null;
+let triggerRunId = 0;
+let triggerUrl = '';
 
 declare global {
   interface Window {
@@ -98,10 +103,17 @@ if (window.__autofilltool_loaded__) {
   log.debug('content script loaded on', location.href);
 }
 
-const TRIGGER_OBSERVE_MS = 30_000;
-const TRIGGER_OBSERVE_DEBOUNCE_MS = 250;
+function rearmTriggerForRoute(url: string): boolean {
+  if (url === triggerUrl) return false;
+  resetFillTriggerForNavigation();
+  void maybeShowTrigger();
+  return true;
+}
 
 async function maybeShowTrigger(): Promise<void> {
+  const runId = ++triggerRunId;
+  triggerUrl = location.href;
+  const isStale = (): boolean => runId !== triggerRunId;
   const tryDetect = (): boolean => {
     try {
       const url = new URL(location.href);
@@ -125,13 +137,17 @@ async function maybeShowTrigger(): Promise<void> {
 
   for (const delay of [0, 800, 2000]) {
     if (delay) await sleep(delay);
+    if (isStale()) return;
     if (tryDetect()) return;
   }
 
-  await observeForTrigger(tryDetect);
+  await observeForTrigger(tryDetect, isStale);
 }
 
-function observeForTrigger(tryDetect: () => boolean): Promise<void> {
+function observeForTrigger(
+  tryDetect: () => boolean,
+  isStale: () => boolean,
+): Promise<void> {
   return new Promise((resolve) => {
     const body = document.body ?? document.documentElement;
     let timer: number | null = null;
@@ -145,9 +161,13 @@ function observeForTrigger(tryDetect: () => boolean): Promise<void> {
       resolve();
     };
     const observer = new MutationObserver(() => {
+      if (isStale()) {
+        finish();
+        return;
+      }
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
-        if (tryDetect()) finish();
+        if (isStale() || tryDetect()) finish();
       }, TRIGGER_OBSERVE_DEBOUNCE_MS) as unknown as number;
     });
     observer.observe(body, { childList: true, subtree: true });
@@ -411,6 +431,15 @@ function initialize(): void {
           sendResponse({ ok: false, error });
         },
       );
+      return true;
+    }
+
+    if (msg.type === 'ROUTE_CHANGED') {
+      try {
+        sendResponse({ ok: true, value: { rearmed: rearmTriggerForRoute(msg.url) } });
+      } catch (err) {
+        sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
       return true;
     }
 

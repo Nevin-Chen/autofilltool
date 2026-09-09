@@ -183,6 +183,9 @@ async function handle(
     case 'SHOW_NOTICE':
       return { ok: false, error: 'SHOW_NOTICE is content-only' };
 
+    case 'ROUTE_CHANGED':
+      return { ok: false, error: 'ROUTE_CHANGED is content-only' };
+
     case 'RESOLVE_RESUME': {
       const settings = await getSettings();
       const { variant, companyKey } = await resumeForSender(sender, settings);
@@ -468,5 +471,22 @@ if (
     } catch (err) {
       log.warn('parent-stub injection failed', err);
     }
+  });
+}
+
+if (
+  typeof chrome !== 'undefined' &&
+  chrome.webNavigation &&
+  typeof chrome.webNavigation.onHistoryStateUpdated?.addListener === 'function'
+) {
+  chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    if (!isAtsUrl(details.url)) return;
+    chrome.tabs
+      .sendMessage(
+        details.tabId,
+        { type: 'ROUTE_CHANGED', url: details.url },
+        { frameId: details.frameId },
+      )
+      .catch(() => {});
   });
 }

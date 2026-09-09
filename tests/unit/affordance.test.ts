@@ -6,6 +6,8 @@ import {
   setRemoteReviewState,
   clearRemoteReviewState,
   removeFillTrigger,
+  resetFillTriggerForNavigation,
+  setFillTriggerFilling,
   nextConnected,
   __resetAffordanceForTests,
   __getReviewStateForTests,
@@ -831,5 +833,64 @@ describe('AI chip — skip-reason notes', () => {
     ]);
     __enterReviewForTests('ai');
     expect(__getAiAnswerTextForTests()).toBe('Stanford University');
+  });
+});
+
+describe('resetFillTriggerForNavigation — SPA route change', () => {
+  const baseStats: TriggerStats = {
+    filled: 3,
+    skipped: 1,
+    failed: 0,
+    suggest: 0,
+    adapterId: 'ashby',
+    adapterName: 'Ashby',
+    resume: 'attached',
+    autoLogging: false,
+  };
+
+  beforeEach(() => {
+    document.documentElement.innerHTML = '<head></head><body></body>';
+    __resetAffordanceForTests();
+  });
+  afterEach(() => {
+    __resetAffordanceForTests();
+  });
+
+  it('re-arms a pill the user dismissed on the previous route', async () => {
+    const { __clickTabCloseForTests, __getTabLabelForTests } = await import(
+      '@/content/affordance'
+    );
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    expect(__clickTabCloseForTests()).toBe(true);
+
+    showFillTrigger({ detected: 4, onFill: () => {} });
+    expect(document.getElementById(HOST_ID)).toBeNull();
+
+    resetFillTriggerForNavigation();
+    showFillTrigger({ detected: 4, onFill: () => {} });
+    expect(document.getElementById(HOST_ID)).not.toBeNull();
+    expect(__getTabLabelForTests()).toBe('Fill this page');
+  });
+
+  it('drops a finished pill so the new route starts idle', async () => {
+    const { __getTabLabelForTests, __collapseCardForTests } = await import(
+      '@/content/affordance'
+    );
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    showFillTriggerDone(baseStats, []);
+    expect(__collapseCardForTests()).toBe(true);
+    expect(__getTabLabelForTests()).toBe('View results');
+
+    resetFillTriggerForNavigation();
+    showFillTrigger({ detected: 2, onFill: () => {} });
+    expect(__getTabLabelForTests()).toBe('Fill this page');
+  });
+
+  it('leaves an in-progress fill alone', () => {
+    showFillTrigger({ detected: 3, onFill: () => {} });
+    setFillTriggerFilling();
+
+    resetFillTriggerForNavigation();
+    expect(document.getElementById(HOST_ID)).not.toBeNull();
   });
 });

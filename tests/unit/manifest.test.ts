@@ -50,7 +50,7 @@ describe('manifest content_scripts — invariants', () => {
 });
 
 describe('manifest permissions — invariants', () => {
-  it('declares webNavigation (required to detect ATS sub-frame commits)', () => {
+  it('declares webNavigation (ATS sub-frame commits + SPA route changes)', () => {
     expect(manifest.permissions).toContain('webNavigation');
   });
 
