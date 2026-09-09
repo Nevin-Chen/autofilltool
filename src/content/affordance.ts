@@ -223,6 +223,12 @@ export function removeFillTrigger(): void {
   mountAttempts = 0;
 }
 
+export function resetFillTriggerForNavigation(): void {
+  if (state?.phase === 'filling') return;
+  dismissedThisPage = false;
+  removeFillTrigger();
+}
+
 export function __resetAffordanceForTests(): void {
   document.getElementById(HOST_ID)?.remove();
   state = null;
