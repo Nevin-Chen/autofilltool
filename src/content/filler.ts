@@ -1,4 +1,4 @@
-import { setNativeValue, dispatchInputEvents } from '@/lib/events';
+import { setNativeValue, dispatchInputEvents, commitFieldValue } from '@/lib/events';
 import { bestLabel, findLocateButton } from '@/adapters/_shared';
 import type { DetectedField } from '@/adapters/types';
 
@@ -156,8 +156,7 @@ function fillTextInput(
   if (!opts.forceOverwrite && el.value && el.value.trim() !== '') {
     return { ...meta, status: 'skipped', note: 'already filled' };
   }
-  setNativeValue(el, value);
-  dispatchInputEvents(el);
+  commitFieldValue(el, value);
   if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
 }
@@ -179,8 +178,7 @@ function fillSelect(
       note: `no <option> matched "${value}"`,
     };
   }
-  setNativeValue(el, target);
-  dispatchInputEvents(el);
+  commitFieldValue(el, target);
   if (!opts.suppressFlash) flashFilled(el);
   return { ...meta, status: 'filled' };
 }

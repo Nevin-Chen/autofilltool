@@ -2,7 +2,7 @@ import type { DetectedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import type { Settings } from '@/profile/schema';
 import { getSettings } from '@/profile/store';
-import { setNativeValue, dispatchInputEvents } from '@/lib/events';
+import { setNativeValue, dispatchInputEvents, commitFieldValue } from '@/lib/events';
 import { fieldDescription } from '@/adapters/_shared';
 import { AI_PORT_NAME, type AiBgToClient } from '@/types/ai-port';
 
@@ -292,7 +292,7 @@ function attachButtonFor(
         setNativeValue(textarea, textarea.value + raw.text);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       } else if (raw.kind === 'done') {
-        dispatchInputEvents(textarea);
+        commitFieldValue(textarea, textarea.value);
         resetStream();
         try {
           port.disconnect();
