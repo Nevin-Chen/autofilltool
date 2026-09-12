@@ -64,6 +64,43 @@ describe('fillField — text inputs', () => {
     expect(events).toEqual(['input', 'change', 'blur']);
   });
 
+  it('fires focus and focusout so blur-validated forms mark the field touched', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    const events: string[] = [];
+    for (const t of ['focus', 'input', 'change', 'blur', 'focusout'] as const) {
+      input.addEventListener(t, () => events.push(t));
+    }
+    fillField(mkField(input), 'Nevin Chen', { forceOverwrite: false });
+    expect(events).toEqual(['focus', 'input', 'change', 'blur', 'focusout']);
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('fires focusout on a field it cannot really focus', () => {
+    const detached = document.createElement('div');
+    const input = document.createElement('input');
+    detached.appendChild(input);
+    const events: string[] = [];
+    for (const t of ['focus', 'input', 'change', 'blur', 'focusout'] as const) {
+      input.addEventListener(t, () => events.push(t));
+    }
+    fillField(mkField(input), 'Nevin Chen', { forceOverwrite: false });
+    expect(events).toEqual(['focus', 'input', 'change', 'blur', 'focusout']);
+  });
+
+  it('leaves focus alone when the user is already in the field', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    const events: string[] = [];
+    for (const t of ['focus', 'blur', 'focusout'] as const) {
+      input.addEventListener(t, () => events.push(t));
+    }
+    fillField(mkField(input), 'Nevin Chen', { forceOverwrite: false });
+    expect(events).toEqual([]);
+    expect(document.activeElement).toBe(input);
+  });
+
   it('skips a field that already has a value', () => {
     const input = document.createElement('input');
     input.value = 'already there';

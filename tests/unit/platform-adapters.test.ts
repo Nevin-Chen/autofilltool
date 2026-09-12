@@ -635,6 +635,14 @@ describe('ashbyAdapter — fixture', () => {
     expect(f?.kind).toBe('cityAndRegion');
   });
 
+  it('marks an autocomplete-backed City field as a virtualizedDropdown widget', () => {
+    const fields = ashbyAdapter.detectFields(document);
+    const f = fields.find((x) => x.el === document.getElementById('live-city-input'));
+    expect(f, 'city autocomplete should be detected').toBeDefined();
+    expect(f?.kind).toBe('city');
+    expect(f?.widget).toBe('virtualizedDropdown');
+  });
+
   it('detects radio-group FieldEntries (live DOM): exactly one DetectedField per group, first radio as representative', () => {
     const fields = ashbyAdapter.detectFields(document);
     const cases: Array<[string, FieldKind, string]> = [

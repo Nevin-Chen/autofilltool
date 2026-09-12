@@ -57,6 +57,14 @@ function getJobDescription(doc: Document): string {
   return '';
 }
 
+function isComboboxTrigger(el: HTMLElement): boolean {
+  return (
+    el.getAttribute('role') === 'combobox' ||
+    el.getAttribute('aria-haspopup') === 'listbox' ||
+    el.getAttribute('aria-autocomplete') === 'list'
+  );
+}
+
 function detectFields(root: Document): DetectedField[] {
   const out: DetectedField[] = [];
   const seen = new WeakSet<HTMLElement>();
@@ -132,7 +140,13 @@ function detectFields(root: Document): DetectedField[] {
       }
 
       if (kind) {
-        out.push({ el, kind, label: labelText, confidence });
+        out.push({
+          el,
+          kind,
+          label: labelText,
+          confidence,
+          ...(isComboboxTrigger(el) ? { widget: 'virtualizedDropdown' as const } : {}),
+        });
         seen.add(el);
       }
     }
@@ -144,7 +158,13 @@ function detectFields(root: Document): DetectedField[] {
     const ctx = collectContext(el);
     const classified = classifyByHeuristics(el, ctx);
     if (!classified) continue;
-    out.push({ el, kind: classified.kind, label: ctx.label, confidence: classified.confidence });
+    out.push({
+      el,
+      kind: classified.kind,
+      label: ctx.label,
+      confidence: classified.confidence,
+      ...(isComboboxTrigger(el) ? { widget: 'virtualizedDropdown' as const } : {}),
+    });
   }
 
   return out;
