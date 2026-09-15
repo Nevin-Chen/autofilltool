@@ -1135,10 +1135,13 @@ function focusReviewPane(): void {
 const SPOTLIGHT_MS = 1400;
 const SPOTLIGHT_SHADOW =
   '0 0 0 2px rgba(56,189,248,0.95), 0 0 10px 3px rgba(56,189,248,0.5)';
-export function spotlight(el: HTMLElement): void {
+export type SpotlightOptions = { scroll?: boolean };
+export function spotlight(el: HTMLElement, opts: SpotlightOptions = {}): void {
   try {
     const target = visibleAnchor(el);
-    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (opts.scroll !== false) {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
     const style = target.style;
     const prevShadow = style.boxShadow;
     const prevTransition = style.transition;

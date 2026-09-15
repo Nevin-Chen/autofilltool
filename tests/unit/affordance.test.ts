@@ -894,3 +894,48 @@ describe('resetFillTriggerForNavigation — SPA route change', () => {
     expect(document.getElementById(HOST_ID)).not.toBeNull();
   });
 });
+
+describe('spotlight — anchor-to-field opt-out', () => {
+  let scrollIntoView: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<textarea id="why"></textarea>';
+    scrollIntoView = vi.fn();
+    // jsdom has no scrollIntoView; spotlight's try/catch would swallow the miss.
+    Element.prototype.scrollIntoView = scrollIntoView as unknown as Element['scrollIntoView'];
+    // jsdom lays nothing out, so visibleAnchor would walk past the field to <html>.
+    const el = document.getElementById('why') as HTMLElement;
+    el.getBoundingClientRect = () =>
+      ({ width: 400, height: 80, top: 0, left: 0, right: 400, bottom: 80, x: 0, y: 0 }) as DOMRect;
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  it('scrolls the field into view by default', async () => {
+    const { spotlight } = await import('@/content/affordance');
+    const el = document.getElementById('why') as HTMLElement;
+    spotlight(el);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(el.style.boxShadow).not.toBe('');
+  });
+
+  it('still rings the field but never scrolls when scroll is false', async () => {
+    const { spotlight } = await import('@/content/affordance');
+    const el = document.getElementById('why') as HTMLElement;
+    spotlight(el, { scroll: false });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(el.style.boxShadow).not.toBe('');
+  });
+
+  it('restores the inline box-shadow either way', async () => {
+    const { spotlight } = await import('@/content/affordance');
+    const el = document.getElementById('why') as HTMLElement;
+    spotlight(el, { scroll: false });
+    vi.advanceTimersByTime(2000);
+    expect(el.style.boxShadow).toBe('');
+  });
+});

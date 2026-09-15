@@ -15,6 +15,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Skips fields that already have a value. **Force overwrite** if you want it to go over them again
 - Fills ATS iframes embedded in company career pages, not just the ATS domain itself
 - Filled fields flash so you can see what it touched
+- The page follows the AI down the form as it answers each field. **Disable auto-scroll to field** in the popup if you would rather stay put
 
 #### **Résumé Attachment**
 - PDF, DOCX, or TXT up to 5 MB. Stored locally, attached to the file input as if you picked it yourself

@@ -129,6 +129,7 @@ export type TrackingSettings = z.infer<typeof TrackingSettingsSchema>;
 
 export const UiSettingsSchema = z.object({
   animateFill: z.boolean().default(true),
+  anchorToField: z.boolean().default(true),
 });
 export type UiSettings = z.infer<typeof UiSettingsSchema>;
 

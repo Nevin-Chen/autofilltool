@@ -116,6 +116,22 @@ describe('settings schema', () => {
     expect(defaultSettings().ai.models).toEqual({});
   });
 
+  it('defaults the fill animation and the anchor-to-field scroll to on', () => {
+    expect(defaultSettings().ui).toEqual({ animateFill: true, anchorToField: true });
+  });
+
+  it('keeps an existing ui block when anchorToField was never stored', () => {
+    const r = SettingsSchema.safeParse({
+      ...defaultSettings(),
+      ui: { animateFill: false },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.ui.animateFill).toBe(false);
+      expect(r.data.ui.anchorToField).toBe(true);
+    }
+  });
+
   it('persists per-provider models so switching providers does not lose them', () => {
     const r = SettingsSchema.safeParse({
       ...defaultSettings(),

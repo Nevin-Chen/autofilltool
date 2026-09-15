@@ -804,6 +804,7 @@ async function runFill(forceFromMsg?: boolean) {
           preSkipped,
           runId,
           animate,
+          settings.ui.anchorToField,
           forceOverwrite,
           ctx,
         );
@@ -842,6 +843,7 @@ async function runAiFallbackQueue(
   preSkipped: ReviewableField[],
   runId: number,
   animate: boolean,
+  anchorToField: boolean,
   forceOverwrite: boolean,
   ctx: JobContext,
 ): Promise<void> {
@@ -859,7 +861,7 @@ async function runAiFallbackQueue(
     const thinkingEl = u.el instanceof HTMLElement ? u.el : null;
     if (thinkingEl) {
       try {
-        spotlight(thinkingEl);
+        spotlight(thinkingEl, { scroll: anchorToField });
       } catch (err) {
         log.warn('AI fallback spotlight failed', err);
       }

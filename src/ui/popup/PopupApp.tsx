@@ -197,6 +197,28 @@ export function PopupApp() {
             </span>
           </label>
 
+          <label className="flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={!settings.ui.anchorToField}
+              onChange={(e) =>
+                updateSettings({
+                  ...settings,
+                  ui: { ...settings.ui, anchorToField: !e.target.checked },
+                })
+              }
+            />
+            <span>
+              <span className="font-medium text-slate-800 dark:text-slate-100">
+                Disable auto-scroll to field
+              </span>
+              <span className="block text-slate-500 dark:text-slate-400">
+                Stay put while AI fills fields down the page
+              </span>
+            </span>
+          </label>
+
           {settings.ai.provider !== 'none' && (
             <label className="flex items-start gap-2 text-xs">
               <input
