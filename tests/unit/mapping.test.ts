@@ -95,3 +95,38 @@ describe('valueForField — phone split for widgets with their own dial-code pic
     expect(valueForField(p, 'phoneCountry')).toBeNull();
   });
 });
+
+describe('valueForField — phone country for the Greenhouse dial-code picker', () => {
+  function withPhone(phone: string, phoneCountry: string, country: string): Profile {
+    const p = emptyProfile();
+    return {
+      ...p,
+      phone,
+      phoneCountry,
+      address: { ...p.address, country },
+    };
+  }
+
+  it('reads the country off the dial code when the number carries one', () => {
+    const p = withPhone('+1 4155550142', '', '');
+    expect(valueForField(p, 'phoneCountry')).toBe('United States');
+    expect(valueForField(p, 'phoneNational')).toBe('4155550142');
+  });
+
+  it('falls back to the address country when the number has no dial code', () => {
+    const p = withPhone('4155550142', '', 'USA');
+    expect(valueForField(p, 'phoneCountry')).toBe('United States');
+    expect(valueForField(p, 'phoneNational')).toBe('4155550142');
+  });
+
+  it('normalises the address country so it matches a dropdown option', () => {
+    expect(valueForField(withPhone('', '', 'USA'), 'country')).toBe('United States');
+    expect(valueForField(withPhone('', '', 'U.S.'), 'country')).toBe('United States');
+    expect(valueForField(withPhone('', '', 'UK'), 'country')).toBe('United Kingdom');
+  });
+
+  it('leaves an unrecognised address country untouched rather than dropping it', () => {
+    expect(valueForField(withPhone('', '', 'Atlantis'), 'country')).toBe('Atlantis');
+    expect(valueForField(withPhone('', '', ''), 'country')).toBeNull();
+  });
+});

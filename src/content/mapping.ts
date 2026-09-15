@@ -1,6 +1,6 @@
 import type { Profile } from '@/profile/schema';
 import type { FieldKind } from '@/adapters/types';
-import { countryByIso, splitPhone } from '@/lib/countries';
+import { countryByIso, countryByName, splitPhone } from '@/lib/countries';
 
 export function valueForField(profile: Profile, kind: FieldKind): string | boolean | null {
   switch (kind) {
@@ -34,7 +34,7 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
     case 'postalCode':
       return profile.address.postalCode || null;
     case 'country':
-      return profile.address.country || null;
+      return addressCountryName(profile);
 
     case 'linkedin':
       return profile.links.linkedin || null;
@@ -96,10 +96,17 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
   }
 }
 
+function addressCountryName(profile: Profile): string | null {
+  const raw = profile.address.country;
+  return countryByName(raw)?.name ?? (raw || null);
+}
+
 function phoneCountryName(profile: Profile): string | null {
   const { iso } = splitPhone(profile.phone, profile.phoneCountry);
   const named = countryByIso(iso)?.name;
   if (named) return named;
+  const fromAddress = countryByName(profile.address.country)?.name;
+  if (fromAddress) return fromAddress;
   return profile.address.country || null;
 }
 
