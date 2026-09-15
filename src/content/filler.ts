@@ -174,8 +174,8 @@ function fillSelect(
   if (target === null) {
     return {
       ...meta,
-      status: 'error',
-      note: `no <option> matched "${value}"`,
+      status: 'skipped',
+      note: `no option matched "${truncate(value, 60)}"`,
     };
   }
   commitFieldValue(el, target);
@@ -185,23 +185,48 @@ function fillSelect(
 
 export function pickSelectOption(el: HTMLSelectElement, want: string): string | null {
   const target = want.trim().toLowerCase();
-  for (const opt of Array.from(el.options)) {
+  if (!target) return null;
+  const all = Array.from(el.options);
+  for (const opt of all) {
     if (opt.value === want) return opt.value;
   }
-  for (const opt of Array.from(el.options)) {
+  for (const opt of all) {
     if ((opt.value ?? '').toLowerCase() === target) return opt.value;
   }
-  for (const opt of Array.from(el.options)) {
-    const text = (opt.textContent ?? '').trim().toLowerCase();
-    if (text === target) return opt.value;
+  for (const opt of all) {
+    if (optionText(opt) === target) return opt.value;
   }
-  if (target.length >= 3) {
-    for (const opt of Array.from(el.options)) {
-      const text = (opt.textContent ?? '').trim().toLowerCase();
-      if (text.includes(target)) return opt.value;
-    }
+  if (target.length < 3) return null;
+
+  const choosable = all.filter(
+    (o) => o.value !== '' && polarityAgrees(target, optionText(o)),
+  );
+  const onlyMatch = (pred: (text: string) => boolean): string | null => {
+    const hits = choosable.filter((o) => pred(optionText(o)));
+    return hits.length === 1 ? hits[0]!.value : null;
+  };
+
+  const byPrefix = onlyMatch((text) => startsWithWord(text, target));
+  if (byPrefix !== null) return byPrefix;
+
+  const byContains = onlyMatch((text) => text.includes(target));
+  if (byContains !== null) return byContains;
+
+  const phrases = synonymGroupFor(target);
+  if (phrases.length > 0) {
+    return onlyMatch((text) => phrases.some((p) => text.includes(p)));
   }
   return null;
+}
+
+function optionText(opt: HTMLOptionElement): string {
+  return (opt.textContent ?? '').trim().toLowerCase();
+}
+
+function startsWithWord(text: string, target: string): boolean {
+  if (!text.startsWith(target)) return false;
+  const next = text.charAt(target.length);
+  return next === '' || !/[a-z0-9]/.test(next);
 }
 
 function fillCheckbox(
@@ -260,13 +285,24 @@ function fillRadio(
     candidatesOf(r).some((c) => targets.includes(c)),
   );
 
+  const samePolarity = eligible.filter((r) =>
+    candidatesOf(r).some((c) => polarityAgrees(want, c)),
+  );
+
   if (!target) {
-    const prefixMatches = eligible.filter((r) =>
+    const prefixMatches = samePolarity.filter((r) =>
       candidatesOf(r).some((c) =>
         targets.some((t) => new RegExp(`^${escapeRegExp(t)}\\b`).test(c)),
       ),
     );
     if (prefixMatches.length === 1) target = prefixMatches[0];
+  }
+
+  if (!target) {
+    const containsMatches = samePolarity.filter((r) =>
+      candidatesOf(r).some((c) => targets.some((t) => c.includes(t) || t.includes(c))),
+    );
+    if (containsMatches.length === 1) target = containsMatches[0];
   }
 
   if (!target) {
@@ -280,7 +316,11 @@ function fillRadio(
   }
 
   if (!target) {
-    return { ...meta, status: 'error', note: `no radio matched "${want}"` };
+    return {
+      ...meta,
+      status: 'skipped',
+      note: `no option matched "${truncate(want, 60)}"`,
+    };
   }
   if (radioIsChecked(target) && !opts.forceOverwrite) {
     return { ...meta, status: 'skipped', note: 'already in desired state' };
@@ -328,21 +368,26 @@ export function fillButtonGroup(
   const textOfButton = (b: HTMLButtonElement) => (b.textContent ?? '').trim().toLowerCase();
 
   let target = buttons.find((b) => targets.includes(textOfButton(b)));
+  const samePolarity = buttons.filter((b) => polarityAgrees(want, textOfButton(b)));
   if (!target) {
-    const prefix = buttons.filter((b) =>
+    const prefix = samePolarity.filter((b) =>
       targets.some((t) => textOfButton(b).startsWith(t)),
     );
     if (prefix.length === 1) target = prefix[0];
   }
   if (!target) {
-    const contains = buttons.filter((b) => {
+    const contains = samePolarity.filter((b) => {
       const t = textOfButton(b);
       return targets.some((x) => t.includes(x) || x.includes(t));
     });
     if (contains.length === 1) target = contains[0];
   }
   if (!target) {
-    return { ...meta, status: 'error', note: `no option matched "${String(rawValue)}"` };
+    return {
+      ...meta,
+      status: 'skipped',
+      note: `no option matched "${truncate(String(rawValue), 60)}"`,
+    };
   }
 
   const active = buttons.find(isButtonActive);
@@ -477,6 +522,17 @@ function synonymGroupFor(want: string): readonly string[] {
     if (group.some((p) => want.includes(p) || p.includes(want))) return group;
   }
   return [];
+}
+
+const NEGATION_RE = /\b(?:not|no|never|none|neither|non)\b|n['’]t\b/;
+
+function isNegated(text: string): boolean {
+  return NEGATION_RE.test(text.replace(/\([^)]*\)/g, ' '));
+}
+
+export function polarityAgrees(want: string, candidate: string): boolean {
+  if (synonymGroupFor(want).length > 0) return true;
+  return isNegated(want) === isNegated(candidate);
 }
 
 function labelTextFor(el: HTMLInputElement): string {
@@ -628,14 +684,24 @@ export async function fillVirtualizedDropdown(
     setNativeValue(trigger, want);
     dispatchInputEvents(trigger);
 
-    let filteredOption = await waitForOption(listbox, want, FILTERED_OPTION_TIMEOUT_MS);
+    let filteredOption = await waitForOption(
+      listbox,
+      want,
+      FILTERED_OPTION_TIMEOUT_MS,
+      want,
+    );
 
     if (!filteredOption) {
       const prefix = discriminatingPrefix(want);
       if (prefix && prefix !== want) {
         setNativeValue(trigger, prefix);
         dispatchInputEvents(trigger);
-        filteredOption = await waitForOption(listbox, prefix, FILTERED_OPTION_TIMEOUT_MS);
+        filteredOption = await waitForOption(
+          listbox,
+          prefix,
+          FILTERED_OPTION_TIMEOUT_MS,
+          want,
+        );
       }
     }
 
@@ -651,14 +717,39 @@ export async function fillVirtualizedDropdown(
       };
     }
 
-    pressEnter(trigger);
+    const wanted = textOfNode(filteredOption).trim();
+    if (wanted && !isFirstVisibleOption(listbox, filteredOption)) {
+      setNativeValue(trigger, wanted);
+      dispatchInputEvents(trigger);
+      const narrowed = await waitForOption(
+        listbox,
+        wanted,
+        FILTERED_OPTION_TIMEOUT_MS,
+        want,
+      );
+      if (narrowed) filteredOption = narrowed;
+    }
+
+    if (isFirstVisibleOption(listbox, filteredOption)) {
+      pressEnter(trigger);
+      trigger.dispatchEvent(new Event('change', { bubbles: true }));
+      if (!opts.suppressFlash) flashFilled(trigger);
+      return {
+        label,
+        kind,
+        status: 'filled',
+        note: `committed "${wanted}" via Enter`,
+      };
+    }
+
+    selectOption(filteredOption);
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
     if (!opts.suppressFlash) flashFilled(trigger);
     return {
       label,
       kind,
       status: 'filled',
-      note: `committed "${textOfNode(filteredOption)}" via Enter`,
+      note: `committed "${wanted}" by clicking it`,
     };
   }
 
@@ -861,6 +952,13 @@ function openCombobox(trigger: HTMLElement): void {
   }
 }
 
+function isFirstVisibleOption(listbox: Element, option: HTMLElement): boolean {
+  const options = Array.from(
+    listbox.querySelectorAll<HTMLElement>('[role="option"]'),
+  ).filter((el) => !isDisabled(el));
+  return options[0] === option;
+}
+
 function selectOption(option: HTMLElement): void {
   dispatchMouse(option, 'mousedown');
   dispatchMouse(option, 'mouseup');
@@ -919,8 +1017,10 @@ function waitForOption(
   listbox: Element,
   want: string,
   timeoutMs: number,
+  intent?: string,
 ): Promise<HTMLElement | null> {
-  const immediate = pickListboxOption(listbox, want);
+  const pick = () => pickListboxOption(listbox, want, intent);
+  const immediate = pick();
   if (immediate) return Promise.resolve(immediate);
   return new Promise((resolve) => {
     let done = false;
@@ -932,7 +1032,7 @@ function waitForOption(
       resolve(v);
     };
     const observer = new MutationObserver(() => {
-      const hit = pickListboxOption(listbox, want);
+      const hit = pick();
       if (hit) finish(hit);
     });
     observer.observe(listbox, { childList: true, subtree: true, characterData: true });
@@ -943,23 +1043,38 @@ function waitForOption(
 export function pickListboxOption(
   listbox: Element,
   want: string,
+  intent?: string,
 ): HTMLElement | null {
   const wantLower = want.toLowerCase().trim();
   if (!wantLower) return null;
+  const intentLower = (intent ?? want).toLowerCase().trim();
   const options = Array.from(
     listbox.querySelectorAll<HTMLElement>('[role="option"]'),
   ).filter((el) => !isDisabled(el));
-  let exact: HTMLElement | null = null;
-  let substr: HTMLElement | null = null;
+
   for (const opt of options) {
-    const text = textOfNode(opt).toLowerCase();
-    if (text === wantLower) {
-      exact = opt;
-      break;
-    }
-    if (!substr && text.includes(wantLower)) substr = opt;
+    if (textOfNode(opt).toLowerCase() === intentLower) return opt;
   }
-  return exact ?? substr;
+
+  const eligible = options.filter((opt) =>
+    polarityAgrees(intentLower, textOfNode(opt).toLowerCase()),
+  );
+  const textOf = (opt: HTMLElement) => textOfNode(opt).toLowerCase();
+
+  const exact = eligible.find((opt) => textOf(opt) === wantLower);
+  if (exact) return exact;
+
+  const prefixed = eligible.filter((opt) => startsWithWord(textOf(opt), wantLower));
+  if (prefixed.length === 1) return prefixed[0]!;
+
+  const contained = eligible.filter((opt) => textOf(opt).includes(wantLower));
+  if (contained.length === 1) return contained[0]!;
+
+  const pool = prefixed.length > 0 ? prefixed : contained;
+  if (pool.length > 1 && wantLower === intentLower) {
+    return [...pool].sort((a, b) => textOf(a).length - textOf(b).length)[0]!;
+  }
+  return null;
 }
 
 function waitForListbox(

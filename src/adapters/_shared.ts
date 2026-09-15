@@ -274,7 +274,7 @@ export function bestLabel(el: HTMLElement): string {
 
   const wrapping = el.closest('label');
   if (wrapping) {
-    const t = textOf(wrapping);
+    const t = labelTextWithoutControls(wrapping, el);
     if (t) return t;
   }
 
@@ -295,6 +295,26 @@ export function bestLabel(el: HTMLElement): string {
 
 const DESCRIPTION_SELECTOR =
   '[class*="description" i], [class*="help" i], [class*="hint" i], [class*="sublabel" i], [class*="sub-label" i], [class*="subtext" i], [class*="instruction" i]';
+
+const LABEL_TEXT_EXCLUDE = 'select, option, optgroup, datalist, input, textarea';
+
+function labelTextWithoutControls(scope: HTMLElement, target: HTMLElement): string {
+  const excluded = `${LABEL_TEXT_EXCLUDE}, ${DESCRIPTION_SELECTOR}`;
+  const parts: string[] = [];
+  const visit = (node: Node): void => {
+    if (node.nodeType === 3) {
+      parts.push(node.textContent ?? '');
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    if (node === target) return;
+    if (node !== scope && node.matches(excluded)) return;
+    for (const child of Array.from(node.childNodes)) visit(child);
+  };
+  visit(scope);
+  const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+  return text || textOf(scope);
+}
 
 const DESCRIPTION_MAX = 600;
 

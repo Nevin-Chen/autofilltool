@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COUNTRIES,
   countryByIso,
+  countryByName,
   joinPhone,
   splitPhone,
 } from '@/lib/countries';
@@ -62,5 +63,28 @@ describe('countries dial-code helpers', () => {
       expect(countryByIso(c.iso)).toBe(c);
       expect(c.dial).toMatch(/^\d+$/);
     }
+  });
+});
+
+describe('countryByName', () => {
+  it('resolves the spellings people actually type for the US and UK', () => {
+    for (const spelling of ['USA', 'U.S.A.', 'us', 'United States of America', 'america']) {
+      expect(countryByName(spelling)?.iso, spelling).toBe('US');
+    }
+    for (const spelling of ['UK', 'Great Britain', 'england', 'United Kingdom']) {
+      expect(countryByName(spelling)?.iso, spelling).toBe('GB');
+    }
+  });
+
+  it('round-trips every canonical country name', () => {
+    for (const c of COUNTRIES) {
+      expect(countryByName(c.name), c.name).toBe(c);
+    }
+  });
+
+  it('returns undefined for blank or unknown input', () => {
+    expect(countryByName('')).toBeUndefined();
+    expect(countryByName('   ')).toBeUndefined();
+    expect(countryByName('Atlantis')).toBeUndefined();
   });
 });

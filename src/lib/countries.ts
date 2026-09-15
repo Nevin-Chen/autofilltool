@@ -69,6 +69,40 @@ export function countryByIso(iso: string): Country | undefined {
   return BY_ISO.get(iso);
 }
 
+const BY_NAME = new Map(COUNTRIES.map((c) => [countryKey(c.name), c] as const));
+
+/** Spellings users type that do not match `Country.name` verbatim. */
+const NAME_ALIASES: Readonly<Record<string, string>> = {
+  usa: 'US',
+  us: 'US',
+  america: 'US',
+  unitedstatesofamerica: 'US',
+  uk: 'GB',
+  greatbritain: 'GB',
+  england: 'GB',
+  scotland: 'GB',
+  wales: 'GB',
+  uae: 'AE',
+  korea: 'KR',
+  republicofkorea: 'KR',
+  czechrepublic: 'CZ',
+  holland: 'NL',
+  bharat: 'IN',
+};
+
+function countryKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/** Resolve free-text country ("USA", "U.S.", "United States") to a Country. */
+export function countryByName(name: string): Country | undefined {
+  const key = countryKey(name);
+  if (!key) return undefined;
+  const aliased = NAME_ALIASES[key];
+  if (aliased) return BY_ISO.get(aliased);
+  return BY_NAME.get(key) ?? BY_ISO.get(name.trim().toUpperCase());
+}
+
 /** Split stored phone by dial code; prefers longest match for +1-prefixed codes. */
 export function splitPhone(
   phone: string,
