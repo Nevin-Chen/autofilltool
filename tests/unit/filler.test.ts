@@ -168,7 +168,7 @@ describe('fillField — select', () => {
     expect(sel.value).toBe('ca');
   });
 
-  it('returns an error when no option matches', () => {
+  it('skips with a retryable note when no option matches', () => {
     const sel = document.createElement('select');
     sel.innerHTML = `
       <option value="">-- Select --</option>
@@ -179,7 +179,34 @@ describe('fillField — select', () => {
     const a = fillField(mkField(sel, { kind: 'country' }), 'Z', {
       forceOverwrite: false,
     });
-    expect(a.status).toBe('error');
+    expect(a.status).toBe('skipped');
+    expect(a.note).toMatch(/no option matched/i);
+    expect(sel.value).toBe('');
+  });
+
+  it('refuses an option that only matches inside a negated parenthetical', () => {
+    const sel = document.createElement('select');
+    sel.innerHTML = `
+      <option value="">Select ...</option>
+      <option value="Hispanic or Latino">Hispanic or Latino</option>
+      <option value="White (Not Hispanic or Latino)">White (Not Hispanic or Latino)</option>
+      <option value="Asian (Not Hispanic or Latino)">Asian (Not Hispanic or Latino)</option>
+    `;
+    document.body.appendChild(sel);
+    expect(pickSelectOption(sel, 'Not Hispanic or Latino')).toBeNull();
+    expect(pickSelectOption(sel, 'Asian')).toBe('Asian (Not Hispanic or Latino)');
+  });
+
+  it('maps a decline answer onto the form own decline wording', () => {
+    const sel = document.createElement('select');
+    sel.innerHTML = `
+      <option value="">Select ...</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+      <option value="Decline to self-identify">Decline to self-identify</option>
+    `;
+    document.body.appendChild(sel);
+    expect(pickSelectOption(sel, 'Prefer not to say')).toBe('Decline to self-identify');
   });
 });
 
@@ -332,8 +359,12 @@ describe('fillField — checkbox & radio', () => {
       <label for="x-1">American Samoan</label>
     `;
     const rep = document.getElementById('x-0') as HTMLInputElement;
+    const other = document.getElementById('x-1') as HTMLInputElement;
     const a = fillField(mkField(rep, { kind: 'race' }), 'American', { forceOverwrite: false });
-    expect(a.status).toBe('error');
+    expect(a.status).toBe('skipped');
+    expect(a.note).toMatch(/no option matched/i);
+    expect(rep.checked).toBe(false);
+    expect(other.checked).toBe(false);
   });
 });
 
