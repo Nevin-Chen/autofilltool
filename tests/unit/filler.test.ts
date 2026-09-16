@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   fillField,
   fillVirtualizedDropdown,
@@ -513,6 +513,25 @@ describe('fillVirtualizedDropdown', () => {
     expect(triggerClicks).toBe(1);
     expect(optionClicks).toContain('United States');
     expect(changeFired).toBe(true);
+  });
+
+  it('opens the trigger without scrolling the viewport to it', async () => {
+    const { field, trigger } = mkComboboxField();
+    const focus = vi.spyOn(trigger, 'focus');
+    trigger.addEventListener('click', () => {
+      if (document.querySelector('[role="listbox"]')) return;
+      const ul = document.createElement('ul');
+      ul.setAttribute('role', 'listbox');
+      ul.innerHTML = `<li role="option">United States</li>`;
+      document.body.appendChild(ul);
+    });
+
+    const action = await fillVirtualizedDropdown(field, 'United States');
+    expect(action.status).toBe('filled');
+    expect(focus).toHaveBeenCalled();
+    for (const call of focus.mock.calls) {
+      expect(call[0]).toEqual({ preventScroll: true });
+    }
   });
 
   it('returns skipped when no value is provided', async () => {
