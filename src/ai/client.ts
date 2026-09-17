@@ -10,6 +10,7 @@ import {
   CLAUDE_BRIDGE_DEFAULT_MODEL,
 } from './providers/claude-bridge';
 import { extractResumeText, isResumePlaceholder } from './resume-text';
+import { isWorkEligibilityQuestion } from '@/lib/work-auth';
 import { log } from '@/lib/logger';
 
 export { extractResumeText };
@@ -337,6 +338,8 @@ export function buildClassifyPrompt(
         ].join('\n')
       : '';
 
+  const workAuthBlock = workEligibilityBlock(req, profile);
+
   const formatHint = (() => {
     switch (req.fieldType) {
       case 'checkbox':
@@ -389,6 +392,7 @@ export function buildClassifyPrompt(
     `Form field type: ${req.fieldType}`,
     `Question: ${req.question}`,
     selfIdBlock,
+    workAuthBlock,
     optionsBlock,
     'User profile:',
     profileSummary || '(empty profile)',
@@ -498,6 +502,36 @@ function escapeRegExpLocal(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function workEligibilityBlock(req: ClassifyRequest, profile: Profile): string {
+  if (!isWorkEligibilityQuestion(req.question)) return '';
+  const { authorizedToWorkInUS, requiresSponsorship } = profile.workAuth;
+  if (authorizedToWorkInUS === null && requiresSponsorship === null) return '';
+
+  const facts: string[] = [];
+  if (authorizedToWorkInUS !== null) {
+    facts.push(
+      authorizedToWorkInUS
+        ? 'the user IS legally authorized to work'
+        : 'the user is NOT legally authorized to work',
+    );
+  }
+  if (requiresSponsorship !== null) {
+    facts.push(
+      requiresSponsorship
+        ? 'the user DOES require visa sponsorship'
+        : 'the user does NOT require visa sponsorship',
+    );
+  }
+
+  return [
+    '',
+    `Saved work eligibility: ${facts.join('; ')}.`,
+    'Answer strictly from these saved facts, never from what a typical candidate would say.',
+    'Match the wording of the question before answering: "do you require sponsorship" and "can you work without sponsorship" are opposite questions and take opposite answers.',
+    '',
+  ].join('\n');
+}
+
 export function summarizeProfileForClassifier(profile: Profile): string {
   const lines: string[] = [];
   const push = (k: string, v: string | null | undefined): void => {
@@ -580,9 +614,10 @@ export async function classifyField(
   });
 }
 
-function pickClassifyMode(req: ClassifyRequest): ClassifyMode {
+export function pickClassifyMode(req: ClassifyRequest): ClassifyMode {
   if (req.selfIdKind) return 'selfId';
   if (req.wasClassified !== false) return 'strict';
+  if (isWorkEligibilityQuestion(req.question)) return 'strict';
 
   const opts = req.options ?? [];
   if (

@@ -928,7 +928,7 @@ function closeCombobox(trigger: HTMLElement, wasFocused: boolean): void {
 
 function openCombobox(trigger: HTMLElement): void {
   try {
-    trigger.focus();
+    trigger.focus({ preventScroll: true });
   } catch {
   }
   dispatchMouse(trigger, 'mousedown');
