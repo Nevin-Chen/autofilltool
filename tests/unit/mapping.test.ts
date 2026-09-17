@@ -41,6 +41,45 @@ describe('valueForField — work authorization yes/no coercion', () => {
   });
 });
 
+describe('valueForField — work authorization question polarity', () => {
+  const noSponsorship = withWorkAuth({
+    authorizedToWorkInUS: true,
+    requiresSponsorship: false,
+  });
+
+  it('answers No to a "do you require sponsorship" label', () => {
+    expect(
+      valueForField(
+        noSponsorship,
+        'requiresSponsorship',
+        'Will you now or in the future require sponsorship for employment visa status?',
+      ),
+    ).toBe('No');
+  });
+
+  it('flips to Yes when the same fact is asked as "without sponsorship"', () => {
+    expect(
+      valueForField(
+        noSponsorship,
+        'requiresSponsorship',
+        'Are you able to work in the US without needing visa sponsorship?',
+      ),
+    ).toBe('Yes');
+  });
+
+  it('falls back to the raw toggle when the label says nothing useful', () => {
+    expect(valueForField(noSponsorship, 'requiresSponsorship', 'Sponsorship')).toBe('No');
+    expect(valueForField(noSponsorship, 'authorizedToWorkInUS', 'Work status')).toBe('Yes');
+  });
+
+  it('leaves willingToRelocate on the raw toggle regardless of label', () => {
+    const p = withWorkAuth({ willingToRelocate: false, requiresSponsorship: false });
+    expect(
+      valueForField(p, 'willingToRelocate', 'Are you willing to relocate without sponsorship?'),
+    ).toBe('No');
+  });
+});
+
 describe('valueForField — cityAndRegion composition', () => {
   function withAddress(overrides: Partial<Profile['address']>): Profile {
     const p = emptyProfile();

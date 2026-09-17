@@ -6,7 +6,7 @@ import {
 } from '@/adapters/_shared';
 import { genericAdapter } from '@/adapters/generic';
 import { ashbyAdapter } from '@/adapters/ashby';
-import { buildClassifyPrompt, parseClassifyResponse } from '@/ai/client';
+import { buildClassifyPrompt, parseClassifyResponse, pickClassifyMode } from '@/ai/client';
 import { resolveAiOption } from '@/content/ai-fallback';
 import { harvestComboboxOptions, fillCheckboxGroup, fillButtonGroup } from '@/content/filler';
 import type { DetectedField } from '@/adapters/types';
@@ -668,5 +668,55 @@ describe('fillButtonGroup', () => {
     const action = fillButtonGroup(field, 'No', { forceOverwrite: false, suppressFlash: true });
     expect(action.status).toBe('filled');
     expect(clicked).toEqual(['No']);
+  });
+});
+
+describe('work eligibility questions are never treated as preferences', () => {
+  const sponsorship = {
+    question: 'Will you now or in the future require sponsorship for employment visa status?',
+    fieldType: 'radio' as const,
+    options: ['Yes', 'No'],
+    wasClassified: false,
+  };
+
+  it('picks strict mode even for an unclassified two-option sponsorship field', () => {
+    expect(pickClassifyMode(sponsorship)).toBe('strict');
+  });
+
+  it('still picks preference mode for an ordinary unclassified choice', () => {
+    expect(
+      pickClassifyMode({
+        question: 'How did you hear about us?',
+        fieldType: 'radio',
+        options: ['LinkedIn', 'Referral'],
+        wasClassified: false,
+      }),
+    ).toBe('preference');
+  });
+
+  it('states the saved work-eligibility facts and warns about opposite wording', () => {
+    const profile = emptyProfile();
+    profile.workAuth.authorizedToWorkInUS = true;
+    profile.workAuth.requiresSponsorship = false;
+
+    const prompt = buildClassifyPrompt(sponsorship, profile, { mode: 'strict' });
+    expect(prompt.user).toContain('does NOT require visa sponsorship');
+    expect(prompt.user).toContain('IS legally authorized to work');
+    expect(prompt.user).toMatch(/opposite questions/i);
+  });
+
+  it('omits the block when the profile has no saved work eligibility', () => {
+    const prompt = buildClassifyPrompt(sponsorship, emptyProfile(), { mode: 'strict' });
+    expect(prompt.user).not.toContain('Saved work eligibility');
+  });
+
+  it('omits the block for unrelated questions', () => {
+    const profile = emptyProfile();
+    profile.workAuth.requiresSponsorship = false;
+    const prompt = buildClassifyPrompt(
+      { question: 'Earliest start date?', fieldType: 'text' },
+      profile,
+    );
+    expect(prompt.user).not.toContain('Saved work eligibility');
   });
 });

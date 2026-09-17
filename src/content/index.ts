@@ -19,6 +19,7 @@ import {
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
+import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 import {
   fieldDescription,
   selfIdKindFromLabel,
@@ -508,7 +509,7 @@ async function runFill(forceFromMsg?: boolean) {
   const skippedForAi: UnclassifiedField[] = [];
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;
-    const value = valueForField(profile, field.kind);
+    const value = valueForField(profile, field.kind, field.label);
     let action: FillAction;
     if (field.widget === 'locateButton') {
       action = await fillViaLocateButton(field, value, {
@@ -556,7 +557,7 @@ async function runFill(forceFromMsg?: boolean) {
   const reDetected = adapter.detectFields(document);
   const newFields = reDetected.filter((f) => !seenEls.has(f.el));
   for (const field of newFields) {
-    const value = valueForField(profile, field.kind);
+    const value = valueForField(profile, field.kind, field.label);
     let action: FillAction;
     if (field.widget === 'locateButton') {
       action = await fillViaLocateButton(field, value, {
@@ -750,7 +751,11 @@ async function runFill(forceFromMsg?: boolean) {
       );
       const seen = new WeakSet<HTMLElement>();
       const queue: Array<
-        UnclassifiedField & { wasClassified: boolean; selfIdKind?: SelfIdKind }
+        UnclassifiedField & {
+          wasClassified: boolean;
+          selfIdKind?: SelfIdKind;
+          savedAnswer?: string;
+        }
       > = [];
       const preSkipped: ReviewableField[] = [];
       const candidates: UnclassifiedField[] = [
@@ -763,10 +768,11 @@ async function runFill(forceFromMsg?: boolean) {
         seen.add(u.el);
         const selfIdKind = selfIdKindFromLabel(u.label);
         const savedSelfId = selfIdKind ? valueForField(profile, selfIdKind) : null;
+        const workAuth = workAuthAnswerFromLabel(u.label, profile.workAuth);
         if (
           !mayAnswerComplianceField({
             label: u.label,
-            savedSelfId,
+            savedSelfId: savedSelfId ?? workAuth,
             includeCompliance: settings.ai.fallbackIncludeCompliance,
           })
         ) {
@@ -791,6 +797,7 @@ async function runFill(forceFromMsg?: boolean) {
           ...u,
           wasClassified: classifiedEls.has(u.el),
           ...(selfIdKind ? { selfIdKind } : {}),
+          ...(workAuth ? { savedAnswer: workAuth } : {}),
         });
       }
       queue.sort((a, b) => {
@@ -839,7 +846,13 @@ function isRetryableSkip(note: string | undefined): boolean {
 }
 
 async function runAiFallbackQueue(
-  queue: Array<UnclassifiedField & { wasClassified: boolean; selfIdKind?: SelfIdKind }>,
+  queue: Array<
+    UnclassifiedField & {
+      wasClassified: boolean;
+      selfIdKind?: SelfIdKind;
+      savedAnswer?: string;
+    }
+  >,
   preSkipped: ReviewableField[],
   runId: number,
   animate: boolean,
@@ -883,47 +896,51 @@ async function runAiFallbackQueue(
       }
 
       let resp: AiClassifyResponse;
-      try {
-        const fieldTypeForAi =
-          u.fieldType === 'buttongroup' ? 'radio' : u.fieldType;
-        const request: {
-          question: string;
-          description?: string;
-          fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox';
-          options?: string[];
-          jobDescription?: string;
-          job?: { company?: string; role?: string; jobUrl?: string };
-          wasClassified?: boolean;
-          selfIdKind?: SelfIdKind;
-        } = {
-          question: u.label,
-          fieldType: fieldTypeForAi,
-          wasClassified: u.wasClassified,
-        };
-        if (u.selfIdKind) request.selfIdKind = u.selfIdKind;
-        if (u.options) request.options = u.options;
-        if (u.fieldType === 'textarea') {
-          if (u.el instanceof HTMLElement) {
-            const desc = fieldDescription(u.el);
-            if (desc) request.description = desc;
+      if (u.savedAnswer) {
+        resp = { ok: true, value: { value: u.savedAnswer } };
+      } else {
+        try {
+          const fieldTypeForAi =
+            u.fieldType === 'buttongroup' ? 'radio' : u.fieldType;
+          const request: {
+            question: string;
+            description?: string;
+            fieldType: 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox';
+            options?: string[];
+            jobDescription?: string;
+            job?: { company?: string; role?: string; jobUrl?: string };
+            wasClassified?: boolean;
+            selfIdKind?: SelfIdKind;
+          } = {
+            question: u.label,
+            fieldType: fieldTypeForAi,
+            wasClassified: u.wasClassified,
+          };
+          if (u.selfIdKind) request.selfIdKind = u.selfIdKind;
+          if (u.options) request.options = u.options;
+          if (u.fieldType === 'textarea') {
+            if (u.el instanceof HTMLElement) {
+              const desc = fieldDescription(u.el);
+              if (desc) request.description = desc;
+            }
+            if (ctx.jobDescription) request.jobDescription = ctx.jobDescription;
+            if (ctx.company || ctx.role || ctx.jobUrl) {
+              request.job = {
+                ...(ctx.company ? { company: ctx.company } : {}),
+                ...(ctx.role ? { role: ctx.role } : {}),
+                ...(ctx.jobUrl ? { jobUrl: ctx.jobUrl } : {}),
+              };
+            }
           }
-          if (ctx.jobDescription) request.jobDescription = ctx.jobDescription;
-          if (ctx.company || ctx.role || ctx.jobUrl) {
-            request.job = {
-              ...(ctx.company ? { company: ctx.company } : {}),
-              ...(ctx.role ? { role: ctx.role } : {}),
-              ...(ctx.jobUrl ? { jobUrl: ctx.jobUrl } : {}),
-            };
-          }
+          resp = (await sendToBackground({
+            type: 'AI_CLASSIFY',
+            request,
+          })) as AiClassifyResponse;
+        } catch (err) {
+          log.warn('AI_CLASSIFY request failed', err);
+          connectionFailed = true;
+          break;
         }
-        resp = (await sendToBackground({
-          type: 'AI_CLASSIFY',
-          request,
-        })) as AiClassifyResponse;
-      } catch (err) {
-        log.warn('AI_CLASSIFY request failed', err);
-        connectionFailed = true;
-        break;
       }
 
       if (!resp.ok) {

@@ -1,8 +1,13 @@
 import type { Profile } from '@/profile/schema';
 import type { FieldKind } from '@/adapters/types';
 import { countryByIso, countryByName, splitPhone } from '@/lib/countries';
+import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 
-export function valueForField(profile: Profile, kind: FieldKind): string | boolean | null {
+export function valueForField(
+  profile: Profile,
+  kind: FieldKind,
+  label?: string,
+): string | boolean | null {
   switch (kind) {
     case 'firstName':
       return profile.firstName || null;
@@ -48,9 +53,9 @@ export function valueForField(profile: Profile, kind: FieldKind): string | boole
       return profile.links.other || null;
 
     case 'authorizedToWorkInUS':
-      return yesNo(profile.workAuth.authorizedToWorkInUS);
+      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.authorizedToWorkInUS);
     case 'requiresSponsorship':
-      return yesNo(profile.workAuth.requiresSponsorship);
+      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.requiresSponsorship);
     case 'willingToRelocate':
       return yesNo(profile.workAuth.willingToRelocate);
     case 'desiredSalary':
@@ -108,6 +113,11 @@ function phoneCountryName(profile: Profile): string | null {
   const fromAddress = countryByName(profile.address.country)?.name;
   if (fromAddress) return fromAddress;
   return profile.address.country || null;
+}
+
+function workAuthAnswer(profile: Profile, label: string | undefined): string | null {
+  if (!label) return null;
+  return workAuthAnswerFromLabel(label, profile.workAuth);
 }
 
 function yesNo(v: boolean | null): string | null {

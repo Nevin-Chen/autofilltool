@@ -31,6 +31,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options
 - Forms word these questions their own way ("Male" in your profile against a list of Man / Woman / Non-binary), so a saved answer is matched to whichever option the form offers rather than typed in literally
 - Nothing here is ever guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
+- Sponsorship and work-authorization questions are answered from your saved Options answer, not by the model, and the wording is read before answering: "do you require sponsorship" gets No where "can you work without sponsorship" gets Yes
 
 #### **Submission Tracking**
 - Every apply goes to local history, browsable from the popup, exportable to CSV
