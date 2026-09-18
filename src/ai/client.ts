@@ -377,6 +377,7 @@ export function buildClassifyPrompt(
           ' - "earliest start date" → "Immediately" (or the closest equivalent on the list)',
           ' - "open to in-person work" → "Yes"',
           ' - "how did you hear about us" → "LinkedIn" or "Company website"',
+          ' - "were you referred by a current employee" → "No" (a referral is a fact about the user, never invent one)',
           ' - "any deadlines or timeline considerations" → "None at this time"',
           ' - "how do you pronounce your name" → a phonetic spelling derived from the name in the profile, e.g. "Nevin" → "NEH-vin"',
           'Never fabricate personal data (name, email, address, employer history, real LinkedIn/portfolio URLs). For those specific fields, if the profile is empty, reply SKIP. Reasonable preference defaults are NOT fabrication.',

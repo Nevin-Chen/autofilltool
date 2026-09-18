@@ -25,14 +25,18 @@ export function collectContext(el: HTMLElement): Context {
   const type = (el.getAttribute('type') ?? '').trim().toLowerCase();
 
   let groupLabel = '';
-  if (
+  if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
+    groupLabel = radioGroupQuestion(el);
+  } else if (
     el instanceof HTMLInputElement &&
     (el.type === 'radio' || el.type === 'checkbox')
   ) {
     groupLabel = groupLabelFor(el);
   }
 
-  const haystack = [groupLabel, label, aria, placeholder, name, id]
+  const isRadio = el instanceof HTMLInputElement && el.type === 'radio';
+  const optionLabel = groupLabel && isRadio ? '' : label;
+  const haystack = [groupLabel, optionLabel, aria, placeholder, name, id]
     .filter(Boolean)
     .map(normalize)
     .join(' ');
@@ -145,7 +149,7 @@ export const KEYWORD_RULES: ReadonlyArray<{
   },
   {
     kind: 'authorizedToWorkInUS',
-    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|authorized)\s+to\s+work|work authorization)\b/,
+    re: /\b(authoriz(ed|ation)\s+to\s+work|legally\s+(allowed|able|permitted|entitled|authorized)\s+to\s+work|eligible\s+to\s+work|right\s+to\s+work|work\s+permit|work authorization)\b/,
     confidence: 0.8,
   },
   {
@@ -808,7 +812,118 @@ export function groupQuestionLabel(
     if (t) return t;
   }
 
+  const viaTitle = questionTitleNearGroup(rep, lowerOptions);
+  if (viaTitle) return viaTitle;
+
   return bestLabel(rep);
+}
+
+function radioGroupQuestion(el: HTMLInputElement): string {
+  const options = collectRadioGroupOptions(el.ownerDocument, el.name);
+  const question = groupQuestionLabel(el, options);
+  const lower = question.trim().toLowerCase();
+  if (options.some((o) => o.trim().toLowerCase() === lower)) return '';
+  return question;
+}
+
+const QUESTION_TITLE_SELECTOR = '[class*="label" i], [class*="question" i]';
+const QUESTION_SCOPE_MAX_DEPTH = 6;
+
+function questionTitleNearGroup(
+  rep: HTMLInputElement,
+  lowerOptions: Set<string>,
+): string {
+  const members = choiceGroupMembers(rep);
+  let cursor: HTMLElement | null = rep.parentElement;
+  for (
+    let depth = 0;
+    cursor && depth < QUESTION_SCOPE_MAX_DEPTH;
+    depth++, cursor = cursor.parentElement
+  ) {
+    if (hasFillableOutside(cursor, members)) return '';
+    for (const c of Array.from(cursor.querySelectorAll<HTMLElement>(QUESTION_TITLE_SELECTOR))) {
+      if (c.querySelector('input, select, textarea, button')) continue;
+      const t = textOf(c);
+      if (!t || lowerOptions.has(t.toLowerCase())) continue;
+      return t;
+    }
+  }
+  return '';
+}
+
+function questionScope(el: HTMLElement): HTMLElement | null {
+  const members = choiceGroupMembers(el);
+  let scope: HTMLElement | null = null;
+  let cursor: HTMLElement | null = el.parentElement;
+  for (
+    let depth = 0;
+    cursor && depth < QUESTION_SCOPE_MAX_DEPTH;
+    depth++, cursor = cursor.parentElement
+  ) {
+    if (hasFillableOutside(cursor, members)) break;
+    scope = cursor;
+  }
+  return scope;
+}
+
+const REQUIRED_MARK_RE = /[*\u2731](\s|$)|\(\s*required\s*\)/i;
+const REQUIRED_MARKER_SELECTOR = '[class*="required" i], abbr[title*="required" i]';
+
+export function isRequiredField(el: HTMLElement, label = ''): boolean {
+  for (const m of choiceGroupMembers(el)) {
+    if (hasRequiredAttr(m)) return true;
+  }
+  if (REQUIRED_MARK_RE.test(label)) return true;
+
+  const scope = questionScope(el);
+  if (!scope) return false;
+  if (scope.matches(REQUIRED_MARKER_SELECTOR)) return true;
+  if (scope.querySelector(REQUIRED_MARKER_SELECTOR)) return true;
+  return REQUIRED_MARK_RE.test(textOf(scope));
+}
+
+function hasRequiredAttr(el: Element): boolean {
+  if (el.getAttribute('aria-required') === 'true') return true;
+  if (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLSelectElement ||
+    el instanceof HTMLTextAreaElement
+  ) {
+    return el.required;
+  }
+  return el.hasAttribute('required');
+}
+
+function choiceGroupMembers(el: HTMLElement): Set<HTMLElement> {
+  const members = new Set<HTMLElement>([el]);
+  if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
+    for (const r of Array.from(
+      el.ownerDocument.querySelectorAll<HTMLInputElement>(
+        `input[type="radio"][name="${cssEscape(el.name)}"]`,
+      ),
+    )) {
+      members.add(r);
+    }
+  } else if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+    for (const b of collectCheckboxGroup(el.ownerDocument, el)) members.add(b);
+  }
+  for (const inner of Array.from(el.querySelectorAll<HTMLElement>('input, select, textarea'))) {
+    members.add(inner);
+  }
+  return members;
+}
+
+function hasFillableOutside(scope: HTMLElement, members: Set<HTMLElement>): boolean {
+  for (const f of Array.from(scope.querySelectorAll<HTMLElement>('input, select, textarea'))) {
+    if (members.has(f)) continue;
+    if (f instanceof HTMLInputElement) {
+      const t = (f.type || 'text').toLowerCase();
+      if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'reset' || t === 'image')
+        continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 function questionTitleWithin(scope: HTMLElement, lowerOptions: Set<string>): string {

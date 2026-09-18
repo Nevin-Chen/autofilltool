@@ -72,9 +72,14 @@ function detectFields(root: Document): DetectedField[] {
 
   const scope =
     root.querySelector('form[action*="lever.co"], form[action*="/apply"]') ?? root;
+  const seenRadioGroups = new Set<string>();
   for (const el of Array.from(scope.querySelectorAll<HTMLElement>('input, select, textarea'))) {
     if (seen.has(el)) continue;
     if (!isFillable(el)) continue;
+    if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
+      if (seenRadioGroups.has(el.name)) continue;
+      seenRadioGroups.add(el.name);
+    }
     const ctx = collectContext(el);
     const classified = classifyByHeuristics(el, ctx);
     if (!classified) continue;

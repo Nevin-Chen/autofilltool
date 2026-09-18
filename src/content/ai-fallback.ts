@@ -3,6 +3,9 @@ import { isCompliancePattern } from '@/adapters/_shared';
 export const COMPLIANCE_SKIP_NOTE =
   'Skipped: EEO/visa question with no saved answer. Add one on the Options page, or let the AI answer these from the popup.';
 
+export const OPTIONAL_SKIP_NOTE =
+  'Skipped: optional field. Turn off "Only answer required fields" in the popup to let the AI fill it.';
+
 export function mayAnswerComplianceField(args: {
   label: string;
   savedSelfId: string | boolean | null | undefined;
