@@ -132,6 +132,18 @@ describe('settings schema', () => {
     }
   });
 
+  it('turns required-only AI answers on for settings stored before the toggle existed', () => {
+    const r = SettingsSchema.safeParse({
+      ...defaultSettings(),
+      ai: { provider: 'claude-bridge', fallbackClassifier: true },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.ai.fallbackClassifier).toBe(true);
+      expect(r.data.ai.fallbackRequiredOnly).toBe(true);
+    }
+  });
+
   it('persists per-provider models so switching providers does not lose them', () => {
     const r = SettingsSchema.safeParse({
       ...defaultSettings(),

@@ -272,6 +272,27 @@ export function PopupApp() {
               <input
                 type="checkbox"
                 className="mt-0.5"
+                checked={settings.ai.fallbackRequiredOnly}
+                onChange={(e) =>
+                  updateSettings({
+                    ...settings,
+                    ai: { ...settings.ai, fallbackRequiredOnly: e.target.checked },
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium text-slate-800 dark:text-slate-100">
+                  Only answer required fields
+                </span>
+              </span>
+            </label>
+          )}
+
+          {settings.ai.provider !== 'none' && settings.ai.fallbackClassifier && (
+            <label className="flex items-start gap-2 pl-6 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
                 checked={settings.ai.autoFillSuggestFields}
                 onChange={(e) =>
                   updateSettings({

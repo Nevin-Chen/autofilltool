@@ -26,6 +26,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Adds a "Suggest" textarea form fields
 - It reads the job description off the page, the text out of your résumé, and your profile before writing
 - Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription through the local bridge
+- **Use AI for skipped fields** lets the model answer whatever the profile could not. By default it only touches fields the form marks required (`required`, `aria-required`, a `*` or `✱` on the label); optional fields are listed as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Voluntary Self-Identification**
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options

@@ -384,6 +384,19 @@ describe('buildClassifyPrompt — preference mode', () => {
     expect(prompt.user).toMatch(/exact text of one option/i);
   });
 
+  it('tells the model a referral is never invented', () => {
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Were you referred by a current Lendbuzz employee for this position?',
+        fieldType: 'radio',
+        options: ['Yes', 'No'],
+      },
+      emptyProfile(),
+      { mode: 'preference' },
+    );
+    expect(prompt.system).toMatch(/referred by a current employee" → "No"/);
+  });
+
   it('strict mode keeps the original SKIP-on-silent instruction', () => {
     const prompt = buildClassifyPrompt(
       {

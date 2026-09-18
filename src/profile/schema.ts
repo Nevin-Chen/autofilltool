@@ -113,6 +113,7 @@ export const AiSettingsSchema = z.object({
   cacheResponses: z.boolean().default(false),
   fallbackClassifier: z.boolean().default(false),
   fallbackIncludeCompliance: z.boolean().default(false),
+  fallbackRequiredOnly: z.boolean().default(true),
   autoFillSuggestFields: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;

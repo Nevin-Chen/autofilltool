@@ -22,6 +22,7 @@ import { valueForField } from './mapping';
 import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 import {
   fieldDescription,
+  isRequiredField,
   selfIdKindFromLabel,
   unclassifiedFromDetected,
 } from '@/adapters/_shared';
@@ -41,6 +42,7 @@ import {
   parseMultiSelect,
   mayAnswerComplianceField,
   COMPLIANCE_SKIP_NOTE,
+  OPTIONAL_SKIP_NOTE,
 } from './ai-fallback';
 import { showLoggedToast, showNoticeToast } from './overlay';
 import {
@@ -781,6 +783,21 @@ async function runFill(forceFromMsg?: boolean) {
             label: u.label,
             el: u.el,
             note: COMPLIANCE_SKIP_NOTE,
+          });
+          continue;
+        }
+        const hasSavedAnswer =
+          !!workAuth || (typeof savedSelfId === 'string' && savedSelfId.trim() !== '');
+        if (
+          settings.ai.fallbackRequiredOnly &&
+          !hasSavedAnswer &&
+          !isRequiredField(u.el, u.label)
+        ) {
+          preSkipped.push({
+            group: 'ai',
+            label: u.label,
+            el: u.el,
+            note: OPTIONAL_SKIP_NOTE,
           });
           continue;
         }
