@@ -54,6 +54,29 @@ export async function guardedConnect(deps: {
 
 const CAMEL_FLAG = 'autofilltoolSuggestBound';
 
+const repositioners = new Set<() => void>();
+let layoutObserver: ResizeObserver | null = null;
+let windowListenersBound = false;
+
+function repositionAll(): void {
+  for (const reposition of repositioners) reposition();
+}
+
+function trackLayout(textarea: HTMLTextAreaElement, reposition: () => void): void {
+  repositioners.add(reposition);
+  if (!windowListenersBound) {
+    windowListenersBound = true;
+    window.addEventListener('scroll', repositionAll, { passive: true });
+    window.addEventListener('resize', repositionAll);
+  }
+  if (typeof ResizeObserver === 'undefined') return;
+  if (!layoutObserver) {
+    layoutObserver = new ResizeObserver(repositionAll);
+    layoutObserver.observe(document.documentElement);
+  }
+  layoutObserver.observe(textarea);
+}
+
 type PillHandlers = {
   onActivate: () => void;
 };
@@ -238,13 +261,7 @@ function attachButtonFor(
 
   document.body.appendChild(host);
   setIdle();
-  reposition();
-  window.addEventListener('scroll', reposition, { passive: true });
-  window.addEventListener('resize', reposition);
-
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(() => reposition()).observe(textarea);
-  }
+  trackLayout(textarea, reposition);
 
   const resetStream = () => {
     streaming = false;
