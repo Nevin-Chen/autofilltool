@@ -31,12 +31,31 @@ styles feature does under the hood anyway).
 
 ## Set up your voice (do this first)
 
-`bridge/voice-spec.md` already exists, built from `~/.claude/skills/writing-style`.
-It is deliberately **sample-dominant**: about 3.4k chars of real writing against
-2k of guidance. That ratio is the point. The extension's own system prompt
-already bans em dashes, buzzwords, and applause endings, and the model ignored
-all three when it had no real writing to match against. Adding more rules does
-not fix jargon. Adding samples does.
+The voice prompt is **composed at startup** from two files:
+
+```
+bridge/voice-spec.md                                  ──┐
+  register framing, cadence failures, 13 quotes         ├──> WORK_DIR/voice-prompt.md
+                                                        │      (~10.6k chars)
+~/.claude/skills/writing-style/references/samples.md  ──┘
+  every quote voice-spec.md does not already have
+```
+
+`voice-spec.md` is the base because it carries the framing the raw samples have
+to be read against: which register a cover letter uses, what to carry over from
+casual samples and what not to, and the list of cadence failures. The skill only
+contributes quotes, deduped against what the spec already has, and its formal
+section is skipped because the spec already carries that pitch verbatim.
+
+This composition is why the skill is the place to add samples. `--setting-sources ''`
+and `--tools ''` mean `claude -p` can neither load the skill nor read its files,
+so the bridge reads them itself. Add a sample to `samples.md`, restart the
+bridge, and the draft gets it.
+
+The whole setup is deliberately **sample-dominant**. The extension's own system
+prompt already bans em dashes, buzzwords, and applause endings, and the model
+ignored all three when it had no real writing to match against. Adding more rules
+does not fix jargon. Adding samples does.
 
 So when a draft sounds off, **add a sample, do not add a rule.**
 
@@ -45,10 +64,12 @@ it. Everything is either casual-register chat or one pitch doc, so the model is
 extrapolating formal prose from informal samples. Paste in one letter you
 actually submitted and it will do more than anything else you can change.
 
-`voice-spec.md` is gitignored and never leaves your machine.
+`voice-spec.md` is gitignored and never leaves your machine, and the composed
+prompt lives in the bridge's temp working directory, which is deleted on
+shutdown.
 
-If the file is missing, the bridge runs **without** a voice spec and says so on
-startup. It deliberately does not fall back to `voice-spec.example.md`: that
+If the skill is missing the bridge runs on `voice-spec.md` alone; if both are
+missing it runs **without** a voice spec. It says which on startup. It deliberately does not fall back to `voice-spec.example.md`: that
 template is addressed to you ("Copy this file to..."), and feeding its bracketed
 placeholders to the model as a real system prompt makes it write commentary
 about this repo instead of a cover letter.
@@ -65,6 +86,7 @@ You should see:
 ```
 [bridge] listening on http://localhost:11435  (pid 81677)
 [bridge] model: opus   voice spec: .../bridge/voice-spec.md
+[bridge] voice: 13 quotes from voice-spec.md + 27 carried from .../writing-style/references/samples.md
 [bridge] stop with Ctrl-C, or `npm run bridge:stop` from anywhere.
 ```
 
@@ -121,7 +143,7 @@ claude -p \
   --tools '' \
   --setting-sources '' \
   --system-prompt "<the extension's system prompt> + <output contract>" \
-  --append-system-prompt-file bridge/voice-spec.md
+  --append-system-prompt-file <voice-spec.md + skill samples, composed at boot>
 # user question is piped in on stdin
 ```
 
@@ -130,7 +152,9 @@ claude -p \
 - **`--tools ''`** drops every tool definition. This matters more than it looks:
   with `--system-prompt` alone, a draft still costs about **13,400 input tokens**
   of tool schemas and the model still behaves like a coding agent. With tools
-  off the same draft costs about **200**.
+  off that drops to roughly **200**, plus about **2.6k** for the composed voice
+  prompt. Note that `--tools ''` does not strip MCP servers: if you have any
+  connected, their definitions still ship on every draft.
 - **`--setting-sources ''`** stops user, project, and local settings loading,
   which is what pulls in `~/.claude/CLAUDE.md`. The throwaway temp cwd is not
   enough by itself: the global `CLAUDE.md` applies regardless of directory, and
@@ -159,6 +183,7 @@ claude -p \
 | `PORT` | `11435` | Port to listen on (11434 is Ollama's). |
 | `CLAUDE_MODEL` | `opus` | Model used when the extension does not send a Claude model. |
 | `VOICE_SPEC` | `bridge/voice-spec.md` | Path to your voice spec. |
+| `VOICE_SAMPLES` | `~/.claude/skills/writing-style/references/samples.md` | Extra samples merged into the voice prompt at startup. |
 | `CLAUDE_BIN` | `claude` | Path to the `claude` CLI if it is not on `PATH`. |
 | `BRIDGE_TIMEOUT_MS` | `180000` | Kill a draft that runs longer than this. |
 

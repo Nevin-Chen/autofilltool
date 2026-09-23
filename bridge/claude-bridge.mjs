@@ -22,8 +22,9 @@
  *  - An OUTPUT_CONTRACT is appended to the system prompt so the model always
  *    returns a draft. Headless has no way to answer a clarifying question, so
  *    "tell me the company and role" would otherwise land in the form field.
- *  - Your writing voice is appended from a file via `--append-system-prompt-file`
- *    (see voice-spec.example.md). The file stays local; it never ships anywhere.
+ *  - Your writing voice is appended via `--append-system-prompt-file`, composed at
+ *    startup from bridge/voice-spec.md plus whatever samples your writing-style
+ *    skill carries that it does not. Both stay local; neither ships anywhere.
  *
  * Terms-of-service note: driving a Claude *subscription* through a wrapper to
  * power a separate app is a gray area versus its intended interactive use. Use
@@ -200,6 +201,86 @@ function resolveVoiceSpec() {
 
 const VOICE_SPEC_PATH = resolveVoiceSpec();
 
+const SKILL_SAMPLES = path.join(
+  os.homedir(),
+  '.claude',
+  'skills',
+  'writing-style',
+  'references',
+  'samples.md',
+);
+
+function resolveSkillSamples() {
+  const explicit = process.env.VOICE_SAMPLES;
+  if (explicit) {
+    if (existsSync(explicit)) return explicit;
+    console.warn(`[bridge] VOICE_SAMPLES=${explicit} not found; skipping skill samples.`);
+    return null;
+  }
+  return existsSync(SKILL_SAMPLES) ? SKILL_SAMPLES : null;
+}
+
+function quoteBlocks(markdown) {
+  const out = [];
+  let cur = [];
+  let section = '';
+  const flush = () => {
+    if (cur.length) out.push({ section, text: cur.join(' ') });
+    cur = [];
+  };
+  for (const line of markdown.split('\n')) {
+    if (line.startsWith('> ')) {
+      cur.push(line.slice(2).trim());
+      continue;
+    }
+    flush();
+    if (line.startsWith('## ')) section = line.slice(3).trim();
+  }
+  flush();
+  return out;
+}
+
+const sampleKey = (s) => s.replace(/\W+/g, '').toLowerCase().slice(0, 60);
+
+const isCasual = (b) => !/standard register/i.test(b.section);
+
+const CARRIED_HEADER = [
+  '### Additional verbatim samples (casual register)',
+  '',
+  'Carry over from these: word choice, sentence length, bluntness, the absence of',
+  'performance, and where I stop. Do NOT carry over the lowercase, the dropped',
+  'apostrophes, or the comma splices. Do NOT mine them for biography; ABOUT THE',
+  'CANDIDATE is the only source of truth for what I have worked on.',
+].join('\n');
+
+const voiceStats = { spec: 0, carried: 0, samplesPath: null };
+
+function buildVoicePrompt() {
+  const spec = VOICE_SPEC_PATH ? readFileSync(VOICE_SPEC_PATH, 'utf8') : '';
+  const have = new Set(quoteBlocks(spec).map((b) => sampleKey(b.text)));
+  voiceStats.spec = have.size;
+
+  const samplesPath = resolveSkillSamples();
+  if (!samplesPath) return VOICE_SPEC_PATH;
+  voiceStats.samplesPath = samplesPath;
+
+  const carried = quoteBlocks(readFileSync(samplesPath, 'utf8'))
+    .filter(isCasual)
+    .filter((b) => !have.has(sampleKey(b.text)))
+    .map((b) => b.text);
+  voiceStats.carried = carried.length;
+  if (!carried.length) return VOICE_SPEC_PATH;
+
+  const composed = [spec.trimEnd(), '', CARRIED_HEADER, '', ...carried.map((q) => `> ${q}`)]
+    .join('\n')
+    .trim();
+  const out = path.join(WORK_DIR, 'voice-prompt.md');
+  writeFileSync(out, `${composed}\n`);
+  return out;
+}
+
+const VOICE_PROMPT_PATH = buildVoicePrompt();
+
 // Claude Code accepts short aliases (opus/sonnet/haiku, which track the latest
 // of each) or full ids (claude-opus-5). The extension's Ollama default is
 // "llama3.2", which Claude would reject, so fall back to our default for
@@ -311,7 +392,7 @@ function handleChat(req, res, body) {
     '--setting-sources', '',
   ];
   args.push('--system-prompt', system ? `${system}\n\n${OUTPUT_CONTRACT}` : OUTPUT_CONTRACT);
-  if (VOICE_SPEC_PATH) args.push('--append-system-prompt-file', VOICE_SPEC_PATH);
+  if (VOICE_PROMPT_PATH) args.push('--append-system-prompt-file', VOICE_PROMPT_PATH);
 
   const child = spawn(CLAUDE_BIN, args, { cwd: WORK_DIR, env: process.env });
   // A `claude` child outlives its parent if we exit without reaping it, and it
@@ -414,7 +495,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
-    sendJson(res, 200, { status: 'ok', model: DEFAULT_MODEL, voiceSpec: Boolean(VOICE_SPEC_PATH) });
+    sendJson(res, 200, {
+      status: 'ok',
+      model: DEFAULT_MODEL,
+      voiceSpec: Boolean(VOICE_SPEC_PATH),
+      voiceQuotes: voiceStats.spec + voiceStats.carried,
+    });
     return;
   }
   if (req.method === 'POST' && req.url && req.url.startsWith('/v1/chat/completions')) {
@@ -471,6 +557,12 @@ server.listen(PORT, '127.0.0.1', () => {
   writeFileSync(PID_FILE, String(process.pid));
   console.log(`[bridge] listening on http://localhost:${PORT}  (pid ${process.pid})`);
   console.log(`[bridge] model: ${DEFAULT_MODEL}   voice spec: ${VOICE_SPEC_PATH || '(none)'}`);
+  console.log(
+    `[bridge] voice: ${voiceStats.spec} quotes from voice-spec.md` +
+      (voiceStats.carried
+        ? ` + ${voiceStats.carried} carried from ${voiceStats.samplesPath}`
+        : ' (no writing-style skill samples found)'),
+  );
   console.log(`[bridge] point the extension's Ollama endpoint at http://localhost:${PORT}`);
   console.log('[bridge] stop with Ctrl-C, or `npm run bridge:stop` from anywhere.');
   if (process.env.ANTHROPIC_API_KEY) {
