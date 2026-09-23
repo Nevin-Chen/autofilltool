@@ -5,6 +5,7 @@ import { ashbyAdapter } from './ashby';
 import { workdayAdapter } from './workday';
 import { jazzhrAdapter } from './jazzhr';
 import { workableAdapter } from './workable';
+import { breezyAdapter } from './breezy';
 import { genericAdapter } from './generic';
 
 export const adapters: PlatformAdapter[] = [
@@ -14,5 +15,6 @@ export const adapters: PlatformAdapter[] = [
   workdayAdapter,
   jazzhrAdapter,
   workableAdapter,
+  breezyAdapter,
   genericAdapter,
 ];

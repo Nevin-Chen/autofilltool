@@ -268,6 +268,7 @@ async function ensureContentScriptInAllFrames(
         | 'workday'
         | 'jazzhr'
         | 'workable'
+        | 'breezy'
         | null = null;
       if (
         doc.getElementById('grnhse_app') ||
@@ -290,6 +291,12 @@ async function ensureContentScriptInAllFrames(
         atsHint = 'jazzhr';
       } else if (doc.querySelector('form[data-ui="application-form"]')) {
         atsHint = 'workable';
+      } else if (
+        doc.querySelector(
+          'input#main-attachment[name="cResume"], .application-form form[name="form"]',
+        )
+      ) {
+        atsHint = 'breezy';
       } else if (doc.querySelector('[data-automation-id]')) {
         atsHint = 'workday';
       }
@@ -426,7 +433,7 @@ self.addEventListener('activate', () => {
 });
 
 const ATS_HOST_RE =
-  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com)$/i;
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com|breezy\.hr)$/i;
 
 function isAtsUrl(raw: string | undefined): boolean {
   if (!raw) return false;

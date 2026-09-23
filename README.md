@@ -9,7 +9,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 ## Features
 
 #### **Auto-fill**
-- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, and Workable, with a heuristic fallback for anything else
+- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, and Breezy HR, with a heuristic fallback for anything else
 - Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
 - Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
 - Skips fields that already have a value. **Force overwrite** if you want it to go over them again
@@ -183,7 +183,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `storage` | Persist profile, settings, résumés, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the currently focused tab from the popup |
-| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, and Workable forms |
+| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, and Breezy HR forms |
 
 **Optional**, asked for when you need them and revocable from Options:
 
@@ -210,7 +210,7 @@ No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
 src/
 ├── background/   MV3 service worker (the only code that talks to external hosts)
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
-├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable + generic)
+├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client

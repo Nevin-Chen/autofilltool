@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Firmware Engineer</title>
+  </head>
+  <body>
+    <div class="hero">
+      <div class="banner">
+        <h1>Firmware Engineer</h1>
+        <ul class="meta">
+          <li class="location"><span>Portland, OR</span><span class="spacer"> - </span><span>Remote</span></li>
+          <li class="type"><span>Full-Time</span></li>
+          <li class="department"><span>Hardware</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="confirmation-container ng-hide">
+      <div class="application-confirmed">
+        <h1>Application Submitted</h1>
+        <p>Your application has been submitted successfully. Good luck!</p>
+      </div>
+    </div>
+
+    <div class="container application-form">
+      <form name="form" ng-submit="apply()" novalidate>
+        <div class="section-header">
+          <input type="hidden" id="resume_required" value="required" />
+          <div class="file-input-container type">
+            <input
+              id="main-attachment"
+              name="cResume"
+              style="display: none"
+              type="file"
+              ng-model="candidate.resume"
+              ng-file-select="onFileSelect($files)"
+              accept=".pdf, .doc, .docx, .txt, .rtd, .pages"
+              class="attachment"
+            />
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h2>Personal Details</h2></div>
+
+          <h3><span>Full Name</span><span title="Required" class="required">*</span></h3>
+          <input name="cName" ng-model="candidate.name" type="text" placeholder="Full Name" required />
+          <div class="error-container"><span class="error">A full name is required</span></div>
+          <div class="form-divider"></div>
+
+          <h3><span>Email Address</span><span title="Required" class="required">*</span></h3>
+          <input name="cEmail" ng-model="candidate.email_address" type="email" placeholder="Email Address" required class="email-address" />
+          <div class="error-container"><span class="error">An email is required</span></div>
+          <div class="form-divider"></div>
+
+          <h3><span>Phone Number</span><span title="Required" class="required">*</span></h3>
+          <input name="cPhoneNumber" ng-model="candidate.phone_number" type="text" placeholder="Phone Number" required class="phone-number" />
+          <ul class="options">
+            <li class="option consent-form">
+              <input type="checkbox" name="smsConsent" ng-model="$storage[positionId].sms_consent" />
+              <span>I agree to receive SMS messages about my application.</span>
+            </li>
+          </ul>
+          <div class="form-divider"></div>
+
+          <h3><span>Address</span></h3>
+          <input id="fullAddress" name="cAddress" ng-model="candidate.address" type="text" placeholder="Address" class="address" />
+          <div class="form-divider"></div>
+
+          <div class="desired-salary">
+            <h3><span>Desired Salary</span></h3>
+            <select name="salaryCurrency" ng-model="candidate.salary.currency" class="salary-details options-dropdown">
+              <option value="USD">US Dollar ($)</option>
+              <option value="EUR">Euro (€)</option>
+            </select>
+            <input name="cSalary" ng-model="candidate.salary.salary" type="text" placeholder="Desired Salary" class="salary-number" />
+            <select ng-model="candidate.salary.period" class="salary-details">
+              <option value="year">per year</option>
+              <option value="hour">per hour</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h2>Experience</h2></div>
+
+          <input type="hidden" id="education_required" value="optional" />
+          <div class="section-header"><h3><span>Education</span></h3></div>
+          <ul>
+            <li>
+              <input ng-model="candidateSchool.school_name" type="text" placeholder="School" />
+              <input ng-model="candidateSchool.field_of_study" type="text" placeholder="Field of Study" />
+            </li>
+          </ul>
+
+          <input type="hidden" id="summary_required" value="optional" />
+          <div class="section-header"><h3><span>Experience Summary</span></h3></div>
+          <textarea name="cSummary" ng-model="candidate.summary" placeholder="" class="description"></textarea>
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h3><span>Cover Letter</span></h3></div>
+          <textarea name="cCoverLetter" ng-model="candidate.cover_letter" placeholder="" class="description"></textarea>
+        </div>
+
+        <div
+          aria-hidden="true"
+          style="position: absolute; left: -9999px; height: 0; overflow: hidden; opacity: 0"
+          class="apply-field-extra"
+        >
+          <label for="hp_7f2b"></label>
+          <input id="hp_7f2b" type="text" name="hp_7f2b" ng-model="candidate.hp_7f2b" tabindex="-1" autocomplete="hp-4f3c9a" />
+          <input id="form_token" type="hidden" value="1790197369545.e2d0c5f8" />
+        </div>
+
+        <div class="apply-container">
+          <ul class="navigation-buttons">
+            <li class="apply-button">
+              <button type="submit" class="button green large"><span>Submit Application</span></button>
+            </li>
+          </ul>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>
