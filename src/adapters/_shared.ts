@@ -246,6 +246,70 @@ export const KEYWORD_RULES: ReadonlyArray<{
   },
 ];
 
+const HISTORY_SECTION_TOKENS: ReadonlySet<string> = new Set([
+  'experience',
+  'experiences',
+  'employment',
+  'employments',
+  'education',
+  'educations',
+  'jobs',
+  'schools',
+]);
+
+const HISTORY_FILLER_TOKENS: ReadonlySet<string> = new Set([
+  'entry',
+  'entries',
+  'attributes',
+  'attribute',
+  'attr',
+  'candidate',
+]);
+
+const HISTORY_FIELD_RULES: ReadonlyArray<{ kind: FieldKind; re: RegExp }> = [
+  { kind: 'jobTitle', re: /(^|_)(job_)?title$|position(_name)?$/ },
+  { kind: 'employer', re: /compan(y|ies)|employer|organi[sz]ation/ },
+  { kind: 'school', re: /school|institution|universit|college/ },
+  { kind: 'fieldOfStudy', re: /field_of_study|major|discipline|concentration/ },
+  { kind: 'degree', re: /degree|qualification/ },
+  { kind: 'gpa', re: /gpa|grade_?(point|average)/ },
+  { kind: 'gradYear', re: /grad(uation)?_?(year|date)/ },
+  { kind: 'currentlyEmployed', re: /current(ly)?(_work|_here|_job|_role|_position)?$|is_current/ },
+  { kind: 'roleDescription', re: /summary|description|responsibilit|achievement|duties/ },
+  { kind: 'employerLocation', re: /location|city|region/ },
+  { kind: 'startDate', re: /start(ed|_date|_month|_year)?$|(^|_)from$/ },
+  { kind: 'endDate', re: /end(ed|_date|_month|_year)?$|(^|_)to$|until/ },
+];
+
+export function historyKindFromName(name: string): Classification | null {
+  const tokens = name.toLowerCase().split(/[[\].\-_\s]+/).filter(Boolean);
+  let sectionAt = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (HISTORY_SECTION_TOKENS.has(token)) {
+      sectionAt = i;
+      break;
+    }
+    if (token === 'work' && tokens[i + 1] === 'history') {
+      sectionAt = i + 1;
+      break;
+    }
+  }
+  if (sectionAt === -1) return null;
+
+  const tail = tokens.slice(sectionAt + 1);
+  if (!tail.some((t) => /^\d{1,2}$/.test(t))) return null;
+  const field = tail
+    .filter((t) => !/^\d+$/.test(t) && !HISTORY_FILLER_TOKENS.has(t))
+    .join('_');
+  if (!field) return null;
+
+  for (const { kind, re } of HISTORY_FIELD_RULES) {
+    if (re.test(field)) return { kind, confidence: 0.95 };
+  }
+  return null;
+}
+
 export function fromKeywords(haystack: string): Classification | null {
   for (const rule of KEYWORD_RULES) {
     if (rule.re.test(haystack)) return { kind: rule.kind, confidence: rule.confidence };

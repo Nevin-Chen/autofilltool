@@ -13,6 +13,7 @@ import {
   findResumeInput,
   findUnclassifiedFields,
   fromKeywords,
+  historyKindFromName,
   isFillable,
   attachResumeViaSlot,
   normalize,
@@ -143,9 +144,12 @@ function detectFields(root: Document): DetectedField[] {
     if (isAddressMirror(el) || isPhoneWidgetChrome(el)) continue;
 
     const ctx = collectContext(el);
-    const hit = isCustomQuestion(el)
-      ? classifyQuestion(ctx.label, el)
-      : classifyByHeuristics(el, ctx);
+    const byName = historyKindFromName(el.getAttribute('name') ?? '');
+    const hit =
+      byName ??
+      (isCustomQuestion(el)
+        ? classifyQuestion(ctx.label, el)
+        : classifyByHeuristics(el, ctx));
     if (!hit) continue;
     out.push({ el, kind: hit.kind, label: ctx.label, confidence: hit.confidence });
   }

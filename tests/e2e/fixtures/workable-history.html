@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Apply — Backend Engineer at Parallax Labs</title>
+</head>
+<body>
+<form data-ui="application-form">
+  <div>
+    <label for="firstname">First name</label>
+    <input id="firstname" name="firstname" value="" />
+  </div>
+  <div>
+    <label for="lastname">Last name</label>
+    <input id="lastname" name="lastname" value="" />
+  </div>
+  <div>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" value="" />
+  </div>
+
+  <fieldset>
+    <legend>Experience</legend>
+    <ul>
+      <li data-ui="experience-entry">
+        <div>
+          <label for="exp-0-title">Title</label>
+          <input id="exp-0-title" name="experience[0][title]" value="" />
+        </div>
+        <div>
+          <label for="exp-0-company">Company</label>
+          <input id="exp-0-company" name="experience[0][company]" value="" />
+        </div>
+        <div>
+          <label for="exp-0-current">I currently work here</label>
+          <input type="checkbox" id="exp-0-current" name="experience[0][current]" />
+        </div>
+        <div>
+          <label for="exp-0-start">Start date</label>
+          <input id="exp-0-start" name="experience[0][start_date]" value="" />
+        </div>
+        <div>
+          <label for="exp-0-end">End date</label>
+          <input id="exp-0-end" name="experience[0][end_date]" value="" />
+        </div>
+        <div>
+          <label for="exp-0-summary">Summary</label>
+          <textarea id="exp-0-summary" name="experience[0][summary]"></textarea>
+        </div>
+      </li>
+      <li data-ui="experience-entry">
+        <div>
+          <label for="exp-1-title">Title</label>
+          <input id="exp-1-title" name="experience[1][title]" value="" />
+        </div>
+        <div>
+          <label for="exp-1-company">Company</label>
+          <input id="exp-1-company" name="experience[1][company]" value="" />
+        </div>
+        <div>
+          <label for="exp-1-current">I currently work here</label>
+          <input type="checkbox" id="exp-1-current" name="experience[1][current]" />
+        </div>
+        <div>
+          <label for="exp-1-start">Start date</label>
+          <input id="exp-1-start" name="experience[1][start_date]" value="" />
+        </div>
+        <div>
+          <label for="exp-1-end">End date</label>
+          <input id="exp-1-end" name="experience[1][end_date]" value="" />
+        </div>
+        <div>
+          <label for="exp-1-summary">Summary</label>
+          <textarea id="exp-1-summary" name="experience[1][summary]"></textarea>
+        </div>
+      </li>
+    </ul>
+  </fieldset>
+
+  <fieldset>
+    <legend>Education</legend>
+    <ul>
+      <li data-ui="education-entry">
+        <div>
+          <label for="edu-0-school">School</label>
+          <input id="edu-0-school" name="education[0][school]" value="" />
+        </div>
+        <div>
+          <label for="edu-0-degree">Degree</label>
+          <input id="edu-0-degree" name="education[0][degree]" value="" />
+        </div>
+        <div>
+          <label for="edu-0-field">Field of study</label>
+          <input id="edu-0-field" name="education[0][field_of_study]" value="" />
+        </div>
+        <div>
+          <label for="edu-0-end">End date</label>
+          <input id="edu-0-end" name="education[0][end_date]" value="" />
+        </div>
+      </li>
+      <li data-ui="education-entry">
+        <div>
+          <label for="edu-1-school">School</label>
+          <input id="edu-1-school" name="education[1][school]" value="" />
+        </div>
+        <div>
+          <label for="edu-1-degree">Degree</label>
+          <input id="edu-1-degree" name="education[1][degree]" value="" />
+        </div>
+        <div>
+          <label for="edu-1-field">Field of study</label>
+          <input id="edu-1-field" name="education[1][field_of_study]" value="" />
+        </div>
+        <div>
+          <label for="edu-1-end">End date</label>
+          <input id="edu-1-end" name="education[1][end_date]" value="" />
+        </div>
+      </li>
+    </ul>
+  </fieldset>
+
+  <div>
+    <label for="cover_letter">Cover letter</label>
+    <textarea id="cover_letter" name="cover_letter"></textarea>
+  </div>
+
+  <button type="submit">Submit application</button>
+</form>
+</body>
+</html>

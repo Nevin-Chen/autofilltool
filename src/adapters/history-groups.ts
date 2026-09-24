@@ -7,6 +7,9 @@ import {
 } from './types';
 
 export function assignHistoryGroups(fields: DetectedField[]): DetectedField[] {
+  const named = namedGroups(fields);
+  if (named) return named;
+
   const experience = entryContainers(fields, 'experience');
   const education = entryContainers(fields, 'education');
   if (experience.length === 0 && education.length === 0) return fields;
@@ -15,6 +18,34 @@ export function assignHistoryGroups(fields: DetectedField[]): DetectedField[] {
     const group = groupFor(field, experience, education);
     if (!group) return field;
     return { ...field, group };
+  });
+}
+
+function namedGroups(fields: DetectedField[]): DetectedField[] | null {
+  const ranks = new Map<HTMLElement, FieldGroup>();
+  for (const section of ['experience', 'education'] as const) {
+    const seeds = fields.filter((f) => historyKindFor(f.kind) === section);
+    if (new Set(seeds.map((f) => f.kind)).size < 2) continue;
+    const ranked = rankedByName(seeds);
+    if (!ranked) return null;
+    for (const [el, index] of ranked) ranks.set(el, { kind: section, index });
+
+    for (const field of fields) {
+      if (!isSharedHistoryKind(field.kind)) continue;
+      if (ranks.has(field.el)) continue;
+      if (sectionFromName(field.el) !== section) continue;
+      const index = indexFromName(field.el);
+      if (index === null) continue;
+      const sibling = Array.from(ranked).find(
+        ([el]) => indexFromName(el) === index,
+      );
+      if (sibling) ranks.set(field.el, { kind: section, index: sibling[1] });
+    }
+  }
+  if (ranks.size === 0) return null;
+  return fields.map((field) => {
+    const group = ranks.get(field.el);
+    return group ? { ...field, group } : field;
   });
 }
 
@@ -43,6 +74,43 @@ function indexIn(containers: HTMLElement[], el: HTMLElement): number | null {
     if (container === el || container.contains(el)) return i;
   }
   return null;
+}
+
+const NAMED_INDEX_RE =
+  /(?:experience|employment|work[_\-.]?history|education|school|job)[^0-9]{0,12}?(\d{1,2})/i;
+
+export function indexFromName(el: HTMLElement): number | null {
+  for (const attr of ['name', 'id']) {
+    const raw = el.getAttribute(attr);
+    if (!raw) continue;
+    const m = NAMED_INDEX_RE.exec(raw);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+export function sectionFromName(el: HTMLElement): HistoryGroupKind | null {
+  for (const attr of ['name', 'id']) {
+    const raw = el.getAttribute(attr);
+    if (!raw) continue;
+    const m = NAMED_INDEX_RE.exec(raw);
+    if (!m) continue;
+    return /educat|school/i.test(m[0]) ? 'education' : 'experience';
+  }
+  return null;
+}
+
+function rankedByName(seeds: DetectedField[]): Map<HTMLElement, number> | null {
+  const found = new Map<HTMLElement, number>();
+  for (const seed of seeds) {
+    const index = indexFromName(seed.el);
+    if (index === null) return null;
+    found.set(seed.el, index);
+  }
+  const ranks = Array.from(new Set(found.values())).sort((a, b) => a - b);
+  const out = new Map<HTMLElement, number>();
+  for (const [el, index] of found) out.set(el, ranks.indexOf(index));
+  return out;
 }
 
 function entryContainers(
