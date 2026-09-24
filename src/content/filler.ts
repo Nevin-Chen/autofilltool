@@ -110,10 +110,11 @@ export type FillOptions = {
 
 export function fillField(
   field: DetectedField,
-  rawValue: string | boolean | null | undefined,
+  raw: string | boolean | null | undefined,
   opts: FillOptions,
 ): FillAction {
   const { el, kind, label } = field;
+  const rawValue = field.datePart ? datePartOf(raw, field.datePart) : raw;
   if (rawValue === null || rawValue === undefined || rawValue === '') {
     return { label, kind, status: 'skipped', note: 'no value in profile' };
   }
@@ -143,6 +144,18 @@ export function fillField(
       note: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+const MONTH_VALUE_RE = /^(\d{4})-(\d{2})$/;
+
+function datePartOf(
+  raw: string | boolean | null | undefined,
+  part: 'month' | 'year',
+): string | null {
+  if (typeof raw !== 'string') return null;
+  const m = MONTH_VALUE_RE.exec(raw.trim());
+  if (!m) return null;
+  return part === 'month' ? m[2]! : m[1]!;
 }
 
 type Meta = { label: string; kind: string };

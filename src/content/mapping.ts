@@ -95,10 +95,11 @@ export function valueForField(
     case 'jobTitle':
       return experienceAt(profile, group)?.jobTitle || null;
     case 'employerLocation':
-      return experienceAt(profile, group)?.location || null;
+      return group ? experienceAt(profile, group)?.location || null : null;
     case 'roleDescription':
       return group ? experienceAt(profile, group)?.description || null : null;
     case 'currentlyEmployed': {
+      if (!group) return null;
       const entry = experienceAt(profile, group);
       return entry ? entry.current : null;
     }

@@ -115,6 +115,7 @@ export type DetectedField = {
   confidence: number;
   widget?: 'native' | 'virtualizedDropdown' | 'buttonGroup' | 'locateButton';
   group?: FieldGroup;
+  datePart?: 'month' | 'year';
 };
 
 export type UnclassifiedFieldType = 'text' | 'textarea' | 'radio' | 'select' | 'combobox' | 'checkbox' | 'buttongroup';
