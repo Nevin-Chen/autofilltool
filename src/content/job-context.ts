@@ -32,6 +32,7 @@ function extractRole(doc: Document): string {
     '[data-test="jobTitle"]',
     '.job-title',
     'h1.app-title',
+    '.banner h1',
     'h1',
   ];
   for (const sel of selectors) {
@@ -89,6 +90,10 @@ function companyFromAtsUrl(url: URL): string | null {
   if (url.hostname.endsWith('workable.com')) {
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
+  }
+  if (url.hostname.endsWith('breezy.hr')) {
+    const sub = url.hostname.split('.')[0];
+    if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
   return null;
 }

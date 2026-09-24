@@ -7,6 +7,7 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)myworkdayjobs\.com$/i,
   /(^|\.)applytojob\.com$/i,
   /(^|\.)workable\.com$/i,
+  /(^|\.)breezy\.hr$/i,
 ];
 
 export type AtsHint =
@@ -16,6 +17,7 @@ export type AtsHint =
   | 'workday'
   | 'jazzhr'
   | 'workable'
+  | 'breezy'
   | null;
 
 export type FrameInfo = {
@@ -63,6 +65,13 @@ export function probeAtsHint(doc: Document): AtsHint {
   }
   if (doc.querySelector('form[data-ui="application-form"]')) {
     return 'workable';
+  }
+  if (
+    doc.querySelector(
+      'input#main-attachment[name="cResume"], .application-form form[name="form"]',
+    )
+  ) {
+    return 'breezy';
   }
   if (doc.querySelector('[data-automation-id]')) {
     return 'workday';

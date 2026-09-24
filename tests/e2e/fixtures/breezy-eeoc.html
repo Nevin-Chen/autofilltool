@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Firmware Engineer</title>
+  </head>
+  <body>
+    <div class="container application-form">
+      <form name="form" ng-controller="FormWithQuestionnaireCtrl" novalidate>
+        <div data-section="application" class="ng-hide">
+          <div class="section">
+            <h3><span>Full Name</span></h3>
+            <input name="cName" ng-model="candidate.name" type="text" placeholder="Full Name" required />
+          </div>
+        </div>
+
+        <div data-section="eeoc">
+          <div class="eeoc-form-container">
+            <div class="section-header">
+              <h2>Voluntary Self-Identification</h2>
+              <p>Completion is voluntary and will not affect your application.</p>
+            </div>
+            <input type="hidden" id="eeoc" value="true" />
+            <div class="section questions">
+              <ul>
+                <li class="question">
+                  <div class="multiplechoice">
+                    <h3>Race / Ethnicity</h3>
+                    <ul class="options">
+                      <li class="option">
+                        <input id="race_white" type="radio" name="race_ethnicity" ng-model="eeoc.race_ethnicity" value="white" />
+                        <label for="race_white"><span>White (Not Hispanic or Latino)</span></label>
+                      </li>
+                      <li class="option">
+                        <input id="race_black" type="radio" name="race_ethnicity" ng-model="eeoc.race_ethnicity" value="black" />
+                        <label for="race_black"><span>Black or African American</span></label>
+                      </li>
+                      <li class="option">
+                        <input id="race_hispanic" type="radio" name="race_ethnicity" ng-model="eeoc.race_ethnicity" value="asian" />
+                        <label for="race_hispanic"><span>Asian</span></label>
+                      </li>
+                      <li class="option">
+                        <input id="race_white_no" type="radio" name="race_ethnicity" ng-model="eeoc.race_ethnicity" value="unspecified" />
+                        <label for="race_white_no"><span>I don't wish to answer</span></label>
+                      </li>
+                    </ul>
+                  </div>
+                </li>
+                <li class="question">
+                  <div class="multiplechoice">
+                    <h3>Gender</h3>
+                    <ul class="options">
+                      <li class="option">
+                        <input id="gender_male" type="radio" name="gender" ng-model="eeoc.gender" value="male" />
+                        <label for="gender_male"><span>Male</span></label>
+                      </li>
+                      <li class="option">
+                        <input id="gender_female" type="radio" name="gender" ng-model="eeoc.gender" value="female" />
+                        <label for="gender_female"><span>Female</span></label>
+                      </li>
+                      <li class="option">
+                        <input id="gender_no" type="radio" name="gender" ng-model="eeoc.gender" value="unspecified" />
+                        <label for="gender_no"><span>I don't wish to answer</span></label>
+                      </li>
+                    </ul>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <input type="hidden" id="eeocVsid" value="true" />
+            <hr />
+            <h3>Veteran Status</h3>
+            <p>This employer is a federal contractor subject to VEVRAA.</p>
+            <p>Please check one of the boxes below.</p>
+            <ul>
+              <li>
+                <input id="vet_yes" type="radio" name="eeoc.veteran_status" ng-model="eeoc.veteran_status" value="true" />
+                <label for="vet_yes"><strong>I identify as one or more of the classifications of a protected veteran</strong></label>
+              </li>
+              <li>
+                <input id="vet_no" type="radio" name="eeoc.veteran_status" ng-model="eeoc.veteran_status" value="false" />
+                <label for="vet_no"><strong>I am not a protected veteran</strong></label>
+              </li>
+              <li>
+                <input id="vet_nope" type="radio" name="eeoc.veteran_status" ng-model="eeoc.veteran_status" value="unspecified" />
+                <label for="vet_nope"><strong>I don't wish to answer</strong></label>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="apply-container">
+          <ul class="navigation-buttons">
+            <li class="apply-button"><button type="button" ng-click="apply()"><span>Submit Application</span></button></li>
+          </ul>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>
