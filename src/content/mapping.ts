@@ -1,5 +1,5 @@
-import type { Profile } from '@/profile/schema';
-import type { FieldKind } from '@/adapters/types';
+import type { Education, Experience, Profile } from '@/profile/schema';
+import type { FieldGroup, FieldKind } from '@/adapters/types';
 import { countryByIso, countryByName, splitPhone } from '@/lib/countries';
 import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 
@@ -7,6 +7,7 @@ export function valueForField(
   profile: Profile,
   kind: FieldKind,
   label?: string,
+  group?: FieldGroup,
 ): string | boolean | null {
   switch (kind) {
     case 'firstName':
@@ -79,13 +80,33 @@ export function valueForField(
       return profile.demographics.disabilityStatus;
 
     case 'school':
-      return profile.education.school || null;
+      return educationAt(profile, group)?.school || null;
     case 'degree':
-      return profile.education.degree || null;
+      return educationAt(profile, group)?.degree || null;
     case 'fieldOfStudy':
-      return profile.education.fieldOfStudy || null;
+      return educationAt(profile, group)?.fieldOfStudy || null;
     case 'gradYear':
-      return profile.education.gradYear || null;
+      return educationAt(profile, group)?.gradYear || null;
+    case 'gpa':
+      return educationAt(profile, group)?.gpa || null;
+
+    case 'employer':
+      return experienceAt(profile, group)?.employer || null;
+    case 'jobTitle':
+      return experienceAt(profile, group)?.jobTitle || null;
+    case 'employerLocation':
+      return experienceAt(profile, group)?.location || null;
+    case 'roleDescription':
+      return group ? experienceAt(profile, group)?.description || null : null;
+    case 'currentlyEmployed': {
+      const entry = experienceAt(profile, group);
+      return entry ? entry.current : null;
+    }
+
+    case 'startDate':
+      return historyDate(profile, group, 'startDate');
+    case 'endDate':
+      return historyDate(profile, group, 'endDate');
 
     case 'coverLetter':
       return profile.defaultCoverLetter || null;
@@ -99,6 +120,31 @@ export function valueForField(
       return null;
     }
   }
+}
+
+function experienceAt(profile: Profile, group?: FieldGroup): Experience | null {
+  if (group && group.kind !== 'experience') return null;
+  return profile.experience[group?.index ?? 0] ?? null;
+}
+
+function educationAt(profile: Profile, group?: FieldGroup): Education | null {
+  if (group && group.kind !== 'education') return null;
+  return profile.education[group?.index ?? 0] ?? null;
+}
+
+function historyDate(
+  profile: Profile,
+  group: FieldGroup | undefined,
+  field: 'startDate' | 'endDate',
+): string | null {
+  if (!group) return null;
+  if (group.kind === 'experience') {
+    const entry = experienceAt(profile, group);
+    if (!entry) return null;
+    if (field === 'endDate' && entry.current) return null;
+    return entry[field] || null;
+  }
+  return educationAt(profile, group)?.[field] || null;
 }
 
 function addressCountryName(profile: Profile): string | null {

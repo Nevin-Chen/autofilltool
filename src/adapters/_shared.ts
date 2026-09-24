@@ -64,6 +64,8 @@ export function classifyByHeuristics(el: HTMLElement, ctx: Context): Classificat
   if (el instanceof HTMLTextAreaElement) {
     if (/cover\s*letter/.test(ctx.haystack))
       return { kind: 'coverLetter', confidence: 0.85 };
+    if (ROLE_DESCRIPTION_RE.test(ctx.haystack))
+      return { kind: 'roleDescription', confidence: 0.75 };
     return { kind: 'openEnded', confidence: 0.5 };
   }
 
@@ -105,6 +107,9 @@ function fromAutocomplete(value: string): FieldKind | null {
       return null;
   }
 }
+
+export const ROLE_DESCRIPTION_RE =
+  /\b(role|job|position)[\s_-]*(description|summary|details|duties|responsibilities)\b|\bdescribe[\s_-]*(your[\s_-]*)?(role|duties|responsibilities)\b/;
 
 export const KEYWORD_RULES: ReadonlyArray<{
   kind: FieldKind;
@@ -189,6 +194,31 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.8,
   },
   {
+    kind: 'currentlyEmployed',
+    re: /\b(currently[\s_-]*(work|employed)|i[\s_-]*currently[\s_-]*work|present[\s_-]*(employer|position)|current[\s_-]*(job|role|position)\b)/,
+    confidence: 0.75,
+  },
+  {
+    kind: 'jobTitle',
+    re: /\b(job[\s_-]*title|position[\s_-]*title|role[\s_-]*title|your[\s_-]*title)\b/,
+    confidence: 0.85,
+  },
+  {
+    kind: 'employer',
+    re: /\b(employer|company[\s_-]*name|organi[sz]ation[\s_-]*name|employer[\s_-]*name)\b/,
+    confidence: 0.85,
+  },
+  {
+    kind: 'employerLocation',
+    re: /\b(company|employer|job|work)[\s_-]*location\b/,
+    confidence: 0.8,
+  },
+  {
+    kind: 'gpa',
+    re: /\b(gpa|grade[\s_-]*point[\s_-]*average)\b/,
+    confidence: 0.85,
+  },
+  {
     kind: 'gradYear',
     re: /\b(grad(uation)?[\s_-]*(year|date)|year[\s_-]*of[\s_-]*graduation|completion[\s_-]*(year|date))\b/,
     confidence: 0.75,
@@ -203,6 +233,16 @@ export const KEYWORD_RULES: ReadonlyArray<{
     kind: 'school',
     re: /\b(school|university|college|institution|alma[\s_-]*mater)\b/,
     confidence: 0.75,
+  },
+  {
+    kind: 'startDate',
+    re: /\b(start(ing)?[\s_-]*(date|month|year)|from[\s_-]*(date|month|year)|date[\s_-]*started|began)\b|^from$/,
+    confidence: 0.7,
+  },
+  {
+    kind: 'endDate',
+    re: /\b(end(ing)?[\s_-]*(date|month|year)|to[\s_-]*(date|month|year)|date[\s_-]*ended|until|through)\b|^to$/,
+    confidence: 0.7,
   },
 ];
 

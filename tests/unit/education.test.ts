@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { valueForField } from '@/content/mapping';
 import { fromKeywords } from '@/adapters/_shared';
-import { emptyProfile } from '@/profile/schema';
-import type { Profile } from '@/profile/schema';
+import { emptyEducation, emptyProfile } from '@/profile/schema';
+import type { Education, Profile } from '@/profile/schema';
 import type { FieldKind } from '@/adapters/types';
 
-function withEducation(overrides: Partial<Profile['education']>): Profile {
-  const p = emptyProfile();
-  return { ...p, education: { ...p.education, ...overrides } };
+function withEducation(overrides: Partial<Education>): Profile {
+  return { ...emptyProfile(), education: [{ ...emptyEducation(), ...overrides }] };
 }
 
 describe('valueForField — education', () => {

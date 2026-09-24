@@ -13,6 +13,8 @@ import { TrackingSection } from './TrackingSection';
 import { ResumeSection } from './ResumeSection';
 import { AISection } from './AISection';
 import { Section } from './Section';
+import { Grid, SelectField, TextField } from './fields';
+import { EducationSection, ExperienceSection } from './HistorySection';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -205,44 +207,33 @@ export function OptionsApp() {
           </Grid>
         </Section>
 
-        <Section title="Education">
-          <Grid>
-            <TextField
-              label="School / University"
-              value={profile.education.school}
-              onChange={(v) =>
-                updateProfile('education', { ...profile.education, school: v })
-              }
-            />
-            <SelectField
-              label="Degree"
-              value={profile.education.degree}
-              options={DEGREE_OPTIONS}
-              onChange={(v) =>
-                updateProfile('education', { ...profile.education, degree: v })
-              }
-            />
-            <TextField
-              label="Field of study / major"
-              value={profile.education.fieldOfStudy}
-              onChange={(v) =>
-                updateProfile('education', {
-                  ...profile.education,
-                  fieldOfStudy: v,
+        <ExperienceSection
+          entries={profile.experience}
+          onChange={(v) => updateProfile('experience', v)}
+        />
+
+        <EducationSection
+          entries={profile.education}
+          onChange={(v) => updateProfile('education', v)}
+        />
+
+        <Section title="Prefilled fields">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-600"
+              checked={settings.overwriteHistoryFields}
+              onChange={(e) =>
+                setSettingsState({
+                  ...settings,
+                  overwriteHistoryFields: e.target.checked,
                 })
               }
             />
-            <TextField
-              label="Graduation year"
-              value={profile.education.gradYear}
-              onChange={(v) =>
-                updateProfile('education', {
-                  ...profile.education,
-                  gradYear: v,
-                })
-              }
-            />
-          </Grid>
+            <span className="text-slate-700 dark:text-slate-200">
+              Replace values in work and education blocks
+            </span>
+          </label>
         </Section>
 
         <Section
@@ -434,31 +425,6 @@ export function OptionsApp() {
   );
 }
 
-function Grid(props: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{props.children}</div>;
-}
-
-function TextField(props: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-slate-700 dark:text-slate-200">
-        {props.label}
-      </span>
-      <input
-        type={props.type ?? 'text'}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-      />
-    </label>
-  );
-}
-
 function CountryField(props: {
   label: string;
   value: string;
@@ -618,32 +584,3 @@ const DISABILITY_OPTIONS = [
   "I don't wish to answer",
 ];
 
-function SelectField(props: {
-  label: string;
-  value: string | null;
-  options: ReadonlyArray<string>;
-  onChange: (v: string) => void;
-}) {
-  const value = props.value ?? '';
-  const known = props.options.includes(value);
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-slate-700 dark:text-slate-200">
-        {props.label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 bg-white pl-3 pr-9 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-      >
-        <option value="">— blank —</option>
-        {!known && value !== '' && <option value={value}>{value}</option>}
-        {props.options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
