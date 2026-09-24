@@ -254,7 +254,9 @@ const HISTORY_SECTION_TOKENS: ReadonlySet<string> = new Set([
   'education',
   'educations',
   'jobs',
+  'job',
   'schools',
+  'employer',
 ]);
 
 const HISTORY_FILLER_TOKENS: ReadonlySet<string> = new Set([
@@ -264,7 +266,13 @@ const HISTORY_FILLER_TOKENS: ReadonlySet<string> = new Set([
   'attribute',
   'attr',
   'candidate',
+  'value',
 ]);
+
+const HISTORY_SECTION_NOUN_KINDS: Readonly<Record<string, FieldKind>> = {
+  employer: 'employer',
+  schools: 'school',
+};
 
 const HISTORY_FIELD_RULES: ReadonlyArray<{ kind: FieldKind; re: RegExp }> = [
   { kind: 'jobTitle', re: /(^|_)(job_)?title$|position(_name)?$/ },
@@ -306,6 +314,10 @@ export function historyKindFromName(name: string): Classification | null {
 
   for (const { kind, re } of HISTORY_FIELD_RULES) {
     if (re.test(field)) return { kind, confidence: 0.95 };
+  }
+  if (field === 'name') {
+    const noun = HISTORY_SECTION_NOUN_KINDS[tokens[sectionAt]!];
+    if (noun) return { kind: noun, confidence: 0.9 };
   }
   return null;
 }

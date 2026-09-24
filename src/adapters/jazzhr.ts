@@ -11,10 +11,12 @@ import {
   findResumeInput,
   findUnclassifiedFields,
   fromKeywords,
+  historyKindFromName,
   isFillable,
   attachResumeViaSlot,
   clipJobDescription,
   normalize,
+  ROLE_DESCRIPTION_RE,
   pickJobDescriptionByCss,
   hasSubmissionConfirmText,
 } from './_shared';
@@ -60,6 +62,12 @@ const QUESTIONNAIRE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>([
   'degree',
   'fieldOfStudy',
   'gradYear',
+  'gpa',
+  'jobTitle',
+  'employer',
+  'employerLocation',
+  'startDate',
+  'endDate',
 ]);
 
 const NO_SELECTION_VALUE = 'resumator_no_selection';
@@ -120,9 +128,12 @@ function detectFields(root: Document): DetectedField[] {
     if (isReservedSlot(el)) continue;
 
     const ctx = collectContext(el);
-    const classified = isQuestionnaireField(el)
-      ? classifyQuestionnaire(el, ctx.label)
-      : classifyByHeuristics(el, ctx);
+    const byName = historyKindFromName(el.getAttribute('name') ?? '');
+    const classified =
+      byName ??
+      (isQuestionnaireField(el)
+        ? classifyQuestionnaire(el, ctx.label)
+        : classifyByHeuristics(el, ctx));
     if (!classified) continue;
     out.push({ el, kind: classified.kind, label: ctx.label, confidence: classified.confidence });
   }
@@ -146,6 +157,8 @@ function classifyQuestionnaire(
 ): { kind: FieldKind; confidence: number } | null {
   if (el instanceof HTMLTextAreaElement) {
     if (/cover\s*letter/i.test(label)) return { kind: 'coverLetter', confidence: 0.85 };
+    if (ROLE_DESCRIPTION_RE.test(normalize(label)))
+      return { kind: 'roleDescription', confidence: 0.75 };
     return { kind: 'openEnded', confidence: 0.6 };
   }
   const hit = fromKeywords(normalize(label));
