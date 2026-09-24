@@ -12,7 +12,20 @@ export const LEGACY_RESUME_VARIANT_ID = 'imported-resume';
 
 type MigrationFn = (raw: unknown) => unknown;
 
-const profileMigrations: Record<number, MigrationFn> = {};
+const profileMigrations: Record<number, MigrationFn> = {
+  3: (raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const r = raw as Record<string, unknown>;
+    if (Array.isArray(r.education)) return r;
+    const edu = r.education;
+    if (!edu || typeof edu !== 'object') return { ...r, education: [] };
+    const entries = Object.values(edu as Record<string, unknown>);
+    const empty = entries.every(
+      (v) => typeof v !== 'string' || v.trim() === '',
+    );
+    return { ...r, education: empty ? [] : [edu] };
+  },
+};
 
 const settingsMigrations: Record<number, MigrationFn> = {
   1: (raw) => {

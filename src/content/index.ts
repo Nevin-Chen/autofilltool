@@ -19,6 +19,7 @@ import {
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
+import { assignHistoryGroups } from '@/adapters/history-groups';
 import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 import {
   fieldDescription,
@@ -26,7 +27,7 @@ import {
   selfIdKindFromLabel,
   unclassifiedFromDetected,
 } from '@/adapters/_shared';
-import type { SelfIdKind, UnclassifiedField } from '@/adapters/types';
+import type { DetectedField, SelfIdKind, UnclassifiedField } from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResumeLibrary } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -488,7 +489,7 @@ async function runFill(forceFromMsg?: boolean) {
   }
   const url = new URL(location.href);
   const adapter = pickAdapter(url, document);
-  const fields = adapter.detectFields(document);
+  const fields = assignHistoryGroups(adapter.detectFields(document));
 
   const [profile, settings, library] = await Promise.all([
     getProfile(),
@@ -497,6 +498,8 @@ async function runFill(forceFromMsg?: boolean) {
   ]);
   const resume = await resumeForThisPage(library, settings);
   const forceOverwrite = forceFromMsg ?? settings.forceOverwrite;
+  const overwriteFor = (field: DetectedField): boolean =>
+    forceOverwrite || (settings.overwriteHistoryFields && field.group !== undefined);
   const animate = settings.ui.animateFill && !prefersReducedMotion();
   const runId = animate ? beginRun() : 0;
 
@@ -511,22 +514,29 @@ async function runFill(forceFromMsg?: boolean) {
   const skippedForAi: UnclassifiedField[] = [];
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;
-    const value = valueForField(profile, field.kind, field.label);
+    const value = valueForField(profile, field.kind, field.label, field.group);
+    const fieldOverwrite = overwriteFor(field);
     let action: FillAction;
     if (field.widget === 'locateButton') {
       action = await fillViaLocateButton(field, value, {
-        forceOverwrite,
+        forceOverwrite: fieldOverwrite,
         suppressFlash: animate,
       });
     } else if (field.widget === 'virtualizedDropdown') {
       action = await fillVirtualizedDropdown(field, value, {
-        forceOverwrite,
+        forceOverwrite: fieldOverwrite,
         suppressFlash: animate,
       });
     } else if (field.widget === 'buttonGroup') {
-      action = fillButtonGroup(field, value, { forceOverwrite, suppressFlash: animate });
+      action = fillButtonGroup(field, value, {
+        forceOverwrite: fieldOverwrite,
+        suppressFlash: animate,
+      });
     } else {
-      action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
+      action = fillField(field, value, {
+        forceOverwrite: fieldOverwrite,
+        suppressFlash: animate,
+      });
     }
     actions.push(action);
     if (field.el instanceof HTMLElement) {
@@ -556,25 +566,32 @@ async function runFill(forceFromMsg?: boolean) {
   if (animate) await delay(FILL_ANIM.SETTLE_MS);
 
   const seenEls = new WeakSet<HTMLElement>(fields.map((f) => f.el));
-  const reDetected = adapter.detectFields(document);
+  const reDetected = assignHistoryGroups(adapter.detectFields(document));
   const newFields = reDetected.filter((f) => !seenEls.has(f.el));
   for (const field of newFields) {
-    const value = valueForField(profile, field.kind, field.label);
+    const value = valueForField(profile, field.kind, field.label, field.group);
+    const fieldOverwrite = overwriteFor(field);
     let action: FillAction;
     if (field.widget === 'locateButton') {
       action = await fillViaLocateButton(field, value, {
-        forceOverwrite,
+        forceOverwrite: fieldOverwrite,
         suppressFlash: animate,
       });
     } else if (field.widget === 'virtualizedDropdown') {
       action = await fillVirtualizedDropdown(field, value, {
-        forceOverwrite,
+        forceOverwrite: fieldOverwrite,
         suppressFlash: animate,
       });
     } else if (field.widget === 'buttonGroup') {
-      action = fillButtonGroup(field, value, { forceOverwrite, suppressFlash: animate });
+      action = fillButtonGroup(field, value, {
+        forceOverwrite: fieldOverwrite,
+        suppressFlash: animate,
+      });
     } else {
-      action = fillField(field, value, { forceOverwrite, suppressFlash: animate });
+      action = fillField(field, value, {
+        forceOverwrite: fieldOverwrite,
+        suppressFlash: animate,
+      });
     }
     actions.push(action);
     if (action.status === 'filled') {

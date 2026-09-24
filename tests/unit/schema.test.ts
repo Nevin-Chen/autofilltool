@@ -25,17 +25,13 @@ describe('profile schema', () => {
   });
 
   it('defaults the education block to empty strings', () => {
-    expect(emptyProfile().education).toEqual({
-      school: '',
-      degree: '',
-      fieldOfStudy: '',
-      gradYear: '',
-    });
+    expect(emptyProfile().education).toEqual([]);
+    expect(emptyProfile().experience).toEqual([]);
   });
 
   it('backfills education for profiles stored before the field existed', () => {
     const migrated = migrateProfile({ firstName: 'Ada' }, CURRENT_SCHEMA_VERSION);
-    expect(migrated.education.school).toBe('');
+    expect(migrated.education).toEqual([]);
   });
 
   it('rejects an invalid email', () => {

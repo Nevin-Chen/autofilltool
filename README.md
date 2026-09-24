@@ -22,6 +22,12 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Keep up to 5 labelled résumés (backend, ML, new grad) and mark one as the default
 - Pick a different one for a company in the popup and it sticks: the next posting from that company uses the same résumé
 
+#### **Work and Education History**
+- Save each job and each school as its own entry in Options, in the order forms ask for them
+- Platforms that make you type your history block by block (Workday, Workable, Breezy HR, JazzHR) get the matching entry per block, so the second job goes in the second block
+- Repeating blocks are found from the page structure, not a per-site selector list, so a form we have never seen still gets its entries lined up
+- Some of these platforms read your résumé themselves and prefill the blocks, often folding the company into the job title or getting the dates wrong. **Replace values in work and education blocks** in Options lets the filler correct those, and only those: every other field on the page still keeps whatever value it already had
+
 #### **AI Suggest**
 - Adds a "Suggest" textarea form fields
 - It reads the job description off the page, the text out of your résumé, and your profile before writing

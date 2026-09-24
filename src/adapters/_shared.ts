@@ -64,6 +64,8 @@ export function classifyByHeuristics(el: HTMLElement, ctx: Context): Classificat
   if (el instanceof HTMLTextAreaElement) {
     if (/cover\s*letter/.test(ctx.haystack))
       return { kind: 'coverLetter', confidence: 0.85 };
+    if (ROLE_DESCRIPTION_RE.test(ctx.haystack))
+      return { kind: 'roleDescription', confidence: 0.75 };
     return { kind: 'openEnded', confidence: 0.5 };
   }
 
@@ -105,6 +107,9 @@ function fromAutocomplete(value: string): FieldKind | null {
       return null;
   }
 }
+
+export const ROLE_DESCRIPTION_RE =
+  /\b(role|job|position)[\s_-]*(description|summary|details|duties|responsibilities)\b|\bdescribe[\s_-]*(your[\s_-]*)?(role|duties|responsibilities)\b/;
 
 export const KEYWORD_RULES: ReadonlyArray<{
   kind: FieldKind;
@@ -189,6 +194,31 @@ export const KEYWORD_RULES: ReadonlyArray<{
     confidence: 0.8,
   },
   {
+    kind: 'currentlyEmployed',
+    re: /\b(currently[\s_-]*(work|employed)|i[\s_-]*currently[\s_-]*work|present[\s_-]*(employer|position)|current[\s_-]*(job|role|position)\b)/,
+    confidence: 0.75,
+  },
+  {
+    kind: 'jobTitle',
+    re: /\b(job[\s_-]*title|position[\s_-]*title|role[\s_-]*title|your[\s_-]*title)\b/,
+    confidence: 0.85,
+  },
+  {
+    kind: 'employer',
+    re: /\b(employer|company[\s_-]*name|organi[sz]ation[\s_-]*name|employer[\s_-]*name)\b/,
+    confidence: 0.85,
+  },
+  {
+    kind: 'employerLocation',
+    re: /\b(company|employer|job|work)[\s_-]*location\b/,
+    confidence: 0.8,
+  },
+  {
+    kind: 'gpa',
+    re: /\b(gpa|grade[\s_-]*point[\s_-]*average)\b/,
+    confidence: 0.85,
+  },
+  {
     kind: 'gradYear',
     re: /\b(grad(uation)?[\s_-]*(year|date)|year[\s_-]*of[\s_-]*graduation|completion[\s_-]*(year|date))\b/,
     confidence: 0.75,
@@ -204,7 +234,93 @@ export const KEYWORD_RULES: ReadonlyArray<{
     re: /\b(school|university|college|institution|alma[\s_-]*mater)\b/,
     confidence: 0.75,
   },
+  {
+    kind: 'startDate',
+    re: /\b(start(ing)?[\s_-]*(date|month|year)|from[\s_-]*(date|month|year)|date[\s_-]*started|began)\b|^from$/,
+    confidence: 0.7,
+  },
+  {
+    kind: 'endDate',
+    re: /\b(end(ing)?[\s_-]*(date|month|year)|to[\s_-]*(date|month|year)|date[\s_-]*ended|until|through)\b|^to$/,
+    confidence: 0.7,
+  },
 ];
+
+const HISTORY_SECTION_TOKENS: ReadonlySet<string> = new Set([
+  'experience',
+  'experiences',
+  'employment',
+  'employments',
+  'education',
+  'educations',
+  'jobs',
+  'job',
+  'schools',
+  'employer',
+]);
+
+const HISTORY_FILLER_TOKENS: ReadonlySet<string> = new Set([
+  'entry',
+  'entries',
+  'attributes',
+  'attribute',
+  'attr',
+  'candidate',
+  'value',
+]);
+
+const HISTORY_SECTION_NOUN_KINDS: Readonly<Record<string, FieldKind>> = {
+  employer: 'employer',
+  schools: 'school',
+};
+
+const HISTORY_FIELD_RULES: ReadonlyArray<{ kind: FieldKind; re: RegExp }> = [
+  { kind: 'jobTitle', re: /(^|_)(job_)?title$|position(_name)?$/ },
+  { kind: 'employer', re: /compan(y|ies)|employer|organi[sz]ation/ },
+  { kind: 'school', re: /school|institution|universit|college/ },
+  { kind: 'fieldOfStudy', re: /field_of_study|major|discipline|concentration/ },
+  { kind: 'degree', re: /degree|qualification/ },
+  { kind: 'gpa', re: /gpa|grade_?(point|average)/ },
+  { kind: 'gradYear', re: /grad(uation)?_?(year|date)/ },
+  { kind: 'currentlyEmployed', re: /current(ly)?(_work|_here|_job|_role|_position)?$|is_current/ },
+  { kind: 'roleDescription', re: /summary|description|responsibilit|achievement|duties/ },
+  { kind: 'employerLocation', re: /location|city|region/ },
+  { kind: 'startDate', re: /start(ed|_date|_month|_year)?$|(^|_)from$/ },
+  { kind: 'endDate', re: /end(ed|_date|_month|_year)?$|(^|_)to$|until/ },
+];
+
+export function historyKindFromName(name: string): Classification | null {
+  const tokens = name.toLowerCase().split(/[[\].\-_\s]+/).filter(Boolean);
+  let sectionAt = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (HISTORY_SECTION_TOKENS.has(token)) {
+      sectionAt = i;
+      break;
+    }
+    if (token === 'work' && tokens[i + 1] === 'history') {
+      sectionAt = i + 1;
+      break;
+    }
+  }
+  if (sectionAt === -1) return null;
+
+  const tail = tokens.slice(sectionAt + 1);
+  if (!tail.some((t) => /^\d{1,2}$/.test(t))) return null;
+  const field = tail
+    .filter((t) => !/^\d+$/.test(t) && !HISTORY_FILLER_TOKENS.has(t))
+    .join('_');
+  if (!field) return null;
+
+  for (const { kind, re } of HISTORY_FIELD_RULES) {
+    if (re.test(field)) return { kind, confidence: 0.95 };
+  }
+  if (field === 'name') {
+    const noun = HISTORY_SECTION_NOUN_KINDS[tokens[sectionAt]!];
+    if (noun) return { kind: noun, confidence: 0.9 };
+  }
+  return null;
+}
 
 export function fromKeywords(haystack: string): Classification | null {
   for (const rule of KEYWORD_RULES) {

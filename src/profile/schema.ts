@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SCHEMA_VERSION = 4 as const;
 
 export const AddressSchema = z.object({
   line1: z.string().default(''),
@@ -47,8 +47,40 @@ export const EducationSchema = z.object({
   degree: z.string().default(''),
   fieldOfStudy: z.string().default(''),
   gradYear: z.string().default(''),
+  startDate: z.string().default(''),
+  endDate: z.string().default(''),
+  gpa: z.string().default(''),
 });
 export type Education = z.infer<typeof EducationSchema>;
+
+export const ExperienceSchema = z.object({
+  employer: z.string().default(''),
+  jobTitle: z.string().default(''),
+  location: z.string().default(''),
+  startDate: z.string().default(''),
+  endDate: z.string().default(''),
+  current: z.boolean().default(false),
+  description: z.string().default(''),
+});
+export type Experience = z.infer<typeof ExperienceSchema>;
+
+export const MAX_HISTORY_ENTRIES = 12;
+
+export function emptyExperience(): Experience {
+  return ExperienceSchema.parse({});
+}
+
+export function emptyEducation(): Education {
+  return EducationSchema.parse({});
+}
+
+export function hasHistoryContent(
+  entry: Experience | Education,
+): boolean {
+  return Object.values(entry).some((v) =>
+    typeof v === 'string' ? v.trim() !== '' : v === true,
+  );
+}
 
 export const SavedAnswerSchema = z.object({
   id: z.string().uuid(),
@@ -70,7 +102,8 @@ export const ProfileSchema = z.object({
   links: LinksSchema.default({}),
   workAuth: WorkAuthSchema.default({}),
   demographics: DemographicsSchema.default({}),
-  education: EducationSchema.default({}),
+  experience: z.array(ExperienceSchema).default([]),
+  education: z.array(EducationSchema).default([]),
   defaultCoverLetter: z.string().default(''),
   savedAnswers: z.array(SavedAnswerSchema).default([]),
 });
@@ -152,6 +185,7 @@ export const SettingsSchema = z.object({
     'generic',
   ]),
   forceOverwrite: z.boolean().default(false),
+  overwriteHistoryFields: z.boolean().default(false),
   perSiteAllowlist: z.array(z.string()).default([]),
   ai: AiSettingsSchema.default({}),
   tracking: TrackingSettingsSchema.default({}),

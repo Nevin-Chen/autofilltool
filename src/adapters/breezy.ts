@@ -14,9 +14,11 @@ import {
   findResumeInput,
   findUnclassifiedFields,
   fromKeywords,
+  historyKindFromName,
   hasSubmissionConfirmText,
   isFillable,
   normalize,
+  ROLE_DESCRIPTION_RE,
   pickJobDescriptionByCss,
   textOf,
 } from './_shared';
@@ -73,6 +75,12 @@ const QUESTION_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>([
   'degree',
   'fieldOfStudy',
   'gradYear',
+  'gpa',
+  'jobTitle',
+  'employer',
+  'employerLocation',
+  'startDate',
+  'endDate',
 ]);
 
 export const breezyAdapter: PlatformAdapter = {
@@ -184,6 +192,8 @@ function classify(
 ): { kind: FieldKind; confidence: number } | null {
   const eeoc = eeocKind(el);
   if (eeoc) return eeoc;
+  const byName = historyKindFromName(el.getAttribute('name') ?? '');
+  if (byName) return byName;
   if (el.closest(QUESTION_SELECTOR)) return classifyQuestion(el, label);
   return classifyByHeuristics(el, collectContext(el));
 }
@@ -203,6 +213,8 @@ function classifyQuestion(
 ): { kind: FieldKind; confidence: number } | null {
   if (el instanceof HTMLTextAreaElement) {
     if (/cover\s*letter/i.test(label)) return { kind: 'coverLetter', confidence: 0.85 };
+    if (ROLE_DESCRIPTION_RE.test(normalize(label)))
+      return { kind: 'roleDescription', confidence: 0.75 };
     return { kind: 'openEnded', confidence: 0.6 };
   }
   const hit = fromKeywords(normalize(label));
