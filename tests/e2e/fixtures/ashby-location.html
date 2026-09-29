@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply — Staff Software Engineer (Ashby location + choices)</title>
+  </head>
+  <body>
+    <!--
+      Trimmed from a live jobs.ashbyhq.com application form, keeping the class
+      names Ashby publishes for theming plus the hashed CSS-module classes, so
+      the markup matches what the content script actually walks.
+
+      Three shapes matter here:
+
+      1. The location field. Its entry carries data-field-path
+         "_systemfield_location", the input is a react-floating-ui combobox
+         (role + aria-autocomplete, no name attribute), and the results popup
+         is portaled to the end of <body> only while it is open. Results come
+         from a geocoder behind a 300ms debounce, so nothing in this file
+         renders them — the tests drive the popup themselves.
+
+      2. A radio group. The real <input type="radio"> sits at opacity 0 under
+         the coloured circle, and Ashby hangs a click-to-deselect handler on
+         it, so re-clicking the checked option clears the answer.
+
+      3. A Yes/No control: two real buttons plus a display:none checkbox that
+         mirrors the value for the form payload.
+    -->
+    <h1>Staff Software Engineer</h1>
+
+    <div class="_container_1ygjv_28 ashby-application-form-container">
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="_systemfield_name"
+        data-field-entry-id="entry-name"
+      >
+        <label class="_label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_name">Name</label>
+        <input
+          class="_input_80epu_28 ashby-application-form-input-text"
+          id="_systemfield_name"
+          name="_systemfield_name"
+          type="text"
+          value=""
+        />
+      </div>
+
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="_systemfield_email"
+        data-field-entry-id="entry-email"
+      >
+        <label class="_label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_email">Email</label>
+        <input
+          class="_input_80epu_28 ashby-application-form-input-text"
+          id="_systemfield_email"
+          name="_systemfield_email"
+          type="email"
+          value=""
+        />
+      </div>
+
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="_systemfield_location"
+        data-field-entry-id="entry-location"
+      >
+        <label class="_label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_location">Location</label>
+        <div class="_inputContainer_d7ago_28">
+          <input
+            class="_input_d7ago_43 ashby-application-form-input-autocomplete"
+            id="_systemfield_location"
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-haspopup="listbox"
+            placeholder="Start typing..."
+            value=""
+          />
+          <button class="_toggleButton_d7ago_61" type="button" aria-label="Open"></button>
+        </div>
+      </div>
+
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="sponsorship"
+        data-field-entry-id="entry-sponsorship"
+      >
+        <fieldset class="_container_1258i_28 ashby-application-form-input-radio-group">
+          <label class="_label_1e3gg_42 ashby-application-form-question-title" for="entry-sponsorship">
+            Will you now or in the future require sponsorship for an employment based visa status?
+          </label>
+          <div
+            class="_option_1258i_34 ashby-application-form-input-radio-group-option"
+            data-checked=""
+          >
+            <span
+              class="_container_132c8_28 _checked_132c8_90 ashby-application-form-input-radio-group-option-radio"
+              data-checked=""
+            >
+              <span class="_circle_132c8_77"></span>
+              <input
+                type="radio"
+                id="entry-sponsorship-labeled-radio-0"
+                name="entry-sponsorship"
+                style="opacity: 0"
+                checked
+              />
+            </span>
+            <label
+              class="_label_1258i_42 ashby-application-form-input-radio-group-option-label"
+              for="entry-sponsorship-labeled-radio-0"
+              >No</label
+            >
+          </div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option">
+            <span class="_container_132c8_28 ashby-application-form-input-radio-group-option-radio">
+              <span class="_circle_132c8_77"></span>
+              <input
+                type="radio"
+                id="entry-sponsorship-labeled-radio-1"
+                name="entry-sponsorship"
+                style="opacity: 0"
+              />
+            </span>
+            <label
+              class="_label_1258i_42 ashby-application-form-input-radio-group-option-label"
+              for="entry-sponsorship-labeled-radio-1"
+              >Yes</label
+            >
+          </div>
+        </fieldset>
+      </div>
+
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="work_authorization"
+        data-field-entry-id="entry-workauth"
+      >
+        <label class="_label_1e3gg_42 ashby-application-form-question-title" for="entry-workauth">
+          Are you authorized to work in the United States?
+        </label>
+        <div class="_container_1svni_28 _yesno_1e3gg_148 ashby-application-form-input-yesno">
+          <button
+            class="_option_1svni_32 _active_1svni_57 ashby-application-form-input-yesno-option"
+            type="button"
+            aria-pressed="true"
+            data-option="yes"
+          >
+            Yes
+          </button>
+          <button
+            class="_option_1svni_32 ashby-application-form-input-yesno-option"
+            type="button"
+            aria-pressed="false"
+            data-option="no"
+          >
+            No
+          </button>
+          <input
+            class="_input_1svni_78"
+            type="checkbox"
+            name="work_authorization"
+            tabindex="-1"
+            style="display: none"
+            checked
+          />
+        </div>
+      </div>
+
+      <div
+        class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry"
+        data-field-path="relocation_consent"
+        data-field-entry-id="entry-relocation-consent"
+      >
+        <label class="_label_1e3gg_42 ashby-application-form-question-title" for="entry-relocation-consent-input">
+          I understand this role does not include relocation assistance.
+        </label>
+        <span class="_container_1danv_28 _checked_1danv_87 ashby-application-form-input-checkbox-group-option-checkbox">
+          <input
+            type="checkbox"
+            id="entry-relocation-consent-input"
+            name="relocation_consent"
+            style="opacity: 0"
+            checked
+          />
+        </span>
+      </div>
+
+      <button class="_submitButton_1ygjv_92 ashby-application-form-submit-button" type="button">
+        Submit Application
+      </button>
+    </div>
+  </body>
+</html>

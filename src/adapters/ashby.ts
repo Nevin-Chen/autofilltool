@@ -19,6 +19,7 @@ import {
 const FIELD_ENTRY_SELECTOR = '[data-field-entry-id], [data-testid="FieldEntry"]';
 const FIELD_LABEL_SELECTOR =
   '.ashby-application-form-question-title, [data-testid="FieldLabel"]';
+const LOCATION_FIELD_PATH = '_systemfield_location';
 
 export const ashbyAdapter: PlatformAdapter = {
   id: 'ashby',
@@ -76,6 +77,21 @@ function detectFields(root: Document): DetectedField[] {
     if (!labelText) continue;
     const haystack = normalize(labelText);
     const hit = fromKeywords(haystack);
+
+    if (entry.getAttribute('data-field-path') === LOCATION_FIELD_PATH) {
+      const input = entry.querySelector<HTMLInputElement>('input');
+      if (input && isFillable(input)) {
+        out.push({
+          el: input,
+          kind: 'cityAndRegion',
+          label: labelText,
+          confidence: 0.9,
+          widget: 'virtualizedDropdown',
+        });
+        seen.add(input);
+        continue;
+      }
+    }
 
     const buttonGroup = detectButtonGroup(entry);
     if (buttonGroup) {
