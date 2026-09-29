@@ -1079,6 +1079,7 @@ async function runAiFallbackQueue(
           action = await fillVirtualizedDropdown(fakeField, value, {
             forceOverwrite,
             suppressFlash: true,
+            preferFirstOption: !u.options || u.options.length === 0,
           });
         } else if (u.fieldType === 'buttongroup') {
           action = fillButtonGroup(fakeField, value, {

@@ -12,7 +12,8 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, and Breezy HR, with a heuristic fallback for anything else
 - Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
 - Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
-- Skips fields that already have a value. **Force overwrite** if you want it to go over them again
+- Location fields that search as you type get your saved city typed in and the top suggestion taken, so `Austin, TX` still lands on the `Austin, Texas, United States` the form wants. The search is given up to four seconds to answer instead of being written off as a miss
+- Skips fields that already have a value. **Force overwrite** if you want it to go over them again. Radios, checkboxes, and Yes/No toggles that already hold the right answer are never re-clicked: on forms where clicking the selected option clears it, a second click would wipe the answer
 - Fills ATS iframes embedded in company career pages, not just the ATS domain itself
 - Filled fields flash so you can see what it touched
 - The page follows the AI down the form as it answers each field. **Disable auto-scroll to field** in the popup if you would rather stay put

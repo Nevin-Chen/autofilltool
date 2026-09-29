@@ -252,7 +252,7 @@ function fillCheckbox(
   if (want === null) {
     return { ...meta, status: 'skipped', note: `non-boolean value (${String(rawValue)})` };
   }
-  if (!opts.forceOverwrite && el.checked === want) {
+  if (el.checked === want) {
     return { ...meta, status: 'skipped', note: 'already in desired state' };
   }
   if (looksLikeSubmit(el)) {
@@ -335,7 +335,7 @@ function fillRadio(
       note: `no option matched "${truncate(want, 60)}"`,
     };
   }
-  if (radioIsChecked(target) && !opts.forceOverwrite) {
+  if (radioIsChecked(target)) {
     return { ...meta, status: 'skipped', note: 'already in desired state' };
   }
   target.click();
@@ -404,12 +404,11 @@ export function fillButtonGroup(
   }
 
   const active = buttons.find(isButtonActive);
+  if (active === target) {
+    return { ...meta, status: 'skipped', note: 'already in desired state' };
+  }
   if (active && !opts.forceOverwrite) {
-    return {
-      ...meta,
-      status: 'skipped',
-      note: active === target ? 'already in desired state' : 'already filled',
-    };
+    return { ...meta, status: 'skipped', note: 'already filled' };
   }
 
   target.click();
@@ -649,7 +648,18 @@ export type VirtualizedDropdownOptions = {
   root?: Document;
   suppressFlash?: boolean;
   forceOverwrite?: boolean;
+  preferFirstOption?: boolean;
 };
+
+const TYPEAHEAD_KINDS: ReadonlySet<string> = new Set([
+  'city',
+  'region',
+  'cityAndRegion',
+  'employerLocation',
+]);
+
+const SUGGESTION_TIMEOUT_MS = 4000;
+const SUGGESTION_SETTLE_MS = 300;
 
 export async function fillVirtualizedDropdown(
   field: DetectedField,
@@ -696,6 +706,34 @@ export async function fillVirtualizedDropdown(
   if (trigger instanceof HTMLInputElement && !trigger.disabled && !trigger.readOnly) {
     setNativeValue(trigger, want);
     dispatchInputEvents(trigger);
+
+    if (opts.preferFirstOption ?? TYPEAHEAD_KINDS.has(kind)) {
+      const top = await waitForSettledOptions(
+        listbox,
+        opts.timeoutMs ?? SUGGESTION_TIMEOUT_MS,
+        SUGGESTION_SETTLE_MS,
+      );
+      if (!top) {
+        setNativeValue(trigger, '');
+        dispatchInputEvents(trigger);
+        closeCombobox(trigger, false);
+        return {
+          label,
+          kind,
+          status: 'skipped',
+          note: `no suggestions for "${truncate(want, 60)}"`,
+        };
+      }
+      selectOption(top);
+      trigger.dispatchEvent(new Event('change', { bubbles: true }));
+      if (!opts.suppressFlash) flashFilled(trigger);
+      return {
+        label,
+        kind,
+        status: 'filled',
+        note: `took the top suggestion "${textOfNode(top)}"`,
+      };
+    }
 
     let filteredOption = await waitForOption(
       listbox,
@@ -966,10 +1004,7 @@ function openCombobox(trigger: HTMLElement): void {
 }
 
 function isFirstVisibleOption(listbox: Element, option: HTMLElement): boolean {
-  const options = Array.from(
-    listbox.querySelectorAll<HTMLElement>('[role="option"]'),
-  ).filter((el) => !isDisabled(el));
-  return options[0] === option;
+  return firstEnabledOption(listbox) === option;
 }
 
 function selectOption(option: HTMLElement): void {
@@ -1024,6 +1059,44 @@ function pressEnter(el: HTMLElement): void {
     el.dispatchEvent(new KeyboardEvent('keyup', init));
   } catch {
   }
+}
+
+function firstEnabledOption(listbox: Element): HTMLElement | null {
+  return (
+    Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (el) => !isDisabled(el),
+    ) ?? null
+  );
+}
+
+function waitForSettledOptions(
+  listbox: Element,
+  timeoutMs: number,
+  settleMs: number,
+): Promise<HTMLElement | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (v: HTMLElement | null) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      if (settleTimer !== undefined) clearTimeout(settleTimer);
+      clearTimeout(deadline);
+      resolve(v);
+    };
+    const arm = () => {
+      if (settleTimer !== undefined) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        const hit = firstEnabledOption(listbox);
+        if (hit) finish(hit);
+      }, settleMs);
+    };
+    const observer = new MutationObserver(arm);
+    observer.observe(listbox, { childList: true, subtree: true, characterData: true });
+    const deadline = setTimeout(() => finish(firstEnabledOption(listbox)), timeoutMs);
+    arm();
+  });
 }
 
 function waitForOption(
