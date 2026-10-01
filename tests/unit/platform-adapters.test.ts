@@ -474,7 +474,7 @@ describe('greenhouseAdapter — new redesign fixture', () => {
   });
 });
 
-describe('greenhouseAdapter — phone widget fixture (fubo.tv / job-boards embed)', () => {
+describe('greenhouseAdapter — phone widget fixture (job-boards embed)', () => {
   beforeEach(() => {
     document.documentElement.innerHTML = loadFixture('greenhouse-phone-widget.html');
   });
