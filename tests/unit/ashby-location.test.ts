@@ -125,6 +125,54 @@ describe('Ashby location field', () => {
   });
 });
 
+describe('Ashby location field the user already filled in', () => {
+  const PICKED = 'Oakland, California, United States';
+
+  beforeEach(loadFixture);
+
+  it('leaves it alone instead of searching again', async () => {
+    const chosen = installLocationPopup(['Austin, Texas, United States'], 20);
+    const field = locationField();
+    const input = field.el as HTMLInputElement;
+    input.value = PICKED;
+
+    const action = await fillVirtualizedDropdown(field, 'Austin, TX', {
+      suppressFlash: true,
+    });
+
+    expect(action.status).toBe('skipped');
+    expect(action.note).toBe('already filled');
+    expect(chosen()).toEqual([]);
+    expect(input.value).toBe(PICKED);
+  });
+
+  it('replaces it under force overwrite', async () => {
+    const chosen = installLocationPopup(['Austin, Texas, United States'], 20);
+    const field = locationField();
+    (field.el as HTMLInputElement).value = PICKED;
+
+    const action = await fillVirtualizedDropdown(field, 'Austin, TX', {
+      suppressFlash: true,
+      forceOverwrite: true,
+    });
+
+    expect(action.status).toBe('filled');
+    expect(chosen()).toEqual(['Austin, Texas, United States']);
+  });
+
+  it('still fills an empty one, so the guard reads the value and not the element type', async () => {
+    const chosen = installLocationPopup(['Austin, Texas, United States'], 20);
+    const field = locationField();
+
+    const action = await fillVirtualizedDropdown(field, 'Austin, TX', {
+      suppressFlash: true,
+    });
+
+    expect(action.status).toBe('filled');
+    expect(chosen()).toEqual(['Austin, Texas, United States']);
+  });
+});
+
 describe('Ashby choice controls already holding the wanted value', () => {
   beforeEach(loadFixture);
 

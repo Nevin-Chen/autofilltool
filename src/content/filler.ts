@@ -1034,7 +1034,7 @@ function comboboxHasValue(trigger: HTMLElement): boolean {
       return true;
     if (cursor.querySelector('[class*="placeholder" i]')) return false;
   }
-  if (trigger instanceof HTMLInputElement) return false;
+  if (trigger instanceof HTMLInputElement) return trigger.value.trim() !== '';
   const text = (trigger.textContent ?? '').trim();
   if (!text) return false;
   return !/^(select|choose|pick|please|--|—)\b/i.test(text);
