@@ -12,6 +12,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters, with a heuristic fallback for anything else
 - Forms built from web components (SmartRecruiters) keep every input inside a shadow root. The filler reaches into them, picks from their custom dropdowns, and presses Enter on month/year pickers that ignore a typed date until you do
 - SmartRecruiters one-click apply is two steps. Fill handles the profile page; after **Next**, the Fill pill comes back on the Preliminary questions page for the self-identification answers
+- On that second page, "How did you hear about this job?" gets the option for an online job listing (not a fair, an event, or a referral), and the required certify, terms, and privacy-notice boxes are ticked. Read them before you submit: ticking one agrees on your behalf
 - Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
 - Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
 - Location fields that search as you type get your saved city typed in and the top suggestion taken, so `Austin, TX` still lands on the `Austin, Texas, United States` the form wants. The search is given up to four seconds to answer instead of being written off as a miss
@@ -41,6 +42,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 #### **Voluntary Self-Identification**
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options
 - Forms word these questions their own way ("Male" in your profile against a list of Man / Woman / Non-binary), so a saved answer is matched to whichever option the form offers rather than typed in literally
+- "I am not a protected veteran" picks a plain "I am not a veteran" when a form offers both that and "a veteran, but not a protected veteran"
 - Nothing here is ever guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
 - Sponsorship and work-authorization questions are answered from your saved Options answer, not by the model, and the wording is read before answering: "do you require sponsorship" gets No where "can you work without sponsorship" gets Yes
 

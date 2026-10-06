@@ -6,7 +6,7 @@ import {
   leaveField,
 } from '@/lib/events';
 import { bestLabel, deepQueryAll, findLocateButton } from '@/adapters/_shared';
-import type { DetectedField } from '@/adapters/types';
+import type { DetectedField, SiteAnswer } from '@/adapters/types';
 
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
 
@@ -1034,15 +1034,19 @@ export async function fillShadowCombobox(
 
   enterField(input);
   input.click();
-  const typed = searchesAsYouType(host);
-  if (typed) typeInto(input, want);
-  const options = typed
-    ? await waitForShadowOptions(
-        host,
-        opts.timeoutMs ?? SUGGESTION_TIMEOUT_MS,
-        SUGGESTION_SETTLE_MS,
-      )
+  let typed = searchesAsYouType(host);
+  let options = typed
+    ? []
     : await waitForShadowOptions(host, SHADOW_LIST_OPEN_MS, SHADOW_LIST_SETTLE_MS);
+  if (options.length === 0) {
+    typed = true;
+    typeInto(input, want);
+    options = await waitForShadowOptions(
+      host,
+      opts.timeoutMs ?? SUGGESTION_TIMEOUT_MS,
+      SUGGESTION_SETTLE_MS,
+    );
+  }
 
   const index = matchOptionText(options.map((o) => o.text), want);
   const preferTop = opts.preferFirstOption ?? TYPEAHEAD_KINDS.has(kind);
@@ -1074,6 +1078,25 @@ export async function harvestShadowComboboxOptions(host: HTMLElement): Promise<s
   return Array.from(new Set(options.map((o) => o.text)));
 }
 
+export async function fillSiteAnswer(
+  { field, answer }: SiteAnswer,
+  opts: FillOptions,
+): Promise<FillAction> {
+  if (field.widget !== 'shadowCombobox') return fillDetectedField(field, answer([]), opts);
+  const meta: Meta = { label: field.label, kind: field.kind };
+  const input = shadowComboboxInput(field.el);
+  if (!input) return { ...meta, status: 'unsupported', note: 'combobox input not found' };
+  if (!opts.forceOverwrite && input.value.trim() !== '') {
+    return { ...meta, status: 'skipped', note: 'already filled' };
+  }
+  const options = await harvestShadowComboboxOptions(field.el);
+  const value = answer(options);
+  if (value === null) {
+    return { ...meta, status: 'skipped', note: 'no option matched the site default' };
+  }
+  return fillShadowCombobox(field, value, opts);
+}
+
 function shadowComboboxInput(host: HTMLElement): HTMLInputElement | null {
   return (
     deepQueryAll<HTMLInputElement>(host, 'input').find(
@@ -1083,7 +1106,8 @@ function shadowComboboxInput(host: HTMLElement): HTMLInputElement | null {
 }
 
 function searchesAsYouType(host: HTMLElement): boolean {
-  return host.hasAttribute('minquerylength');
+  const minQuery = Number(host.getAttribute('minquerylength') ?? 0);
+  return minQuery > 0 || host.hasAttribute('allowcustomvalues');
 }
 
 function typeInto(input: HTMLInputElement, value: string): void {
@@ -1384,8 +1408,18 @@ function matchOptionText(
     const declines = eligible.filter(({ text }) => isDeclinePhrase(text));
     if (declines.length === 1) return declines[0]!.index;
   }
+
+  for (const alias of ANSWER_ALIASES) {
+    if (!alias.want.test(intentLower)) continue;
+    const hits = eligible.filter(({ text }) => alias.option.test(text));
+    if (hits.length === 1) return hits[0]!.index;
+  }
   return null;
 }
+
+const ANSWER_ALIASES: ReadonlyArray<{ want: RegExp; option: RegExp }> = [
+  { want: /\bnot a protected veteran\b/, option: /^(no,?\s*)?i am not a veteran\b/ },
+];
 
 function waitForListbox(
   root: Document,

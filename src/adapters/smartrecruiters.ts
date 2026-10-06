@@ -7,6 +7,7 @@ import type {
   HistoryEntrySummary,
   HistoryGroupKind,
   PlatformAdapter,
+  SiteAnswer,
   UnclassifiedField,
 } from './types';
 import { isSelfIdKind } from './types';
@@ -15,6 +16,7 @@ import {
   deepQueryAll,
   fromKeywords,
   hasSubmissionConfirmText,
+  isConsentCheckboxLabel,
   isFillable,
   normalize,
   pickJobDescriptionByCss,
@@ -49,6 +51,14 @@ const QUESTION_CONTROL_SELECTOR =
 const READ_DEFINITIONS_RE = /\(\s*\[?read definitions\]?(?:\([^)]*\))?\s*\)/gi;
 
 const SOMEONE_ELSE_RE = /\b(household|spouse|family member)\b/i;
+
+const HEARD_ABOUT_RE = /\b(how|where) did you (hear|find out|learn) (about|of)\b/i;
+
+const ONLINE_LISTING_RE =
+  /\b(jobs?|job (board|site|posting|listing)s?|online|website|careers? (site|page))\b/i;
+
+const NOT_A_LISTING_RE =
+  /\b(fair|hall|session|workshop|event|employee|referr\w*|friend|recruiter|agency|other)\b/i;
 
 type FormFieldSpec = {
   host: string;
@@ -218,6 +228,7 @@ export const smartRecruitersAdapter: PlatformAdapter = {
   historyEditor,
   fillResume,
   resumeAttached,
+  siteAnswers,
   getJobDescription,
   detectSubmissionConfirmed,
 };
@@ -298,7 +309,7 @@ function detectScreening(root: Document): DetectionResult {
     const tag = host.tagName.toLowerCase();
 
     if (tag === 'spl-autocomplete') {
-      if (!firstControl(host, TEXT_CONTROL)) continue;
+      if (!firstControl(host, TEXT_CONTROL) || HEARD_ABOUT_RE.test(label)) continue;
       const hit = classifyQuestion(label, 'select');
       if (hit) {
         classified.push({
@@ -327,6 +338,41 @@ function detectScreening(root: Document): DetectionResult {
     }
   }
   return { classified, unclassified };
+}
+
+function siteAnswers(root: Document): SiteAnswer[] {
+  const out: SiteAnswer[] = [];
+  for (const host of screeningHosts(root)) {
+    if (host.tagName.toLowerCase() !== 'spl-autocomplete') continue;
+    const label = hostLabel(host);
+    if (!HEARD_ABOUT_RE.test(label) || !firstControl(host, TEXT_CONTROL)) continue;
+    out.push({
+      field: { el: host, kind: 'referralSource', label, confidence: 0.9, widget: 'shadowCombobox' },
+      answer: onlineListing,
+    });
+  }
+  for (const field of agreementBoxes(root)) out.push({ field, answer: () => true });
+  return out;
+}
+
+function onlineListing(options: string[]): string | null {
+  return options.find((o) => ONLINE_LISTING_RE.test(o) && !NOT_A_LISTING_RE.test(o)) ?? null;
+}
+
+function agreementBoxes(root: Document): DetectedField[] {
+  const hosts = [
+    ...screeningHosts(root).filter((host) => host.tagName.toLowerCase() === 'spl-checkbox'),
+    ...Array.from(root.querySelectorAll<HTMLElement>('oc-consent-decisions spl-checkbox')),
+  ];
+  const out: DetectedField[] = [];
+  for (const host of hosts) {
+    if (!host.hasAttribute('required')) continue;
+    const label = hostLabel(host);
+    if (!isConsentCheckboxLabel(label)) continue;
+    const box = firstControl(host, 'input[type="checkbox"]');
+    if (box) out.push({ el: box, kind: 'agreement', label, confidence: 0.9 });
+  }
+  return out;
 }
 
 function screeningHosts(root: Document): HTMLElement[] {

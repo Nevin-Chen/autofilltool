@@ -15,6 +15,7 @@ import {
   fillButtonGroup,
   harvestComboboxOptions,
   harvestShadowComboboxOptions,
+  fillSiteAnswer,
   isFileAlreadyAttached,
   markThinking,
   clearThinking,
@@ -534,6 +535,19 @@ async function runFill(forceFromMsg?: boolean) {
       label: action.label,
       el,
     });
+  }
+  for (const siteAnswer of adapter.siteAnswers?.(document) ?? []) {
+    const { field } = siteAnswer;
+    const action = await fillSiteAnswer(siteAnswer, { forceOverwrite, suppressFlash: animate });
+    actions.push(action);
+    if (action.status === 'filled') {
+      reviewItems.push({ group: 'filled', label: action.label, el: field.el });
+      if (animate) applyFlash(field.el);
+    } else if (action.status === 'skipped') {
+      reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+      const u = isRetryableSkip(action.note) ? unclassifiedFromDetected(field) : null;
+      if (u) skippedForAi.push(u);
+    }
   }
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;

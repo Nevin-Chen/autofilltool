@@ -31,7 +31,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" required="" id="question_a1" name="question_a1" aria-label="Select How did you hear about this job?">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" required="" id="question_a1" name="question_a1" aria-label="Select How did you hear about this job?">
                     <span slot="label-content">How did you hear about this job?</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -71,7 +71,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" id="question_b1" name="question_b1" aria-label="Select What is your gender?">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b1" name="question_b1" aria-label="Select What is your gender?">
                     <span slot="label-content">What is your gender?</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -84,7 +84,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" id="question_b2" name="question_b2" aria-label="Select Are you Hispanic or Latino? ([Read definitions](https://www.example.com/eeo-definitions))">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b2" name="question_b2" aria-label="Select Are you Hispanic or Latino? ([Read definitions](https://www.example.com/eeo-definitions))">
                     <span slot="label-content">Are you Hispanic or Latino? ([Read definitions](https://www.example.com/eeo-definitions))</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -97,7 +97,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" id="question_b3" name="question_b3" aria-label="Select What is your race (Select one)">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b3" name="question_b3" aria-label="Select What is your race (Select one)">
                     <span slot="label-content">What is your race (Select one) ([Read definitions](https://www.example.com/eeo-definitions))</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -110,7 +110,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" id="question_b4" name="question_b4" aria-label="Select Veteran self-identification">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b4" name="question_b4" aria-label="Select Veteran self-identification">
                     <span slot="label-content">Veteran self-identification ([Read definitions](https://www.example.com/eeo-definitions))</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -123,7 +123,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-multiselect-autocomplete data-spl-field="" id="question_b5" name="question_b5">
+                  <spl-multiselect-autocomplete data-spl-field="" minquerylength="0" id="question_b5" name="question_b5">
                     <span slot="label-content">I belong to the following classifications of protected veterans (choose all that apply)</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -143,7 +143,7 @@
               </div>
               <div data-test="question-container">
                 <sr-question-field-select name="">
-                  <spl-autocomplete data-spl-field="" id="question_b7" name="question_b7" aria-label="Select Has anyone in your household ever served in the U.S. military?">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b7" name="question_b7" aria-label="Select Has anyone in your household ever served in the U.S. military?">
                     <span slot="label-content">Has anyone in your household ever served, or are they currently serving, in the U.S. military?</span>
                     <template shadowrootmode="open">
                       <spl-input>
@@ -176,7 +176,7 @@
       </oc-screening-questions-form>
       <oc-consent>
         <oc-consent-decisions>
-          <spl-checkbox data-test="consent-box">
+          <spl-checkbox data-test="consent-box" required="">
             <template shadowrootmode="open"><input type="checkbox" /></template>
             I declare that I have read and agree to the privacy notice.
           </spl-checkbox>

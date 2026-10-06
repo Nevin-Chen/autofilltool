@@ -46,6 +46,8 @@ export type FieldKind =
   | 'startDate'
   | 'endDate'
   | 'coverLetter'
+  | 'referralSource'
+  | 'agreement'
   | 'openEnded';
 
 export type HistoryGroupKind = 'experience' | 'education';
@@ -139,6 +141,11 @@ export type DetectionResult = {
   unclassified: UnclassifiedField[];
 };
 
+export type SiteAnswer = {
+  field: DetectedField;
+  answer: (options: string[]) => string | boolean | null;
+};
+
 export type HistoryEntrySummary = { title: string; detail: string };
 
 export interface HistoryEditor {
@@ -162,6 +169,7 @@ export interface PlatformAdapter {
   historyEditor?: HistoryEditor;
   fillResume?(file: File, root: Document): Promise<boolean>;
   resumeAttached?(root: Document): boolean;
+  siteAnswers?(root: Document): SiteAnswer[];
   getJobDescription(doc: Document): string;
   detectSubmissionConfirmed?(doc: Document, url: URL): boolean;
 }

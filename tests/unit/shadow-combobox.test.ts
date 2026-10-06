@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fillField,
+  fillSiteAnswer,
   fillMonthYearPicker,
   fillShadowCombobox,
   harvestShadowComboboxOptions,
@@ -23,7 +24,7 @@ function mountAutocomplete(spec: AutocompleteSpec): {
 } {
   document.body.innerHTML = '';
   const host = document.createElement('spl-autocomplete');
-  if (spec.search) host.setAttribute('minquerylength', '3');
+  host.setAttribute('minquerylength', spec.search ? '3' : '0');
   const shadow = host.attachShadow({ mode: 'open' });
   const field = document.createElement('spl-input');
   const input = document.createElement('input');
@@ -64,14 +65,16 @@ function mountAutocomplete(spec: AutocompleteSpec): {
 
   const { options, search } = spec;
   if (options) {
-    input.addEventListener('click', () => {
+    const showMatching = () => {
       const query = input.value.trim().toLowerCase();
       render(
         options
           .filter((o) => o.toLowerCase().includes(query))
           .map((text) => ({ text, value: text })),
       );
-    });
+    };
+    input.addEventListener('click', showMatching);
+    field.addEventListener('input', showMatching);
   }
   if (search) {
     field.addEventListener('input', () => {
@@ -144,11 +147,22 @@ describe('shadow combobox with a fixed option list', () => {
     expect(committed()).toBe('Yes, I am Hispanic or Latino');
   });
 
-  it('leaves a veteran question alone when the saved answer cannot tell two options apart', async () => {
-    const { host, input, committed } = mountAutocomplete({ options: VETERAN });
+  it('reads "not a protected veteran" as not a veteran when the form asks both ways', async () => {
+    const { host, committed } = mountAutocomplete({ options: VETERAN });
     const action = await fillShadowCombobox(
       fieldFor(host, 'veteranStatus'),
       'I am not a protected veteran',
+      {},
+    );
+    expect(action.status).toBe('filled');
+    expect(committed()).toBe('I am NOT a veteran');
+  });
+
+  it('closes the list and clears the box when nothing matches', async () => {
+    const { host, input, committed } = mountAutocomplete({ options: VETERAN });
+    const action = await fillShadowCombobox(
+      fieldFor(host, 'veteranStatus'),
+      'I identify as a recently separated veteran',
       {},
     );
     expect(action.status).toBe('skipped');
@@ -289,5 +303,57 @@ describe('plain text input inside a shadow root', () => {
     expect(action.status).toBe('filled');
     expect(heard).toBe('Ada');
     expect(shadow.activeElement).toBeNull();
+  });
+});
+
+describe('site answers', () => {
+  const SOURCES = ['Career/Job Fair', 'Employee referral', 'Online job board', 'Other'];
+  const heard = (host: HTMLElement) => ({
+    field: { ...fieldFor(host, 'referralSource'), label: 'How did you hear about this job? *' },
+    answer: (options: string[]) => options.find((o) => /job board/i.test(o)) ?? null,
+  });
+
+  it('reads the options, lets the adapter choose, and commits the choice', async () => {
+    const { host, committed } = mountAutocomplete({ options: SOURCES });
+    const action = await fillSiteAnswer(heard(host), { forceOverwrite: false });
+    expect(action.status).toBe('filled');
+    expect(committed()).toBe('Online job board');
+  });
+
+  it('keeps an answer the user already picked', async () => {
+    const { host, input, committed } = mountAutocomplete({ options: SOURCES });
+    input.value = 'Employee referral';
+    const action = await fillSiteAnswer(heard(host), { forceOverwrite: false });
+    expect(action.note).toBe('already filled');
+    expect(committed()).toBeNull();
+  });
+
+  it('reports a miss the AI fallback can retry when no option fits', async () => {
+    const { host, committed } = mountAutocomplete({ options: ['Friend', 'Other'] });
+    const action = await fillSiteAnswer(heard(host), { forceOverwrite: false });
+    expect(action.note).toMatch(/^no option matched/);
+    expect(committed()).toBeNull();
+  });
+});
+
+describe('required agreement box inside a shadow root', () => {
+  it('ticks it once and leaves it ticked on a second run', () => {
+    document.body.innerHTML = '';
+    const host = document.createElement('spl-checkbox');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    host.attachShadow({ mode: 'open' }).appendChild(box);
+    document.body.appendChild(host);
+    const field: DetectedField = {
+      el: box,
+      kind: 'agreement',
+      label: 'I certify that all entries are true *',
+      confidence: 0.9,
+    };
+
+    expect(fillField(field, true, { forceOverwrite: false }).status).toBe('filled');
+    expect(box.checked).toBe(true);
+    expect(fillField(field, true, { forceOverwrite: false }).note).toBe('already in desired state');
+    expect(box.checked).toBe(true);
   });
 });

@@ -112,6 +112,10 @@ export function valueForField(
     case 'coverLetter':
       return profile.defaultCoverLetter || null;
 
+    case 'referralSource':
+    case 'agreement':
+      return null;
+
     case 'openEnded':
       return null;
 

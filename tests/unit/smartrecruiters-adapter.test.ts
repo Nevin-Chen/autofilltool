@@ -174,7 +174,6 @@ describe('SmartRecruiters step 2: screening questions', () => {
   it('does not read a discharge date or a household question as the applicant\'s veteran status', () => {
     const { unclassified } = smartRecruitersAdapter.detectAll!(document);
     expect(unclassified.map((u) => [u.label, u.fieldType])).toEqual([
-      ['How did you hear about this job? *', 'combobox'],
       ['If other, how?', 'text'],
       ['Preferred last name', 'text'],
       ['Military Discharge Date (MM/DD/YYYY)', 'text'],
@@ -185,11 +184,44 @@ describe('SmartRecruiters step 2: screening questions', () => {
     ]);
   });
 
-  it('marks a required select so the AI fallback still answers it with "required only" on', () => {
-    const { unclassified } = smartRecruitersAdapter.detectAll!(document);
-    const heard = unclassified[0]!;
-    expect(heard.widget).toBe('shadowCombobox');
-    expect(isRequiredField(heard.el, heard.label)).toBe(true);
+  it('answers "how did you hear" itself, with the option for an online job listing', () => {
+    const [heard] = smartRecruitersAdapter.siteAnswers!(document);
+    expect(heard!.field.kind).toBe('referralSource');
+    expect(heard!.field.widget).toBe('shadowCombobox');
+    expect(
+      heard!.answer([
+        'Government hiring hall',
+        'Information session/Career readiness workshop',
+        'Career/Job Fair',
+        'City employee',
+        'Globex Jobs',
+        'Other',
+      ]),
+    ).toBe('Globex Jobs');
+    expect(heard!.answer(['LinkedIn', 'Company website', 'Employee referral'])).toBe(
+      'Company website',
+    );
+    expect(heard!.answer(['Friend', 'Recruiter', 'Other'])).toBeNull();
+  });
+
+  it('keeps the question required, so the AI can still answer it when no option fits', () => {
+    const [heard] = smartRecruitersAdapter.siteAnswers!(document);
+    expect(isRequiredField(heard!.field.el, heard!.field.label)).toBe(true);
+  });
+
+  it('ticks the required certify, terms, and privacy boxes', () => {
+    const boxes = smartRecruitersAdapter.siteAnswers!(document).slice(1);
+    expect(boxes.map((b) => b.field.label)).toEqual([
+      'I certify that all entries are true, complete and accurate. *',
+      'Please review the Terms and conditions. By checking this box you agree to them. *',
+      'I declare that I have read and agree to the privacy notice. *',
+    ]);
+    expect(boxes.every((b) => b.field.kind === 'agreement' && b.answer([]) === true)).toBe(true);
+  });
+
+  it('leaves out an agreement box the form does not require', () => {
+    document.querySelector('oc-consent-decisions spl-checkbox')!.removeAttribute('required');
+    expect(smartRecruitersAdapter.siteAnswers!(document)).toHaveLength(3);
   });
 
   it('never surfaces the certify, terms, or privacy checkboxes, or the multi-selects', () => {
