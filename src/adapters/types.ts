@@ -46,6 +46,8 @@ export type FieldKind =
   | 'startDate'
   | 'endDate'
   | 'coverLetter'
+  | 'referralSource'
+  | 'agreement'
   | 'openEnded';
 
 export type HistoryGroupKind = 'experience' | 'education';
@@ -113,7 +115,13 @@ export type DetectedField = {
   kind: FieldKind;
   label: string;
   confidence: number;
-  widget?: 'native' | 'virtualizedDropdown' | 'buttonGroup' | 'locateButton';
+  widget?:
+    | 'native'
+    | 'virtualizedDropdown'
+    | 'buttonGroup'
+    | 'locateButton'
+    | 'shadowCombobox'
+    | 'monthYearPicker';
   group?: FieldGroup;
   datePart?: 'month' | 'year';
 };
@@ -125,6 +133,7 @@ export type UnclassifiedField = {
   label: string;
   fieldType: UnclassifiedFieldType;
   options?: string[];
+  widget?: 'shadowCombobox';
 };
 
 export type DetectionResult = {
@@ -132,13 +141,35 @@ export type DetectionResult = {
   unclassified: UnclassifiedField[];
 };
 
+export type SiteAnswer = {
+  field: DetectedField;
+  answer: (options: string[]) => string | boolean | null;
+};
+
+export type HistoryEntrySummary = { title: string; detail: string };
+
+export interface HistoryEditor {
+  readonly newEntryFirst: boolean;
+  entries(root: Document, kind: HistoryGroupKind): HTMLElement[];
+  openForm(root: Document, kind: HistoryGroupKind): HTMLElement | null;
+  addButton(root: Document, kind: HistoryGroupKind): HTMLElement | null;
+  removeButton(entry: HTMLElement): HTMLElement | null;
+  confirmRemoveButton(root: Document): HTMLElement | null;
+  saveButton(form: HTMLElement): HTMLElement | null;
+  formFields(form: HTMLElement, group: FieldGroup): DetectedField[];
+  summary(entry: HTMLElement): HistoryEntrySummary;
+}
+
 export interface PlatformAdapter {
   readonly id: AdapterId;
   readonly name: string;
   matches(url: URL, document: Document): boolean;
   detectFields(root: Document): DetectedField[];
   detectAll?(root: Document): DetectionResult;
+  historyEditor?: HistoryEditor;
   fillResume?(file: File, root: Document): Promise<boolean>;
+  resumeAttached?(root: Document): boolean;
+  siteAnswers?(root: Document): SiteAnswer[];
   getJobDescription(doc: Document): string;
   detectSubmissionConfirmed?(doc: Document, url: URL): boolean;
 }

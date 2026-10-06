@@ -269,6 +269,7 @@ async function ensureContentScriptInAllFrames(
         | 'jazzhr'
         | 'workable'
         | 'breezy'
+        | 'smartrecruiters'
         | null = null;
       if (
         doc.getElementById('grnhse_app') ||
@@ -297,6 +298,10 @@ async function ensureContentScriptInAllFrames(
         )
       ) {
         atsHint = 'breezy';
+      } else if (
+        doc.querySelector('oc-oneclick-form-root, sr-screening-questions-form')
+      ) {
+        atsHint = 'smartrecruiters';
       } else if (doc.querySelector('[data-automation-id]')) {
         atsHint = 'workday';
       }
@@ -433,7 +438,7 @@ self.addEventListener('activate', () => {
 });
 
 const ATS_HOST_RE =
-  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com|breezy\.hr)$/i;
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com|breezy\.hr|smartrecruiters\.com)$/i;
 
 function isAtsUrl(raw: string | undefined): boolean {
   if (!raw) return false;

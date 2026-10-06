@@ -8,17 +8,21 @@ import {
 import { pickAdapter } from './detector';
 import {
   fillField,
+  fillDetectedField,
   fillVirtualizedDropdown,
-  fillViaLocateButton,
+  fillShadowCombobox,
   fillCheckboxGroup,
   fillButtonGroup,
   harvestComboboxOptions,
+  harvestShadowComboboxOptions,
+  fillSiteAnswer,
   isFileAlreadyAttached,
   markThinking,
   clearThinking,
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
+import { rebuildHistory, type HistoryOutcome } from './history-rebuild';
 import { assignHistoryGroups } from '@/adapters/history-groups';
 import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 import {
@@ -489,7 +493,6 @@ async function runFill(forceFromMsg?: boolean) {
   }
   const url = new URL(location.href);
   const adapter = pickAdapter(url, document);
-  const fields = assignHistoryGroups(adapter.detectFields(document));
 
   const [profile, settings, library] = await Promise.all([
     getProfile(),
@@ -506,38 +509,53 @@ async function runFill(forceFromMsg?: boolean) {
   if (animate) {
     clearFlashes();
     pillFilling();
-    pillProgress(0, fields.length);
   }
+
+  const historyOutcomes: HistoryOutcome[] = adapter.historyEditor
+    ? await rebuildHistory(document, adapter.historyEditor, profile, (field) =>
+        fillDetectedField(
+          field,
+          valueForField(profile, field.kind, field.label, field.group),
+          { forceOverwrite: true, suppressFlash: true },
+        ),
+      )
+    : [];
+
+  const fields = assignHistoryGroups(adapter.detectFields(document));
+  if (animate) pillProgress(0, fields.length);
 
   const actions: FillAction[] = [];
   const reviewItems: ReviewableField[] = [];
   const skippedForAi: UnclassifiedField[] = [];
+  for (const { action, el } of historyOutcomes) {
+    actions.push(action);
+    if (!el) continue;
+    reviewItems.push({
+      group: action.status === 'filled' ? 'filled' : 'skipped',
+      label: action.label,
+      el,
+    });
+  }
+  for (const siteAnswer of adapter.siteAnswers?.(document) ?? []) {
+    const { field } = siteAnswer;
+    const action = await fillSiteAnswer(siteAnswer, { forceOverwrite, suppressFlash: animate });
+    actions.push(action);
+    if (action.status === 'filled') {
+      reviewItems.push({ group: 'filled', label: action.label, el: field.el });
+      if (animate) applyFlash(field.el);
+    } else if (action.status === 'skipped') {
+      reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
+      const u = isRetryableSkip(action.note) ? unclassifiedFromDetected(field) : null;
+      if (u) skippedForAi.push(u);
+    }
+  }
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i]!;
     const value = valueForField(profile, field.kind, field.label, field.group);
-    const fieldOverwrite = overwriteFor(field);
-    let action: FillAction;
-    if (field.widget === 'locateButton') {
-      action = await fillViaLocateButton(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else if (field.widget === 'virtualizedDropdown') {
-      action = await fillVirtualizedDropdown(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else if (field.widget === 'buttonGroup') {
-      action = fillButtonGroup(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else {
-      action = fillField(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    }
+    const action = await fillDetectedField(field, value, {
+      forceOverwrite: overwriteFor(field),
+      suppressFlash: animate,
+    });
     actions.push(action);
     if (field.el instanceof HTMLElement) {
       if (action.status === 'filled') {
@@ -570,29 +588,10 @@ async function runFill(forceFromMsg?: boolean) {
   const newFields = reDetected.filter((f) => !seenEls.has(f.el));
   for (const field of newFields) {
     const value = valueForField(profile, field.kind, field.label, field.group);
-    const fieldOverwrite = overwriteFor(field);
-    let action: FillAction;
-    if (field.widget === 'locateButton') {
-      action = await fillViaLocateButton(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else if (field.widget === 'virtualizedDropdown') {
-      action = await fillVirtualizedDropdown(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else if (field.widget === 'buttonGroup') {
-      action = fillButtonGroup(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    } else {
-      action = fillField(field, value, {
-        forceOverwrite: fieldOverwrite,
-        suppressFlash: animate,
-      });
-    }
+    const action = await fillDetectedField(field, value, {
+      forceOverwrite: overwriteFor(field),
+      suppressFlash: animate,
+    });
     actions.push(action);
     if (action.status === 'filled') {
       reviewItems.push({ group: 'filled', label: action.label, el: field.el });
@@ -611,7 +610,7 @@ async function runFill(forceFromMsg?: boolean) {
   if (resume) {
     if (adapter.fillResume) {
       const file = resumeRecordToFile(resume);
-      if (isFileAlreadyAttached(document, file)) {
+      if (isFileAlreadyAttached(document, file) || adapter.resumeAttached?.(document)) {
         resumeStatus = 'skipped';
         actions.push({
           label: 'Resume',
@@ -922,7 +921,10 @@ async function runAiFallbackQueue(
         u.el instanceof HTMLElement
       ) {
         try {
-          const harvested = await harvestComboboxOptions(u.el);
+          const harvested =
+            u.widget === 'shadowCombobox'
+              ? await harvestShadowComboboxOptions(u.el)
+              : await harvestComboboxOptions(u.el);
           if (harvested.length > 0) u.options = harvested;
         } catch (err) {
           log.warn('combobox option harvest failed', err);
@@ -1076,7 +1078,9 @@ async function runAiFallbackQueue(
         };
         let action: FillAction;
         if (u.fieldType === 'combobox') {
-          action = await fillVirtualizedDropdown(fakeField, value, {
+          const fillCombobox =
+            u.widget === 'shadowCombobox' ? fillShadowCombobox : fillVirtualizedDropdown;
+          action = await fillCombobox(fakeField, value, {
             forceOverwrite,
             suppressFlash: true,
             preferFirstOption: !u.options || u.options.length === 0,

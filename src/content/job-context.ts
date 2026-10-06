@@ -95,6 +95,12 @@ function companyFromAtsUrl(url: URL): string | null {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
+  if (url.hostname.endsWith('smartrecruiters.com')) {
+    const parts = url.pathname.split('/').filter(Boolean);
+    const at = parts.indexOf('company');
+    const company = parts[0] === 'oneclick-ui' ? (at === -1 ? undefined : parts[at + 1]) : parts[0];
+    if (company) return titleCase(company.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/-/g, ' '));
+  }
   return null;
 }
 

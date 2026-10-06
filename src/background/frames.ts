@@ -8,6 +8,7 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)applytojob\.com$/i,
   /(^|\.)workable\.com$/i,
   /(^|\.)breezy\.hr$/i,
+  /(^|\.)smartrecruiters\.com$/i,
 ];
 
 export type AtsHint =
@@ -18,6 +19,7 @@ export type AtsHint =
   | 'jazzhr'
   | 'workable'
   | 'breezy'
+  | 'smartrecruiters'
   | null;
 
 export type FrameInfo = {
@@ -72,6 +74,9 @@ export function probeAtsHint(doc: Document): AtsHint {
     )
   ) {
     return 'breezy';
+  }
+  if (doc.querySelector('oc-oneclick-form-root, sr-screening-questions-form')) {
+    return 'smartrecruiters';
   }
   if (doc.querySelector('[data-automation-id]')) {
     return 'workday';

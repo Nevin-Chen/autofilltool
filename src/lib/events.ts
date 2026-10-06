@@ -29,9 +29,18 @@ export function setNativeValue(
  * action would trigger them.
  */
 export function dispatchInputEvents(el: HTMLElement): void {
-  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   el.dispatchEvent(new Event('blur', { bubbles: true }));
+}
+
+/**
+ * Whether `el` holds focus. Inside a shadow root `document.activeElement` is
+ * the shadow host, so the check has to ask the field's own root instead.
+ */
+export function isFocused(el: HTMLElement): boolean {
+  const root = el.getRootNode() as Document | ShadowRoot;
+  return root.activeElement === el;
 }
 
 /**
@@ -39,9 +48,9 @@ export function dispatchInputEvents(el: HTMLElement): void {
  * back to synthetic focus events when the element cannot take real focus
  * (detached nodes in jsdom, `display: none` wrappers).
  */
-function enterField(el: HTMLElement): void {
+export function enterField(el: HTMLElement): void {
   el.focus({ preventScroll: true });
-  if (el.ownerDocument.activeElement === el) return;
+  if (isFocused(el)) return;
   el.dispatchEvent(new FocusEvent('focus'));
   el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
 }
@@ -51,11 +60,10 @@ function enterField(el: HTMLElement): void {
  * page trusted `blur` + `focusout`; React 17+ maps `onBlur` onto `focusout`,
  * so the bubbling `blur` in `dispatchInputEvents` alone never reaches it.
  */
-function leaveField(el: HTMLElement): void {
-  const doc = el.ownerDocument;
-  if (doc.activeElement === el) {
+export function leaveField(el: HTMLElement): void {
+  if (isFocused(el)) {
     el.blur();
-    if (doc.activeElement !== el) return;
+    if (!isFocused(el)) return;
   }
   el.dispatchEvent(new FocusEvent('blur'));
   el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
@@ -73,10 +81,10 @@ export function commitFieldValue(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
   value: string,
 ): void {
-  const userIsHere = el.ownerDocument.activeElement === el;
+  const userIsHere = isFocused(el);
   if (!userIsHere) enterField(el);
   setNativeValue(el, value);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   if (!userIsHere) leaveField(el);
 }

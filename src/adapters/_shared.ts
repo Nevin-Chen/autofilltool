@@ -369,6 +369,22 @@ export function textOf(node: Element): string {
   return (node.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
+export function deepQueryAll<T extends Element = HTMLElement>(
+  root: ParentNode,
+  selector: string,
+): T[] {
+  const out: T[] = [];
+  const visit = (scope: ParentNode): void => {
+    out.push(...Array.from(scope.querySelectorAll<T>(selector)));
+    for (const el of Array.from(scope.querySelectorAll('*'))) {
+      if (el.shadowRoot) visit(el.shadowRoot);
+    }
+  };
+  if (root instanceof Element && root.shadowRoot) visit(root.shadowRoot);
+  visit(root);
+  return out;
+}
+
 export function bestLabel(el: HTMLElement): string {
   const doc = el.ownerDocument;
   const labelledBy = el.getAttribute('aria-labelledby');
@@ -827,6 +843,10 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
   if (field.widget === 'virtualizedDropdown' || field.widget === 'locateButton') {
     return { el, label, fieldType: 'combobox' };
   }
+  if (field.widget === 'shadowCombobox') {
+    return { el, label, fieldType: 'combobox', widget: 'shadowCombobox' };
+  }
+  if (field.widget === 'monthYearPicker') return null;
   if (el instanceof HTMLSelectElement) {
     const options = Array.from(el.options)
       .map((o) => (o.textContent ?? '').trim())

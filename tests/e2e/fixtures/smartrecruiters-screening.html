@@ -1,0 +1,195 @@
+<!--
+  Step 2 of the SmartRecruiters one-click apply flow, the ".../screening"
+  route ("Preliminary questions"), trimmed and with neutral question wording.
+
+  The whole question list lives inside sr-screening-questions-form's shadow
+  root. Each question is a [data-test="question-container"] holding an
+  sr-question-field-<type> wrapper and one spl-* control; the visible
+  question text is the control's slotted [slot="label-content"] span, and a
+  required question carries `required` on the control. Single-select options
+  are only rendered into the control's shadow root after it is opened, so
+  none appear here. Self-ID questions append a markdown "(Read definitions)"
+  link to the label text.
+-->
+<oc-app-root>
+  <oc-oneclick-form-root>
+    <oc-screening-questions>
+      <oc-screening-questions-form>
+        <sr-screening-questions-form>
+          <template shadowrootmode="open">
+            <div class="screening-questions">
+              <div data-test="question-container">
+                <sr-question-field-info><strong>Cover letter</strong></sr-question-field-info>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-files>
+                  <sr-question-custom-form-field>
+                    <template shadowrootmode="open"><input type="file" /></template>
+                    <span slot="label-content">Additional attachments</span>
+                  </sr-question-custom-form-field>
+                </sr-question-field-files>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" required="" id="question_a1" name="question_a1" aria-label="Select How did you hear about this job?">
+                    <span slot="label-content">How did you hear about this job?</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-text>
+                  <spl-input data-spl-field="" id="question_a2" name="question_a2" maxlength="200" type="text">
+                    <span slot="label-content">If other, how?</span>
+                    <template shadowrootmode="open"><input type="text" maxlength="200" /></template>
+                  </spl-input>
+                </sr-question-field-text>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-text>
+                  <spl-input data-spl-field="" id="question_a3" name="question_a3" maxlength="200" type="text">
+                    <span slot="label-content">Preferred first name</span>
+                    <template shadowrootmode="open"><input type="text" maxlength="200" /></template>
+                  </spl-input>
+                </sr-question-field-text>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-text>
+                  <spl-input data-spl-field="" id="question_a4" name="question_a4" maxlength="200" type="text">
+                    <span slot="label-content">Preferred last name</span>
+                    <template shadowrootmode="open"><input type="text" maxlength="200" /></template>
+                  </spl-input>
+                </sr-question-field-text>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-info><strong>Voluntary self-identification</strong></sr-question-field-info>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b1" name="question_b1" aria-label="Select What is your gender?">
+                    <span slot="label-content">What is your gender?</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b2" name="question_b2" aria-label="Select Are you Hispanic or Latino? ([Read definitions](https://www.example.com/eeo-definitions))">
+                    <span slot="label-content">Are you Hispanic or Latino? ([Read definitions](https://www.example.com/eeo-definitions))</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b3" name="question_b3" aria-label="Select What is your race (Select one)">
+                    <span slot="label-content">What is your race (Select one) ([Read definitions](https://www.example.com/eeo-definitions))</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b4" name="question_b4" aria-label="Select Veteran self-identification">
+                    <span slot="label-content">Veteran self-identification ([Read definitions](https://www.example.com/eeo-definitions))</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-multiselect-autocomplete data-spl-field="" minquerylength="0" id="question_b5" name="question_b5">
+                    <span slot="label-content">I belong to the following classifications of protected veterans (choose all that apply)</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                    </template>
+                  </spl-multiselect-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-text>
+                  <spl-input data-spl-field="" id="question_b6" name="question_b6" maxlength="200" type="text">
+                    <span slot="label-content">Military Discharge Date (MM/DD/YYYY)</span>
+                    <template shadowrootmode="open"><input type="text" maxlength="200" /></template>
+                  </spl-input>
+                </sr-question-field-text>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-select name="">
+                  <spl-autocomplete data-spl-field="" minquerylength="0" id="question_b7" name="question_b7" aria-label="Select Has anyone in your household ever served in the U.S. military?">
+                    <span slot="label-content">Has anyone in your household ever served, or are they currently serving, in the U.S. military?</span>
+                    <template shadowrootmode="open">
+                      <spl-input>
+                        <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+                      </spl-input>
+                      <div role="listbox"></div>
+                    </template>
+                  </spl-autocomplete>
+                </sr-question-field-select>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-checkbox>
+                  <spl-checkbox data-spl-field="" name="question_c1" required="" id="question_c1">
+                    <span slot="label-content">I certify that all entries are true, complete and accurate.</span>
+                    <template shadowrootmode="open"><input type="checkbox" /></template>
+                  </spl-checkbox>
+                </sr-question-field-checkbox>
+              </div>
+              <div data-test="question-container">
+                <sr-question-field-checkbox>
+                  <spl-checkbox data-spl-field="" name="question_c2" required="" id="question_c2">
+                    <span slot="label-content">Please review the Terms and conditions. By checking this box you agree to them.</span>
+                    <template shadowrootmode="open"><input type="checkbox" /></template>
+                  </spl-checkbox>
+                </sr-question-field-checkbox>
+              </div>
+            </div>
+          </template>
+        </sr-screening-questions-form>
+      </oc-screening-questions-form>
+      <oc-consent>
+        <oc-consent-decisions>
+          <spl-checkbox data-test="consent-box" required="">
+            <template shadowrootmode="open"><input type="checkbox" /></template>
+            I declare that I have read and agree to the privacy notice.
+          </spl-checkbox>
+        </oc-consent-decisions>
+      </oc-consent>
+      <oc-nav-screening-questions>
+        <oc-button data-test="footer-back">
+          <spl-button><template shadowrootmode="open"><button type="button"><slot></slot></button></template>Back</spl-button>
+        </oc-button>
+        <oc-button data-test="footer-submit">
+          <spl-button><template shadowrootmode="open"><button type="button"><slot></slot></button></template>Submit</spl-button>
+        </oc-button>
+      </oc-nav-screening-questions>
+    </oc-screening-questions>
+  </oc-oneclick-form-root>
+</oc-app-root>

@@ -1,0 +1,165 @@
+<!--
+  The edit cards SmartRecruiters opens when "Add" is clicked under
+  Experience or Education on step 1 of one-click apply. The site inserts the
+  card as a new oc-*-entry at the top of the section; the tests clone these
+  templates into place the same way.
+
+  Title, Company, Institution, and the location fields are spl-autocomplete
+  search boxes. From/To are flatpickr month-year pickers that only commit a
+  typed MM/YYYY on Enter. Note that oc-education-entry carries
+  data-test="experience-entry" on the live page too.
+-->
+<template id="experience-entry-form">
+  <oc-experience-entry data-test="experience-entry">
+    <div data-test="experience-entry">
+      <div data-test="experience-edit-form">
+        <oc-job-title-autocomplete>
+          <spl-autocomplete id="spl-form-element_15" label="Title" data-test="job-title-autocomplete" allowcustomvalues="" minquerylength="1" required="">
+            <template shadowrootmode="open">
+              <spl-input>
+                <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+              </spl-input>
+              <div role="listbox"></div>
+            </template>
+          </spl-autocomplete>
+        </oc-job-title-autocomplete>
+        <oc-company-autocomplete>
+          <spl-autocomplete id="spl-form-element_14" label="Company" data-test="company-autocomplete" allowcustomvalues="" minquerylength="1">
+            <template shadowrootmode="open">
+              <spl-input>
+                <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+              </spl-input>
+              <div role="listbox"></div>
+            </template>
+          </spl-autocomplete>
+        </oc-company-autocomplete>
+        <oc-location-autocomplete>
+          <spl-autocomplete id="spl-form-element_16" label="Office location" data-test="location-autocomplete" minquerylength="3" nomatcheslabel="No matches found">
+            <template shadowrootmode="open">
+              <spl-input>
+                <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+              </spl-input>
+              <div role="listbox"></div>
+            </template>
+          </spl-autocomplete>
+        </oc-location-autocomplete>
+        <oc-textarea formcontrolname="description">
+          <spl-textarea id="exp-desc-0" label="Description">
+            <template shadowrootmode="open"><textarea id="exp-desc-0"></textarea></template>
+          </spl-textarea>
+        </oc-textarea>
+        <oc-datepicker formcontrolname="startDate" data-test="experience-date-from">
+          <spl-date-field type="month-year" id="exp-from-0" label="From" placeholder="Pick a date" allowinput="" required="true">
+            <template shadowrootmode="open">
+              <spl-date-picker>
+                <template shadowrootmode="open">
+                  <input type="text" class="c-spl-date-picker-input" placeholder="Pick a date" aria-label="From" />
+                  <input type="number" class="numInput cur-year" aria-label="Year" />
+                </template>
+              </spl-date-picker>
+            </template>
+          </spl-date-field>
+        </oc-datepicker>
+        <oc-checkbox formcontrolname="current" data-test="experience-current">
+          <spl-checkbox>
+            <template shadowrootmode="open"><input type="checkbox" /></template>
+            <span data-test="checkbox-label">I currently work here</span>
+          </spl-checkbox>
+        </oc-checkbox>
+        <oc-datepicker formcontrolname="endDate" data-test="experience-date-to">
+          <spl-date-field type="month-year" id="exp-to-0" label="To" placeholder="Pick a date" allowinput="" required="true">
+            <template shadowrootmode="open">
+              <spl-date-picker>
+                <template shadowrootmode="open">
+                  <input type="text" class="c-spl-date-picker-input" placeholder="Pick a date" aria-label="To" />
+                  <input type="number" class="numInput cur-year" aria-label="Year" />
+                </template>
+              </spl-date-picker>
+            </template>
+          </spl-date-field>
+        </oc-datepicker>
+        <oc-button data-test="experience-cancel">
+          <spl-button aria-label="Cancel adding experience entry">
+            <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+            Cancel
+          </spl-button>
+        </oc-button>
+        <oc-button data-test="experience-save">
+          <spl-button aria-label="Save experience entry">
+            <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+            Save
+          </spl-button>
+        </oc-button>
+      </div>
+    </div>
+  </oc-experience-entry>
+</template>
+
+<template id="education-entry-form">
+  <oc-education-entry data-test="experience-entry">
+    <div data-test="education-entry">
+      <div data-test="education-edit-form">
+        <oc-institution-autocomplete>
+          <spl-autocomplete label="Institution" data-test="institution-autocomplete" allowcustomvalues="" minquerylength="1" required="">
+            <template shadowrootmode="open">
+              <spl-input>
+                <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+              </spl-input>
+              <div role="listbox"></div>
+            </template>
+          </spl-autocomplete>
+        </oc-institution-autocomplete>
+        <oc-input formcontrolname="major" data-test="education-major">
+          <spl-input type="text" label="Major">
+            <template shadowrootmode="open"><input type="text" /></template>
+          </spl-input>
+        </oc-input>
+        <oc-input formcontrolname="degree" data-test="education-degree">
+          <spl-input type="text" label="Degree">
+            <template shadowrootmode="open"><input type="text" /></template>
+          </spl-input>
+        </oc-input>
+        <oc-location-autocomplete-wrapper data-test="education-form-location">
+          <spl-autocomplete label="School location" data-test="location-autocomplete" minquerylength="3">
+            <template shadowrootmode="open">
+              <spl-input>
+                <template shadowrootmode="open"><input type="text" role="combobox" aria-expanded="false" /></template>
+              </spl-input>
+              <div role="listbox"></div>
+            </template>
+          </spl-autocomplete>
+        </oc-location-autocomplete-wrapper>
+        <oc-datepicker formcontrolname="startDate" data-test="education-date-from">
+          <spl-date-field type="month-year" label="From" placeholder="Pick a date" allowinput="">
+            <template shadowrootmode="open">
+              <spl-date-picker>
+                <template shadowrootmode="open"><input type="text" class="c-spl-date-picker-input" aria-label="From" /></template>
+              </spl-date-picker>
+            </template>
+          </spl-date-field>
+        </oc-datepicker>
+        <oc-datepicker formcontrolname="endDate" data-test="education-date-to">
+          <spl-date-field type="month-year" label="To" placeholder="Pick a date" allowinput="">
+            <template shadowrootmode="open">
+              <spl-date-picker>
+                <template shadowrootmode="open"><input type="text" class="c-spl-date-picker-input" aria-label="To" /></template>
+              </spl-date-picker>
+            </template>
+          </spl-date-field>
+        </oc-datepicker>
+        <oc-checkbox formcontrolname="current" data-test="education-current">
+          <spl-checkbox>
+            <template shadowrootmode="open"><input type="checkbox" /></template>
+            <span data-test="checkbox-label">I currently attend</span>
+          </spl-checkbox>
+        </oc-checkbox>
+        <oc-button data-test="education-save">
+          <spl-button aria-label="Save education entry">
+            <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+            Save
+          </spl-button>
+        </oc-button>
+      </div>
+    </div>
+  </oc-education-entry>
+</template>
