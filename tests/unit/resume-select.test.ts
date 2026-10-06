@@ -38,6 +38,17 @@ describe('companyKeyFromUrl', () => {
     );
   });
 
+  it('keys SmartRecruiters postings and its one-click apply by the same company', () => {
+    expect(
+      companyKeyFromUrl(
+        'https://jobs.smartrecruiters.com/oneclick-ui/company/BostonDynamics/publication/0f6c2b9e-uuid',
+      ),
+    ).toBe('jobs.smartrecruiters.com/bostondynamics');
+    expect(
+      companyKeyFromUrl('https://jobs.smartrecruiters.com/BostonDynamics/744000012345-robotics-engineer'),
+    ).toBe('jobs.smartrecruiters.com/bostondynamics');
+  });
+
   it('gives two postings at the same company the same key', () => {
     expect(companyKeyFromUrl('https://job-boards.greenhouse.io/stripe/jobs/1')).toBe(
       companyKeyFromUrl('https://job-boards.greenhouse.io/stripe/jobs/2'),

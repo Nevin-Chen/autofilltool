@@ -49,6 +49,16 @@ describe('extractJobContext', () => {
     expect(ctx.company).toBe('Recursion Pharma');
   });
 
+  it('derives company from a SmartRecruiters one-click apply URL', () => {
+    const ctx = extractJobContext(
+      document,
+      new URL(
+        'https://jobs.smartrecruiters.com/oneclick-ui/company/BostonDynamics/publication/0f6c2b9e-uuid',
+      ),
+    );
+    expect(ctx.company).toBe('Boston Dynamics');
+  });
+
   it('strips utm tracking params from jobUrl', () => {
     const ctx = extractJobContext(
       document,

@@ -1,0 +1,209 @@
+<!--
+  Step 1 of the SmartRecruiters one-click apply flow
+  (jobs.smartrecruiters.com/oneclick-ui/company/<company>/publication/<uuid>),
+  trimmed to the parts the adapter reads.
+
+  Every spl-* control keeps its native <input>/<textarea> inside an open
+  shadow root, so document.querySelectorAll finds none of them. Angular binds
+  the light-DOM oc-* wrappers via formcontrolname. Declarative
+  <template shadowrootmode="open"> stands in for the runtime shadow roots;
+  the tests attach them before reading the page.
+
+  The two Experience cards are what the site's own résumé parser leaves
+  behind: company folded into the title, a location in the company line.
+-->
+<oc-app-root>
+  <oc-oneclick-form-root>
+    <oc-oneclick-form>
+      <oc-easy-apply>
+        <oc-apply-with-resume>
+          <spl-dropzone data-test="apply-with-resume-container">
+            <template shadowrootmode="open">
+              <div class="c-spl-dropzone">
+                <input type="file" id="file-input" />
+                <span>Choose a file or drop it here</span>
+              </div>
+            </template>
+          </spl-dropzone>
+        </oc-apply-with-resume>
+      </oc-easy-apply>
+
+      <oc-personal-information>
+        <div data-test="personal-information" class="form-section">
+          <oc-input formcontrolname="firstName" data-test="personal-info-first-name-input">
+            <spl-input type="text" id="first-name-input" label="First name" required="" autocomplete="given-name">
+              <template shadowrootmode="open">
+                <spl-internal-form-field>
+                  <label slot="label" for="first-name-input">First name<span>*</span></label>
+                  <div class="c-spl-input-wrapper">
+                    <input id="first-name-input" class="c-spl-input" type="text" autocomplete="given-name" aria-required="true" />
+                  </div>
+                </spl-internal-form-field>
+              </template>
+            </spl-input>
+          </oc-input>
+          <oc-input formcontrolname="lastName" data-test="personal-info-last-name-input">
+            <spl-input type="text" id="last-name-input" label="Last name" required="" autocomplete="family-name">
+              <template shadowrootmode="open">
+                <spl-internal-form-field>
+                  <label slot="label" for="last-name-input">Last name<span>*</span></label>
+                  <div class="c-spl-input-wrapper">
+                    <input id="last-name-input" class="c-spl-input" type="text" autocomplete="family-name" aria-required="true" />
+                  </div>
+                </spl-internal-form-field>
+              </template>
+            </spl-input>
+          </oc-input>
+          <oc-input formcontrolname="email" data-test="personal-info-email-input">
+            <spl-input type="email" id="email-input" label="Email" required="">
+              <template shadowrootmode="open">
+                <spl-internal-form-field>
+                  <label slot="label" for="email-input">Email<span>*</span></label>
+                  <div class="c-spl-input-wrapper">
+                    <input id="email-input" class="c-spl-input" type="email" aria-required="true" />
+                  </div>
+                </spl-internal-form-field>
+              </template>
+            </spl-input>
+          </oc-input>
+          <oc-input formcontrolname="emailConfirmation" data-test="personal-info-email-confirm-input">
+            <spl-input type="email" id="confirm-email-input" label="Confirm your email" required="">
+              <template shadowrootmode="open">
+                <spl-internal-form-field>
+                  <label slot="label" for="confirm-email-input">Confirm your email<span>*</span></label>
+                  <div class="c-spl-input-wrapper">
+                    <input id="confirm-email-input" class="c-spl-input" type="email" aria-required="true" />
+                  </div>
+                </spl-internal-form-field>
+              </template>
+            </spl-input>
+          </oc-input>
+
+          <oc-location-autocomplete-wrapper>
+            <oc-location-autocomplete>
+              <spl-autocomplete id="spl-form-element_10" label="City" data-test="location-autocomplete" minquerylength="3" nomatcheslabel="No matches found">
+                <template shadowrootmode="open">
+                  <spl-input>
+                    <template shadowrootmode="open">
+                      <input id="spl-form-element_10" type="text" role="combobox" aria-expanded="false" />
+                    </template>
+                  </spl-input>
+                  <div role="listbox"></div>
+                </template>
+              </spl-autocomplete>
+            </oc-location-autocomplete>
+          </oc-location-autocomplete-wrapper>
+
+          <oc-phone-number>
+            <div data-test="personal-info-phone">
+              <spl-phone-field label="Phone number" required="" autocomplete="tel">
+                <template shadowrootmode="open">
+                  <spl-dropdown-search>
+                    <template shadowrootmode="open">
+                      <input type="text" role="combobox" aria-label="Search by country/region or code" />
+                    </template>
+                  </spl-dropdown-search>
+                  <spl-input type="tel">
+                    <template shadowrootmode="open">
+                      <input id="spl-form-element_5" type="tel" autocomplete="tel" />
+                    </template>
+                  </spl-input>
+                </template>
+              </spl-phone-field>
+            </div>
+          </oc-phone-number>
+        </div>
+      </oc-personal-information>
+
+      <oc-experience>
+        <div data-test="experience">
+          <oc-button data-test="add-experience">
+            <spl-button aria-label="Add experience entry">
+              <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              Add
+            </spl-button>
+          </oc-button>
+          <oc-experience-entry data-test="experience-entry">
+            <div data-test="experience-entry">
+              <p data-test="experience-entry-title">Senior Software Engineer at Shopify Ottawa<span data-test="experience-entry-date">2019 - 2022</span></p>
+              <p data-test="experience-entry-company">Ottawa, ON</p>
+              <spl-button data-test="experience-entry-edit" aria-label="Edit experience">
+                <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              </spl-button>
+              <spl-button data-test="experience-entry-delete" aria-label="Delete experience">
+                <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              </spl-button>
+            </div>
+          </oc-experience-entry>
+          <oc-experience-entry data-test="experience-entry">
+            <div data-test="experience-entry">
+              <p data-test="experience-entry-title">Engineer<span data-test="experience-entry-date">2022 - Present</span></p>
+              <p data-test="experience-entry-company">Stripe</p>
+              <spl-button data-test="experience-entry-edit" aria-label="Edit experience">
+                <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              </spl-button>
+              <spl-button data-test="experience-entry-delete" aria-label="Delete experience">
+                <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              </spl-button>
+            </div>
+          </oc-experience-entry>
+        </div>
+      </oc-experience>
+
+      <oc-education>
+        <div data-test="education">
+          <oc-button data-test="add-education">
+            <spl-button aria-label="Add education entry">
+              <template shadowrootmode="open"><button type="button"><slot></slot></button></template>
+              Add
+            </spl-button>
+          </oc-button>
+        </div>
+      </oc-education>
+
+      <oc-web>
+        <oc-input formcontrolname="linkedIn" data-test="web-profiles-linkedin">
+          <spl-input type="text" id="linkedin-input" label="LinkedIn">
+            <template shadowrootmode="open"><input id="linkedin-input" type="text" /></template>
+          </spl-input>
+        </oc-input>
+        <oc-input formcontrolname="facebook" data-test="web-profiles-facebook">
+          <spl-input type="text" id="facebook-input" label="Facebook">
+            <template shadowrootmode="open"><input id="facebook-input" type="text" /></template>
+          </spl-input>
+        </oc-input>
+        <oc-input formcontrolname="twitter" data-test="web-profiles-twitter">
+          <spl-input type="text" id="twitter-input" label="X (fka Twitter)">
+            <template shadowrootmode="open"><input id="twitter-input" type="text" /></template>
+          </spl-input>
+        </oc-input>
+        <oc-input formcontrolname="website" data-test="web-profiles-website">
+          <spl-input type="text" id="website-input" label="Website">
+            <template shadowrootmode="open"><input id="website-input" type="text" /></template>
+          </spl-input>
+        </oc-input>
+      </oc-web>
+
+      <oc-resume-upload>
+        <div data-test="resume-upload-container">
+          <spl-dropzone data-test="resume-upload" files="[]">
+            <template shadowrootmode="open">
+              <div class="c-spl-dropzone">
+                <input type="file" id="file-input" />
+                <span>Choose a file or drop it here</span>
+              </div>
+            </template>
+          </spl-dropzone>
+        </div>
+      </oc-resume-upload>
+
+      <oc-hiring-manager-message>
+        <oc-textarea formcontrolname="message" data-test="hiring-manager-message-text">
+          <spl-textarea id="hiring-manager-message-input" label="Let the company know about your interest working there">
+            <template shadowrootmode="open"><textarea id="hiring-manager-message-input"></textarea></template>
+          </spl-textarea>
+        </oc-textarea>
+      </oc-hiring-manager-message>
+    </oc-oneclick-form>
+  </oc-oneclick-form-root>
+</oc-app-root>

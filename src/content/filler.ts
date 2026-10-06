@@ -1,5 +1,11 @@
-import { setNativeValue, dispatchInputEvents, commitFieldValue } from '@/lib/events';
-import { bestLabel, findLocateButton } from '@/adapters/_shared';
+import {
+  setNativeValue,
+  dispatchInputEvents,
+  commitFieldValue,
+  enterField,
+  leaveField,
+} from '@/lib/events';
+import { bestLabel, deepQueryAll, findLocateButton } from '@/adapters/_shared';
 import type { DetectedField } from '@/adapters/types';
 
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
@@ -146,7 +152,60 @@ export function fillField(
   }
 }
 
+export async function fillDetectedField(
+  field: DetectedField,
+  value: string | boolean | null | undefined,
+  opts: FillOptions,
+): Promise<FillAction> {
+  switch (field.widget) {
+    case 'locateButton':
+      return fillViaLocateButton(field, value, opts);
+    case 'virtualizedDropdown':
+      return fillVirtualizedDropdown(field, value, opts);
+    case 'buttonGroup':
+      return fillButtonGroup(field, value, opts);
+    case 'shadowCombobox':
+      return fillShadowCombobox(field, value, opts);
+    case 'monthYearPicker':
+      return fillMonthYearPicker(field, value, opts);
+    default:
+      return fillField(field, value, opts);
+  }
+}
+
 const MONTH_VALUE_RE = /^(\d{4})-(\d{2})$/;
+
+export function fillMonthYearPicker(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: FillOptions,
+): FillAction {
+  const meta: Meta = { label: field.label, kind: field.kind };
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { ...meta, status: 'skipped', note: 'no value in profile' };
+  }
+  const m = MONTH_VALUE_RE.exec(String(rawValue).trim());
+  if (!m) {
+    return { ...meta, status: 'skipped', note: `not a month: "${truncate(String(rawValue), 60)}"` };
+  }
+  const el = field.el;
+  if (!(el instanceof HTMLInputElement)) {
+    return { ...meta, status: 'unsupported', note: 'date input not found' };
+  }
+  if (el.disabled) {
+    return { ...meta, status: 'skipped', note: 'input is disabled' };
+  }
+  if (!opts.forceOverwrite && el.value.trim() !== '') {
+    return { ...meta, status: 'skipped', note: 'already filled' };
+  }
+  enterField(el);
+  setNativeValue(el, `${m[2]}/${m[1]}`);
+  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  pressEnter(el);
+  leaveField(el);
+  if (!opts.suppressFlash) flashFilled(el);
+  return { ...meta, status: 'filled' };
+}
 
 function datePartOf(
   raw: string | boolean | null | undefined,
@@ -526,6 +585,7 @@ const RADIO_SYNONYM_GROUPS: ReadonlyArray<readonly string[]> = [
     'prefer not to say',
     'rather not answer',
     'rather not say',
+    'not to disclose',
   ],
 ];
 
@@ -536,6 +596,10 @@ function synonymGroupFor(want: string): readonly string[] {
   return [];
 }
 
+function isDeclinePhrase(text: string): boolean {
+  return RADIO_SYNONYM_GROUPS.some((group) => group.some((p) => text.includes(p)));
+}
+
 const NEGATION_RE = /\b(?:not|no|never|none|neither|non)\b|n['’]t\b/;
 
 function isNegated(text: string): boolean {
@@ -543,7 +607,7 @@ function isNegated(text: string): boolean {
 }
 
 export function polarityAgrees(want: string, candidate: string): boolean {
-  if (synonymGroupFor(want).length > 0) return true;
+  if (isDeclinePhrase(want)) return true;
   return isNegated(want) === isNegated(candidate);
 }
 
@@ -947,6 +1011,145 @@ export async function harvestComboboxOptions(
   return out;
 }
 
+const SHADOW_LIST_OPEN_MS = 600;
+const SHADOW_LIST_SETTLE_MS = 100;
+const SHADOW_POLL_MS = 50;
+
+type ShadowOption = { el: HTMLElement; text: string };
+
+export async function fillShadowCombobox(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: VirtualizedDropdownOptions = {},
+): Promise<FillAction> {
+  const { el: host, kind, label } = field;
+  const meta: Meta = { label, kind };
+  const want = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+  if (!want) return { ...meta, status: 'skipped', note: 'no value in profile' };
+  const input = shadowComboboxInput(host);
+  if (!input) return { ...meta, status: 'unsupported', note: 'combobox input not found' };
+  if (!opts.forceOverwrite && input.value.trim() !== '') {
+    return { ...meta, status: 'skipped', note: 'already filled' };
+  }
+
+  enterField(input);
+  input.click();
+  const typed = searchesAsYouType(host);
+  if (typed) typeInto(input, want);
+  const options = typed
+    ? await waitForShadowOptions(
+        host,
+        opts.timeoutMs ?? SUGGESTION_TIMEOUT_MS,
+        SUGGESTION_SETTLE_MS,
+      )
+    : await waitForShadowOptions(host, SHADOW_LIST_OPEN_MS, SHADOW_LIST_SETTLE_MS);
+
+  const index = matchOptionText(options.map((o) => o.text), want);
+  const preferTop = opts.preferFirstOption ?? TYPEAHEAD_KINDS.has(kind);
+  const picked = index !== null ? options[index]! : preferTop ? options[0] : undefined;
+  if (!picked) {
+    if (typed) typeInto(input, '');
+    closeCombobox(input, false);
+    const note =
+      options.length === 0
+        ? `no suggestions for "${truncate(want, 60)}"`
+        : `no option matched "${truncate(want, 60)}"`;
+    return { ...meta, status: 'skipped', note };
+  }
+
+  selectOption(picked.el);
+  leaveField(input);
+  if (!opts.suppressFlash) flashFilled(input);
+  return { ...meta, status: 'filled', note: `picked "${picked.text}"` };
+}
+
+export async function harvestShadowComboboxOptions(host: HTMLElement): Promise<string[]> {
+  if (searchesAsYouType(host)) return [];
+  const input = shadowComboboxInput(host);
+  if (!input) return [];
+  enterField(input);
+  input.click();
+  const options = await waitForShadowOptions(host, SHADOW_LIST_OPEN_MS, SHADOW_LIST_SETTLE_MS);
+  closeCombobox(input, false);
+  return Array.from(new Set(options.map((o) => o.text)));
+}
+
+function shadowComboboxInput(host: HTMLElement): HTMLInputElement | null {
+  return (
+    deepQueryAll<HTMLInputElement>(host, 'input').find(
+      (i) => i.type !== 'hidden' && !i.disabled,
+    ) ?? null
+  );
+}
+
+function searchesAsYouType(host: HTMLElement): boolean {
+  return host.hasAttribute('minquerylength');
+}
+
+function typeInto(input: HTMLInputElement, value: string): void {
+  setNativeValue(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+}
+
+function shadowOptions(host: HTMLElement): ShadowOption[] {
+  const out: ShadowOption[] = [];
+  for (const el of deepQueryAll<HTMLElement>(host, '[role="option"]')) {
+    if (isDisabled(el) || isManualEntryOption(el)) continue;
+    const text = shadowOptionText(el);
+    if (text) out.push({ el, text });
+  }
+  return out;
+}
+
+function shadowHosts(el: HTMLElement): HTMLElement[] {
+  const chain: HTMLElement[] = [el];
+  let node: Node = el;
+  while (node.getRootNode() instanceof ShadowRoot) {
+    node = (node.getRootNode() as ShadowRoot).host;
+    chain.push(node as HTMLElement);
+  }
+  return chain;
+}
+
+function shadowOptionText(el: HTMLElement): string {
+  for (const node of shadowHosts(el).slice(0, 3)) {
+    const text = textOfNode(node);
+    if (text) return text;
+  }
+  return '';
+}
+
+function isManualEntryOption(el: HTMLElement): boolean {
+  return shadowHosts(el)
+    .slice(0, 3)
+    .some((node) => /manual/i.test(node.getAttribute('value') ?? ''));
+}
+
+function waitForShadowOptions(
+  host: HTMLElement,
+  timeoutMs: number,
+  settleMs: number,
+): Promise<ShadowOption[]> {
+  const view = host.ownerDocument.defaultView ?? window;
+  const started = Date.now();
+  let lastCount = -1;
+  let stableSince = started;
+  return new Promise((resolve) => {
+    const poll = (): void => {
+      const options = shadowOptions(host);
+      const now = Date.now();
+      if (options.length !== lastCount) {
+        lastCount = options.length;
+        stableSince = now;
+      }
+      if (options.length > 0 && now - stableSince >= settleMs) return resolve(options);
+      if (now - started >= timeoutMs) return resolve(options);
+      view.setTimeout(poll, SHADOW_POLL_MS);
+    };
+    poll();
+  });
+}
+
 function snapshotOpenListboxes(root: Document): WeakSet<Element> {
   const set = new WeakSet<Element>();
   for (const el of Array.from(root.querySelectorAll('[role="listbox"]'))) {
@@ -963,6 +1166,7 @@ function closeCombobox(trigger: HTMLElement, wasFocused: boolean): void {
     which: 27,
     bubbles: true,
     cancelable: true,
+    composed: true,
   } as KeyboardEventInit;
   try {
     trigger.dispatchEvent(new KeyboardEvent('keydown', init));
@@ -1052,6 +1256,7 @@ function pressEnter(el: HTMLElement): void {
     which: 13,
     bubbles: true,
     cancelable: true,
+    composed: true,
   } as KeyboardEventInit;
   try {
     el.dispatchEvent(new KeyboardEvent('keydown', init));
@@ -1131,34 +1336,53 @@ export function pickListboxOption(
   want: string,
   intent?: string,
 ): HTMLElement | null {
-  const wantLower = want.toLowerCase().trim();
-  if (!wantLower) return null;
-  const intentLower = (intent ?? want).toLowerCase().trim();
   const options = Array.from(
     listbox.querySelectorAll<HTMLElement>('[role="option"]'),
   ).filter((el) => !isDisabled(el));
-
-  for (const opt of options) {
-    if (textOfNode(opt).toLowerCase() === intentLower) return opt;
-  }
-
-  const eligible = options.filter((opt) =>
-    polarityAgrees(intentLower, textOfNode(opt).toLowerCase()),
+  const index = matchOptionText(
+    options.map((opt) => textOfNode(opt)),
+    want,
+    intent,
   );
-  const textOf = (opt: HTMLElement) => textOfNode(opt).toLowerCase();
+  return index === null ? null : options[index]!;
+}
 
-  const exact = eligible.find((opt) => textOf(opt) === wantLower);
-  if (exact) return exact;
+function matchOptionText(
+  texts: string[],
+  want: string,
+  intent?: string,
+): number | null {
+  const wantLower = want.toLowerCase().trim();
+  if (!wantLower) return null;
+  const intentLower = (intent ?? want).toLowerCase().trim();
+  const lowered = texts.map((t) => t.toLowerCase().trim());
 
-  const prefixed = eligible.filter((opt) => startsWithWord(textOf(opt), wantLower));
-  if (prefixed.length === 1) return prefixed[0]!;
+  const verbatim = lowered.indexOf(intentLower);
+  if (verbatim !== -1) return verbatim;
 
-  const contained = eligible.filter((opt) => textOf(opt).includes(wantLower));
-  if (contained.length === 1) return contained[0]!;
+  const wantsDecline = isDeclinePhrase(intentLower);
+  const eligible = lowered
+    .map((text, index) => ({ text, index }))
+    .filter(({ text }) => polarityAgrees(intentLower, text))
+    .filter(({ text }) => wantsDecline || !isDeclinePhrase(text));
+
+  const exact = eligible.find(({ text }) => text === wantLower);
+  if (exact) return exact.index;
+
+  const prefixed = eligible.filter(({ text }) => startsWithWord(text, wantLower));
+  if (prefixed.length === 1) return prefixed[0]!.index;
+
+  const contained = eligible.filter(({ text }) => text.includes(wantLower));
+  if (contained.length === 1) return contained[0]!.index;
 
   const pool = prefixed.length > 0 ? prefixed : contained;
   if (pool.length > 1 && wantLower === intentLower) {
-    return [...pool].sort((a, b) => textOf(a).length - textOf(b).length)[0]!;
+    return [...pool].sort((a, b) => a.text.length - b.text.length)[0]!.index;
+  }
+
+  if (wantsDecline) {
+    const declines = eligible.filter(({ text }) => isDeclinePhrase(text));
+    if (declines.length === 1) return declines[0]!.index;
   }
   return null;
 }

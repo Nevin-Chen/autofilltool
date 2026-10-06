@@ -9,7 +9,9 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 ## Features
 
 #### **Auto-fill**
-- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, and Breezy HR, with a heuristic fallback for anything else
+- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters, with a heuristic fallback for anything else
+- Forms built from web components (SmartRecruiters) keep every input inside a shadow root. The filler reaches into them, picks from their custom dropdowns, and presses Enter on month/year pickers that ignore a typed date until you do
+- SmartRecruiters one-click apply is two steps. Fill handles the profile page; after **Next**, the Fill pill comes back on the Preliminary questions page for the self-identification answers
 - Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
 - Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
 - Location fields that search as you type get your saved city typed in and the top suggestion taken, so `Austin, TX` still lands on the `Austin, Texas, United States` the form wants. The search is given up to four seconds to answer instead of being written off as a miss
@@ -26,6 +28,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 #### **Work and Education History**
 - Save each job and each school as its own entry in Options, in the order forms ask for them
 - Platforms that make you type your history block by block (Workday, Workable, Breezy HR, JazzHR) get the matching entry per block, so the second job goes in the second block
+- SmartRecruiters turns your résumé into its own Experience and Education entries, often with the company folded into the title. Fill deletes those and adds your saved entries in their place, in your order. It leaves a section alone when the entries already match, or when you have one open for editing
 - Repeating blocks are found from the page structure, not a per-site selector list, so a form we have never seen still gets its entries lined up
 - Some of these platforms read your résumé themselves and prefill the blocks, often folding the company into the job title or getting the dates wrong. **Replace values in work and education blocks** in Options lets the filler correct those, and only those: every other field on the page still keeps whatever value it already had
 
@@ -190,7 +193,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `storage` | Persist profile, settings, résumés, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the currently focused tab from the popup |
-| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, and Breezy HR forms |
+| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters forms |
 
 **Optional**, asked for when you need them and revocable from Options:
 
@@ -217,7 +220,7 @@ No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
 src/
 ├── background/   MV3 service worker (the only code that talks to external hosts)
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
-├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR + generic)
+├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR / SmartRecruiters + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client

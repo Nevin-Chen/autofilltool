@@ -6,12 +6,14 @@ import { workdayAdapter } from './workday';
 import { jazzhrAdapter } from './jazzhr';
 import { workableAdapter } from './workable';
 import { breezyAdapter } from './breezy';
+import { smartRecruitersAdapter } from './smartrecruiters';
 import { genericAdapter } from './generic';
 
 export const adapters: PlatformAdapter[] = [
   greenhouseAdapter,
   leverAdapter,
   ashbyAdapter,
+  smartRecruitersAdapter,
   workdayAdapter,
   jazzhrAdapter,
   workableAdapter,

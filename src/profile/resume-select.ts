@@ -5,6 +5,7 @@ const SHARED_ATS_HOSTS: ReadonlyArray<RegExp> = [
   /(^|\.)lever\.co$/i,
   /(^|\.)ashbyhq\.com$/i,
   /(^|\.)workable\.com$/i,
+  /(^|\.)smartrecruiters\.com$/i,
 ];
 
 export function companyKeyFromUrl(url: URL | string): string {
@@ -20,8 +21,15 @@ export function companyKeyFromUrl(url: URL | string): string {
   if (!host) return '';
   if (!SHARED_ATS_HOSTS.some((re) => re.test(host))) return host;
 
-  const segment = u.pathname.split('/').filter(Boolean)[0]?.toLowerCase() ?? '';
+  const segments = u.pathname.split('/').filter(Boolean).map((s) => s.toLowerCase());
+  const segment = segments[0] ?? '';
   if (!segment) return host;
+
+  if (segment === 'oneclick-ui') {
+    const at = segments.indexOf('company');
+    const company = at === -1 ? '' : (segments[at + 1] ?? '');
+    return company ? `${host}/${company}` : host;
+  }
 
   if (segment === 'embed') {
     const forParam = u.searchParams.get('for')?.trim().toLowerCase();

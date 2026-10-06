@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "A somewhat lazy tool to make the most out of local models and AI subscriptions for customized outputs on job applications",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -23,6 +23,7 @@
     "https://*.workable.com/*",
     "https://apply.workable.com/*",
     "https://*.breezy.hr/*",
+    "https://jobs.smartrecruiters.com/*",
     "<all_urls>"
   ],
   "optional_host_permissions": [
@@ -69,7 +70,8 @@
         "https://*.applytojob.com/*",
         "https://*.workable.com/*",
         "https://apply.workable.com/*",
-        "https://*.breezy.hr/*"
+        "https://*.breezy.hr/*",
+        "https://jobs.smartrecruiters.com/*"
       ],
       "js": [
         "src/content/index.ts"
