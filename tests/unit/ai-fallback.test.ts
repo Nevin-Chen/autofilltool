@@ -10,7 +10,7 @@ import { buildClassifyPrompt, parseClassifyResponse, pickClassifyMode } from '@/
 import { resolveAiOption } from '@/content/ai-fallback';
 import { harvestComboboxOptions, fillCheckboxGroup, fillButtonGroup } from '@/content/filler';
 import type { DetectedField } from '@/adapters/types';
-import { emptyProfile } from '@/profile/schema';
+import { emptyEducation, emptyExperience, emptyProfile } from '@/profile/schema';
 
 describe('isCompliancePattern', () => {
   it('flags EEO and immigration variants the broad regex covers', () => {
@@ -395,6 +395,42 @@ describe('buildClassifyPrompt — preference mode', () => {
       { mode: 'preference' },
     );
     expect(prompt.system).toMatch(/referred by a current employee" → "No"/);
+  });
+
+  it('gives the model the work history and education a screening question is asked about', () => {
+    const profile = emptyProfile();
+    profile.experience = [
+      { ...emptyExperience(), jobTitle: 'Software Engineer', employer: 'Stripe', startDate: '2021-03', current: true },
+      { ...emptyExperience(), jobTitle: 'Intern', employer: 'Shopify', startDate: '2019-05', endDate: '2019-08' },
+    ];
+    profile.education = [
+      { ...emptyEducation(), degree: 'BMath', fieldOfStudy: 'Computer Science', school: 'University of Waterloo', gradYear: '2020' },
+    ];
+    const prompt = buildClassifyPrompt(
+      {
+        question: 'Have you previously been employed by Globex?',
+        fieldType: 'radio',
+        options: ['Yes', 'No'],
+        job: { role: 'Software Engineer', company: 'Globex' },
+      },
+      profile,
+      { mode: 'preference' },
+    );
+    expect(prompt.user).toContain('- Experience: Software Engineer at Stripe, 2021-03 to present');
+    expect(prompt.user).toContain('- Experience: Intern at Shopify, 2019-05 to 2019-08');
+    expect(prompt.user).toContain('- Education: BMath in Computer Science, University of Waterloo, 2020');
+    expect(prompt.user).toContain('Job applied for: Software Engineer at Globex');
+    expect(prompt.system).toMatch(/previously been employed by Globex" → "Yes" only if Globex appears in an Experience line/);
+    expect(prompt.system).toMatch(/meet the education requirement" → compare the Experience and Education lines/);
+  });
+
+  it('leaves the job line out when the page gave no role or company', () => {
+    const prompt = buildClassifyPrompt(
+      { question: 'Phone Device Type', fieldType: 'combobox', options: ['Mobile', 'Landline'] },
+      emptyProfile(),
+      { mode: 'preference' },
+    );
+    expect(prompt.user).not.toContain('Job applied for');
   });
 
   it('strict mode keeps the original SKIP-on-silent instruction', () => {

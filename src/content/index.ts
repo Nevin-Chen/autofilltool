@@ -954,19 +954,19 @@ async function runAiFallbackQueue(
           };
           if (u.selfIdKind) request.selfIdKind = u.selfIdKind;
           if (u.options) request.options = u.options;
+          if (ctx.company || ctx.role || ctx.jobUrl) {
+            request.job = {
+              ...(ctx.company ? { company: ctx.company } : {}),
+              ...(ctx.role ? { role: ctx.role } : {}),
+              ...(ctx.jobUrl ? { jobUrl: ctx.jobUrl } : {}),
+            };
+          }
           if (u.fieldType === 'textarea') {
             if (u.el instanceof HTMLElement) {
               const desc = fieldDescription(u.el);
               if (desc) request.description = desc;
             }
             if (ctx.jobDescription) request.jobDescription = ctx.jobDescription;
-            if (ctx.company || ctx.role || ctx.jobUrl) {
-              request.job = {
-                ...(ctx.company ? { company: ctx.company } : {}),
-                ...(ctx.role ? { role: ctx.role } : {}),
-                ...(ctx.jobUrl ? { jobUrl: ctx.jobUrl } : {}),
-              };
-            }
           }
           resp = (await sendToBackground({
             type: 'AI_CLASSIFY',

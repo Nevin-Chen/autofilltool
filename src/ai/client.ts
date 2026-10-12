@@ -1,4 +1,10 @@
-import type { Profile, AiSettings, ResumeRecord } from '@/profile/schema';
+import type {
+  Profile,
+  AiSettings,
+  ResumeRecord,
+  Experience,
+  Education,
+} from '@/profile/schema';
 import type { SelfIdKind } from '@/adapters/types';
 import { activeApiKey, providerNeedsKey } from '@/profile/schema';
 import { streamOpenAI, OPENAI_DEFAULT_MODEL } from './providers/openai';
@@ -380,6 +386,8 @@ export function buildClassifyPrompt(
           ' - "were you referred by a current employee" → "No" (a referral is a fact about the user, never invent one)',
           ' - "any deadlines or timeline considerations" → "None at this time"',
           ' - "how do you pronounce your name" → a phonetic spelling derived from the name in the profile, e.g. "Nevin" → "NEH-vin"',
+          ' - "have you previously been employed by Globex" → "Yes" only if Globex appears in an Experience line of the profile, otherwise "No" (or "Not Applicable" when that is the option for people who never worked there)',
+          ' - "do you have the required experience" or "do you meet the education requirement" → compare the Experience and Education lines with the job; if the profile lists none, answer "Yes"',
           'Never fabricate personal data (name, email, address, employer history, real LinkedIn/portfolio URLs). For those specific fields, if the profile is empty, reply SKIP. Reasonable preference defaults are NOT fabrication.',
         ].join(' ')
       : [
@@ -392,6 +400,7 @@ export function buildClassifyPrompt(
   const user = [
     `Form field type: ${req.fieldType}`,
     `Question: ${req.question}`,
+    jobLine(req.job),
     selfIdBlock,
     workAuthBlock,
     optionsBlock,
@@ -404,6 +413,11 @@ export function buildClassifyPrompt(
     .join('\n');
 
   return { system, user };
+}
+
+function jobLine(job: ClassifyRequest['job']): string {
+  if (!job?.role && !job?.company) return '';
+  return `Job applied for: ${[job.role, job.company].filter(Boolean).join(' at ')}`;
 }
 
 const SELF_ID_SYSTEM_PROMPT = [
@@ -568,6 +582,12 @@ export function summarizeProfileForClassifier(profile: Profile): string {
     push('Willing to relocate', profile.workAuth.willingToRelocate ? 'Yes' : 'No');
   }
   push('Desired salary', profile.workAuth.desiredSalary);
+  if (profile.workAuth.noticePeriodWeeks !== null) {
+    push('Notice period', `${profile.workAuth.noticePeriodWeeks} weeks`);
+  }
+
+  for (const job of profile.experience) push('Experience', experienceLine(job));
+  for (const school of profile.education) push('Education', educationLine(school));
 
   push('Gender', profile.demographics.gender);
   push('Pronouns', profile.demographics.pronouns);
@@ -579,6 +599,21 @@ export function summarizeProfileForClassifier(profile: Profile): string {
   push('Disability status', profile.demographics.disabilityStatus);
 
   return lines.join('\n');
+}
+
+function experienceLine(job: Experience): string {
+  const role = joinFilled([job.jobTitle, job.employer], ' at ');
+  const dates = joinFilled([job.startDate, job.current ? 'present' : job.endDate], ' to ');
+  return joinFilled([role, dates], ', ');
+}
+
+function educationLine(school: Education): string {
+  const degree = joinFilled([school.degree, school.fieldOfStudy], ' in ');
+  return joinFilled([degree, school.school, school.gradYear || school.endDate], ', ');
+}
+
+function joinFilled(parts: string[], separator: string): string {
+  return parts.filter((part) => part.trim()).join(separator);
 }
 
 export async function classifyField(
