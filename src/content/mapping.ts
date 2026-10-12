@@ -25,11 +25,11 @@ export function valueForField(
     case 'email':
       return profile.email || null;
     case 'phone':
-      return profile.phone || null;
+      return (isNorthAmericanPhone(profile) ? nationalPhone(profile) : profile.phone) || null;
     case 'phoneCountry':
       return phoneCountryName(profile);
     case 'phoneNational':
-      return splitPhone(profile.phone, profile.phoneCountry).national || null;
+      return nationalPhone(profile) || null;
 
     case 'addressLine1':
       return profile.address.line1 || null;
@@ -159,6 +159,18 @@ function historyDate(
 function addressCountryName(profile: Profile): string | null {
   const raw = profile.address.country;
   return countryByName(raw)?.name ?? (raw || null);
+}
+
+function nationalPhone(profile: Profile): string {
+  const { national } = splitPhone(profile.phone, profile.phoneCountry);
+  const digits = national.replace(/\D/g, '');
+  if (!isNorthAmericanPhone(profile) || digits.length !== 10) return national;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function isNorthAmericanPhone(profile: Profile): boolean {
+  const { iso } = splitPhone(profile.phone, profile.phoneCountry);
+  return (countryByIso(iso) ?? countryByName(profile.address.country))?.dial === '1';
 }
 
 function phoneCountryName(profile: Profile): string | null {
