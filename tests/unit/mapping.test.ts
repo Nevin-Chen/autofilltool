@@ -72,6 +72,13 @@ describe('valueForField — work authorization question polarity', () => {
     expect(valueForField(noSponsorship, 'authorizedToWorkInUS', 'Work status')).toBe('Yes');
   });
 
+  it('leaves a question about how the authorization was obtained to the AI', () => {
+    const label =
+      'Is your current U.S. work authorization based on your status as a spouse of an H-1B, L-1, or E-1/E-2/E-3 visa holder?';
+    expect(valueForField(noSponsorship, 'authorizedToWorkInUS', label)).toBeNull();
+    expect(valueForField(noSponsorship, 'requiresSponsorship', label)).toBeNull();
+  });
+
   it('leaves willingToRelocate on the raw toggle regardless of label', () => {
     const p = withWorkAuth({ willingToRelocate: false, requiresSponsorship: false });
     expect(

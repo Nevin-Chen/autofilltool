@@ -11,8 +11,15 @@ const WITHOUT_SPONSORSHIP_RE =
 export type WorkAuthAnswer = 'Yes' | 'No';
 
 export function isWorkEligibilityQuestion(label: string): boolean {
-  const text = normalize(label);
-  return SPONSORSHIP_RE.test(text) || AUTHORIZATION_RE.test(text);
+  return mentionsSponsorship(label) || mentionsWorkAuthorization(label);
+}
+
+export function mentionsSponsorship(label: string): boolean {
+  return SPONSORSHIP_RE.test(normalize(label));
+}
+
+export function mentionsWorkAuthorization(label: string): boolean {
+  return AUTHORIZATION_RE.test(normalize(label));
 }
 
 export function workAuthAnswerFromLabel(
@@ -47,7 +54,7 @@ export function workAuthAnswerFromLabel(
     return requires ? 'Yes' : 'No';
   }
 
-  if (mentionsAuthorization) {
+  if (mentionsAuthorization && !mentionsSponsorship) {
     if (authorized === null) return null;
     return authorized ? 'Yes' : 'No';
   }

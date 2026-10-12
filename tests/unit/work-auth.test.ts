@@ -111,6 +111,13 @@ describe('workAuthAnswerFromLabel — defers rather than guessing', () => {
     ).toBeNull();
     expect(workAuthAnswerFromLabel('How did you hear about us?', NO_SPONSORSHIP)).toBeNull();
   });
+
+  it('does not read a question about how the authorization was obtained as "are you authorized"', () => {
+    const label =
+      'Is your current U.S. work authorization based on your status as a spouse of an H-1B, L-1, or E-1/E-2/E-3 visa holder?';
+    expect(workAuthAnswerFromLabel(label, NO_SPONSORSHIP)).toBeNull();
+    expect(workAuthAnswerFromLabel(label, NEEDS_SPONSORSHIP)).toBeNull();
+  });
 });
 
 describe('isWorkEligibilityQuestion', () => {

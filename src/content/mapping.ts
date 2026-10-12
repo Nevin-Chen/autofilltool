@@ -1,7 +1,11 @@
 import type { Education, Experience, Profile } from '@/profile/schema';
 import type { FieldGroup, FieldKind } from '@/adapters/types';
 import { countryByIso, countryByName, splitPhone } from '@/lib/countries';
-import { workAuthAnswerFromLabel } from '@/lib/work-auth';
+import {
+  mentionsSponsorship,
+  mentionsWorkAuthorization,
+  workAuthAnswerFromLabel,
+} from '@/lib/work-auth';
 
 export function valueForField(
   profile: Profile,
@@ -54,9 +58,9 @@ export function valueForField(
       return profile.links.other || null;
 
     case 'authorizedToWorkInUS':
-      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.authorizedToWorkInUS);
+      return workAuthAnswer(profile, label, profile.workAuth.authorizedToWorkInUS, mentionsSponsorship);
     case 'requiresSponsorship':
-      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.requiresSponsorship);
+      return workAuthAnswer(profile, label, profile.workAuth.requiresSponsorship, mentionsWorkAuthorization);
     case 'willingToRelocate':
       return yesNo(profile.workAuth.willingToRelocate);
     case 'desiredSalary':
@@ -166,9 +170,16 @@ function phoneCountryName(profile: Profile): string | null {
   return profile.address.country || null;
 }
 
-function workAuthAnswer(profile: Profile, label: string | undefined): string | null {
-  if (!label) return null;
-  return workAuthAnswerFromLabel(label, profile.workAuth);
+function workAuthAnswer(
+  profile: Profile,
+  label: string | undefined,
+  saved: boolean | null,
+  mentionsOtherQuestion: (label: string) => boolean,
+): string | null {
+  if (!label) return yesNo(saved);
+  const read = workAuthAnswerFromLabel(label, profile.workAuth);
+  if (read) return read;
+  return mentionsOtherQuestion(label) ? null : yesNo(saved);
 }
 
 function yesNo(v: boolean | null): string | null {
