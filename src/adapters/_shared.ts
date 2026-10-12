@@ -850,8 +850,8 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
   if (field.widget === 'virtualizedDropdown' || field.widget === 'locateButton') {
     return { el, label, fieldType: 'combobox' };
   }
-  if (field.widget === 'shadowCombobox') {
-    return { el, label, fieldType: 'combobox', widget: 'shadowCombobox' };
+  if (field.widget === 'shadowCombobox' || field.widget === 'searchPrompt') {
+    return { el, label, fieldType: 'combobox', widget: field.widget };
   }
   if (field.widget === 'monthYearPicker') return null;
   if (el instanceof HTMLSelectElement) {

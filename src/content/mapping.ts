@@ -118,6 +118,9 @@ export function valueForField(
 
     case 'referralSource':
     case 'agreement':
+    case 'language':
+    case 'phoneType':
+    case 'screening':
       return null;
 
     case 'openEnded':

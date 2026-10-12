@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Workday "My Experience" fixture (formField wrappers, inline panels)</title>
+  </head>
+  <body>
+    <!--
+      Captured from a live <tenant>.wd5.myworkdayjobs.com apply flow, step 2
+      ("My Experience"), with hashed classes, data-uxi-* attributes and SVG
+      icons stripped. workday-my-experience.html is the older hand-written
+      shape with automation ids on the controls; this one is what Workday
+      renders today.
+
+      What this records:
+        * Each history section is a role="group" labelled by its heading
+          ("Work-Experience-section", "Education-section") and holds one
+          role="group" panel per entry ("Work-Experience-1-panel"). The page
+          starts with one empty panel; "Add Another" (add-button, outside
+          the panels) appends the next one. The unit test stubs that click.
+        * Control ids carry a running counter, not the panel position
+          (workExperience-8 here; the next panel came back as
+          workExperience-65), so position has to come from the panel.
+        * Dates are two role="spinbutton" inputs (month, year) inside
+          formField-startDate / formField-endDate.
+        * School and Field of Study are search prompts like "How Did You
+          Hear About Us?"; Degree is a listbox button.
+        * Languages proficiency wrappers are named by Workday ids, not words.
+    -->
+    <div data-automation-id="applyFlowMyExpPage">
+      <div role="group" aria-labelledby="Work-Experience-section">
+        <h4 id="Work-Experience-section">Work Experience</h4>
+        <div role="group" aria-labelledby="Work-Experience-1-panel">
+          <h5 id="Work-Experience-1-panel">Work Experience 1</h5>
+          <div data-automation-id="formField-jobTitle" data-fkit-id="workExperience-8--jobTitle">
+            <label for="workExperience-8--jobTitle"><span>Job Title<abbr aria-hidden="true">*</abbr></span></label>
+            <input type="text" aria-required="true" id="workExperience-8--jobTitle" name="jobTitle" value="" />
+          </div>
+          <div data-automation-id="formField-companyName" data-fkit-id="workExperience-8--companyName">
+            <label for="workExperience-8--companyName"><span>Company<abbr aria-hidden="true">*</abbr></span></label>
+            <input type="text" aria-required="true" id="workExperience-8--companyName" name="companyName" value="" />
+          </div>
+          <div data-automation-id="formField-location" data-fkit-id="workExperience-8--location">
+            <label for="workExperience-8--location">Location</label>
+            <input type="text" id="workExperience-8--location" name="location" value="" />
+          </div>
+          <div data-automation-id="formField-currentlyWorkHere" data-fkit-id="workExperience-8--currentlyWorkHere">
+            <label for="workExperience-8--currentlyWorkHere">I currently work here</label>
+            <input type="checkbox" id="workExperience-8--currentlyWorkHere" name="currentlyWorkHere" aria-checked="false" />
+          </div>
+          <div data-automation-id="formField-startDate" data-fkit-id="workExperience-8--startDate">
+            <fieldset>
+              <legend><label id="label55"><span>From<abbr aria-hidden="true">*</abbr></span></label></legend>
+              <div id="workExperience-8--startDate" role="group" data-automation-id="dateInputWrapper">
+                <div data-automation-id="dateSectionMonth-display" aria-hidden="true">MM</div>
+                <input role="spinbutton" aria-label="Month" aria-valuemax="12" aria-valuemin="1" id="workExperience-8--startDate-dateSectionMonth-input" data-automation-id="dateSectionMonth-input" value="" />
+                <div data-automation-id="dateSectionYear-display" aria-hidden="true">YYYY</div>
+                <input role="spinbutton" aria-label="Year" aria-valuemax="9999" aria-valuemin="1" id="workExperience-8--startDate-dateSectionYear-input" data-automation-id="dateSectionYear-input" value="" />
+              </div>
+            </fieldset>
+          </div>
+          <div data-automation-id="formField-endDate" data-fkit-id="workExperience-8--endDate">
+            <fieldset>
+              <legend><label id="label56"><span>To<abbr aria-hidden="true">*</abbr></span></label></legend>
+              <div id="workExperience-8--endDate" role="group" data-automation-id="dateInputWrapper">
+                <div data-automation-id="dateSectionMonth-display" aria-hidden="true">MM</div>
+                <input role="spinbutton" aria-label="Month" aria-valuemax="12" aria-valuemin="1" id="workExperience-8--endDate-dateSectionMonth-input" data-automation-id="dateSectionMonth-input" value="" />
+                <div data-automation-id="dateSectionYear-display" aria-hidden="true">YYYY</div>
+                <input role="spinbutton" aria-label="Year" aria-valuemax="9999" aria-valuemin="1" id="workExperience-8--endDate-dateSectionYear-input" data-automation-id="dateSectionYear-input" value="" />
+              </div>
+            </fieldset>
+          </div>
+          <div data-automation-id="formField-roleDescription" data-fkit-id="workExperience-8--roleDescription">
+            <label for="workExperience-8--roleDescription">Role Description</label>
+            <textarea id="workExperience-8--roleDescription" name="roleDescription"></textarea>
+          </div>
+        </div>
+        <button data-automation-id="add-button">Add Another</button>
+      </div>
+
+      <div role="group" aria-labelledby="Education-section">
+        <h4 id="Education-section">Education</h4>
+        <div role="group" aria-labelledby="Education-1-panel">
+          <h5 id="Education-1-panel">Education 1</h5>
+          <div data-automation-id="formField-school" data-fkit-id="education-9--school">
+            <label for="education-9--school"><span>School or University<abbr aria-hidden="true">*</abbr></span></label>
+            <div data-automation-id="multiSelectContainer" id="ms-school-1">
+              <div data-automation-id="multiselectInputContainer">
+                <input enterkeyhint="search" placeholder="Search" aria-required="true" autocomplete="off" id="education-9--school" value="" />
+                <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected"></ul>
+              </div>
+            </div>
+          </div>
+          <div data-automation-id="formField-degree" data-fkit-id="education-9--degree">
+            <label for="education-9--degree"><span>Degree<abbr aria-hidden="true">*</abbr></span></label>
+            <div>
+              <button aria-haspopup="listbox" type="button" value="" aria-label="Degree Select One Required" name="degree" id="education-9--degree">Select One</button>
+              <input type="text" value="" />
+            </div>
+          </div>
+          <div data-automation-id="formField-fieldOfStudy" data-fkit-id="education-9--fieldOfStudy">
+            <label for="education-9--fieldOfStudy">Field of Study</label>
+            <div data-automation-id="multiSelectContainer" id="ms-field-1">
+              <div data-automation-id="multiselectInputContainer">
+                <input enterkeyhint="search" placeholder="Search" autocomplete="off" id="education-9--fieldOfStudy" value="" />
+                <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected"></ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button data-automation-id="add-button">Add Another</button>
+      </div>
+
+      <div role="group" aria-labelledby="Languages-section">
+        <h4 id="Languages-section">Languages</h4>
+        <div role="group" aria-labelledby="Languages-1-panel">
+          <h5 id="Languages-1-panel">Languages 1</h5>
+          <div data-automation-id="formField-language" data-fkit-id="language-10--language">
+            <label for="language-10--language"><span>Language<abbr aria-hidden="true">*</abbr></span></label>
+            <button aria-haspopup="listbox" type="button" value="" name="language" id="language-10--language">Select One</button>
+          </div>
+          <div data-automation-id="formField-native" data-fkit-id="language-10--native">
+            <label for="language-10--native">I am fluent in this language.</label>
+            <input type="checkbox" id="language-10--native" name="native" />
+          </div>
+          <div data-automation-id="formField-3e82bdec28fd01a409e3cf270f110316" data-fkit-id="language-10--3e82bdec28fd01a409e3cf270f110316">
+            <label for="language-10--3e82bdec28fd01a409e3cf270f110316"><span>Read<abbr aria-hidden="true">*</abbr></span></label>
+            <button aria-haspopup="listbox" type="button" value="" id="language-10--3e82bdec28fd01a409e3cf270f110316">Select One</button>
+          </div>
+        </div>
+        <button data-automation-id="add-button">Add Another</button>
+      </div>
+
+      <div role="group" aria-labelledby="Skills-section">
+        <h4 id="Skills-section">Skills</h4>
+        <div data-automation-id="formField-skills" data-fkit-id="skills--skills">
+          <label for="skills--skills">Type to Add Skills</label>
+          <div data-automation-id="multiSelectContainer" id="ms-skills">
+            <div data-automation-id="multiselectInputContainer">
+              <input enterkeyhint="search" placeholder="Search" autocomplete="off" id="skills--skills" value="" />
+              <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div role="group" aria-labelledby="Social-Network-URLs-section">
+        <h4 id="Social-Network-URLs-section">Social Network URLs</h4>
+        <div data-automation-id="formField-linkedInAccount" data-fkit-id="socialNetworkAccounts--linkedInAccount">
+          <label for="socialNetworkAccounts--linkedInAccount">LinkedIn</label>
+          <input type="text" id="socialNetworkAccounts--linkedInAccount" name="linkedInAccount" value="" />
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

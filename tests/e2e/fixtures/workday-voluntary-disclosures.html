@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Workday "Voluntary Disclosures" fixture</title>
+  </head>
+  <body>
+    <!--
+      Captured from a live <tenant>.wd5.myworkdayjobs.com apply flow, step 4
+      ("Voluntary Disclosures"), with hashed classes and data-uxi-*
+      attributes stripped and the employer's short name replaced.
+
+      Workday names the race question's wrapper "ethnicity" and puts the
+      Hispanic/Latino question in its own "hispanicOrLatino" wrapper, so the
+      labels, not the wrapper names, say which profile answer goes where.
+      The race options carry a "(Not Hispanic or Latino) (United States of
+      America)" tail and use Workday's own wording ("Native American",
+      "Hawaiian or Pacific Islander").
+    -->
+    <div data-automation-id="applyFlowVoluntaryDisclosuresPage">
+      <div data-automation-id="formField-gender" data-fkit-id="personalInfoUS--gender">
+        <label for="personalInfoUS--gender"><span>Gender<abbr aria-hidden="true">*</abbr></span></label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="Gender Select One Required" name="gender" id="personalInfoUS--gender">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-hispanicOrLatino" data-fkit-id="personalInfoUS--hispanicOrLatino">
+        <label for="personalInfoUS--hispanicOrLatino">Are you Hispanic or Latino?</label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="Are you Hispanic or Latino? Select One" name="hispanicOrLatino" id="personalInfoUS--hispanicOrLatino">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-ethnicity" data-fkit-id="personalInfoUS--ethnicity">
+        <label for="personalInfoUS--ethnicity"><span>Race<abbr aria-hidden="true">*</abbr></span></label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="Race Select One Required" name="ethnicity" id="personalInfoUS--ethnicity">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-acceptTermsAndAgreements" data-fkit-id="termsAndConditions--acceptTermsAndAgreements">
+        <label for="termsAndConditions--acceptTermsAndAgreements">I willingly accept the Terms and Conditions for submitting an application with Globex.<abbr aria-hidden="true">*</abbr></label>
+        <input id="termsAndConditions--acceptTermsAndAgreements" type="checkbox" aria-checked="false" name="acceptTermsAndAgreements" aria-required="true" />
+      </div>
+    </div>
+  </body>
+</html>

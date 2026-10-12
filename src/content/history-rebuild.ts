@@ -3,6 +3,7 @@ import type {
   HistoryEditor,
   HistoryEntrySummary,
   HistoryGroupKind,
+  HistoryPanels,
 } from '@/adapters/types';
 import {
   hasHistoryContent,
@@ -109,6 +110,42 @@ async function rebuildSection(
     const cards = editor.entries(root, kind);
     const card = (editor.newEntryFirst ? cards[0] : cards[cards.length - 1]) ?? null;
     out.push(outcome('filled', entryNote(results), card, label));
+  }
+  return out;
+}
+
+export async function addHistoryPanels(
+  root: Document,
+  panels: HistoryPanels,
+  profile: Profile,
+): Promise<HistoryOutcome[]> {
+  const out: HistoryOutcome[] = [];
+  for (const kind of ['experience', 'education'] as const) {
+    const wanted = savedEntries(profile, kind).length;
+    let have = panels.panels(root, kind).length;
+    while (have < wanted) {
+      const add = panels.addButton(root, kind);
+      if (!add || isSubmitShaped(add)) break;
+      add.click();
+      const before = have;
+      const grown = await waitFor(root, () => {
+        const count = panels.panels(root, kind).length;
+        return count > before ? count : null;
+      });
+      if (grown === null) {
+        out.push({
+          action: {
+            label: SECTION_LABELS[kind],
+            kind,
+            status: 'error',
+            note: `the Add button did not open entry ${before + 1} of ${wanted}`,
+          },
+          el: add,
+        });
+        break;
+      }
+      have = grown;
+    }
   }
   return out;
 }

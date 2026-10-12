@@ -13,7 +13,10 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Forms built from web components (SmartRecruiters) keep every input inside a shadow root. The filler reaches into them, picks from their custom dropdowns, and presses Enter on month/year pickers that ignore a typed date until you do
 - SmartRecruiters one-click apply is two steps. Fill handles the profile page; after **Next**, the Fill pill comes back on the Preliminary questions page for the self-identification answers
 - On that second page, "How did you hear about this job?" gets the option for an online job listing (not a fair, an event, or a referral), and the required certify, terms, and privacy-notice boxes are ticked. Read them before you submit: ticking one agrees on your behalf
+- Workday's apply wizard (My Information, My Experience, Application Questions, Voluntary Disclosures) gets the Fill pill back on every step after **Save and Continue**, on both `myworkdayjobs.com` and `myworkdaysite.com` tenants
+- On Workday, "How did you hear about us?" gets LinkedIn, Phone Device Type gets Mobile, and an acknowledgement that asks for today's date gets today's date. Questions the employer wrote are answered from your profile only when they ask about work authorization, sponsorship, relocation, or self-identification; everything else goes to the AI with the question as written
 - Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
+- US and Canadian numbers go in as `212-555-0142`, without the `+1`
 - Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
 - Location fields that search as you type get your saved city typed in and the top suggestion taken, so `Austin, TX` still lands on the `Austin, Texas, United States` the form wants. The search is given up to four seconds to answer instead of being written off as a miss
 - Skips fields that already have a value, including a search-as-you-type field you already picked a result in. **Force overwrite** if you want it to go over them again. Radios, checkboxes, and Yes/No toggles that already hold the right answer are never re-clicked: on forms where clicking the selected option clears it, a second click would wipe the answer
@@ -37,7 +40,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - Adds a "Suggest" textarea form fields
 - It reads the job description off the page, the text out of your résumé, and your profile before writing
 - Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription through the local bridge
-- **Use AI for skipped fields** lets the model answer whatever the profile could not. By default it only touches fields the form marks required (`required`, `aria-required`, a `*` or `✱` on the label); optional fields are listed as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
+- **Use AI for skipped fields** lets the model answer whatever the profile could not. It sees your saved jobs and schools and the role you're applying for, so "have you worked here before" or "do you meet the experience requirement" is answered from your history. By default it only touches fields the form marks required (`required`, `aria-required`, a `*` or `✱` on the label); optional fields are listed as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Voluntary Self-Identification**
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options
@@ -45,6 +48,8 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - "I am not a protected veteran" picks a plain "I am not a veteran" when a form offers both that and "a veteran, but not a protected veteran"
 - Nothing here is ever guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
 - Sponsorship and work-authorization questions are answered from your saved Options answer, not by the model, and the wording is read before answering: "do you require sponsorship" gets No where "can you work without sponsorship" gets Yes
+- A question about how you got your work authorization ("is it based on being the spouse of an H-1B holder?") is not answered from the authorized-to-work toggle. The AI gets it along with your saved answers
+- A question that mentions disability or religion only as an exception ("other than for reasons related to a disability, can you work onsite four days a week?") is not treated as a self-identification question
 
 #### **Submission Tracking**
 - Every apply goes to local history, browsable from the popup, exportable to CSV

@@ -11,6 +11,7 @@ import {
   fillDetectedField,
   fillVirtualizedDropdown,
   fillShadowCombobox,
+  fillSearchPrompt,
   fillCheckboxGroup,
   fillButtonGroup,
   harvestComboboxOptions,
@@ -22,7 +23,7 @@ import {
   type FillAction,
 } from './filler';
 import { valueForField } from './mapping';
-import { rebuildHistory, type HistoryOutcome } from './history-rebuild';
+import { addHistoryPanels, rebuildHistory, type HistoryOutcome } from './history-rebuild';
 import { assignHistoryGroups } from '@/adapters/history-groups';
 import { workAuthAnswerFromLabel } from '@/lib/work-auth';
 import {
@@ -31,7 +32,12 @@ import {
   selfIdKindFromLabel,
   unclassifiedFromDetected,
 } from '@/adapters/_shared';
-import type { DetectedField, SelfIdKind, UnclassifiedField } from '@/adapters/types';
+import type {
+  DetectedField,
+  PlatformAdapter,
+  SelfIdKind,
+  UnclassifiedField,
+} from '@/adapters/types';
 import type { JobContext } from './job-context';
 import { getProfile, getSettings, getResumeLibrary } from '@/profile/store';
 import { resumeRecordToFile } from '@/profile/resume';
@@ -40,7 +46,7 @@ import {
   resolveResumeVariant,
   variantById,
 } from '@/profile/resume-select';
-import type { ResumeLibrary, ResumeVariant, Settings } from '@/profile/schema';
+import type { Profile, ResumeLibrary, ResumeVariant, Settings } from '@/profile/schema';
 import { sendToBackground } from '@/lib/messaging';
 import {
   resolveAiOption,
@@ -87,12 +93,15 @@ const IS_IFRAME = (() => {
 
 const TRIGGER_OBSERVE_MS = 30_000;
 const TRIGGER_OBSERVE_DEBOUNCE_MS = 250;
+const PAGE_KEY_DEBOUNCE_MS = 300;
 const PARENT_RETRY_MS = 500;
 const PARENT_MAX_RETRIES = 5;
 let parentAckReceived = false;
 let pendingParentFillHandler: (() => void) | null = null;
 let triggerRunId = 0;
 let triggerUrl = '';
+let triggerPageKey: string | null = null;
+let pageKeyWatcher: MutationObserver | null = null;
 
 declare global {
   interface Window {
@@ -108,6 +117,7 @@ if (window.__autofilltool_loaded__) {
   if (IS_IFRAME) installParentMessageListener();
   void maybeAutoLogOnLoad();
   void maybeShowTrigger();
+  watchPageKey();
   log.debug('content script loaded on', location.href);
 }
 
@@ -118,21 +128,48 @@ function rearmTriggerForRoute(url: string): boolean {
   return true;
 }
 
+function currentPageKey(): string | null {
+  try {
+    return pickAdapter(new URL(location.href), document).pageKey?.(document) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function watchPageKey(): void {
+  const body = document.body;
+  if (pageKeyWatcher || !body) return;
+  if (!pickAdapter(new URL(location.href), document).pageKey) return;
+  let timer: number | null = null;
+  pageKeyWatcher = new MutationObserver(() => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      const key = currentPageKey();
+      if (key === null || key === triggerPageKey) return;
+      resetFillTriggerForNavigation();
+      void maybeShowTrigger();
+    }, PAGE_KEY_DEBOUNCE_MS) as unknown as number;
+  });
+  pageKeyWatcher.observe(body, { childList: true, subtree: true });
+}
+
 async function maybeShowTrigger(): Promise<void> {
   const runId = ++triggerRunId;
   triggerUrl = location.href;
+  triggerPageKey = currentPageKey();
   const isStale = (): boolean => runId !== triggerRunId;
   const tryDetect = (): boolean => {
     try {
       const url = new URL(location.href);
       const adapter = pickAdapter(url, document);
-      const fields = adapter.detectFields(document);
-      if (fields.length === 0) return false;
+      const detected = fillableFieldCount(adapter);
+      if (detected === 0) return false;
+      triggerPageKey = adapter.pageKey?.(document) ?? null;
       if (IS_IFRAME) {
-        notifyParentOfFields(fields.length, () => void triggerInPageFill());
+        notifyParentOfFields(detected, () => void triggerInPageFill());
       } else {
         showFillTrigger({
-          detected: fields.length,
+          detected,
           onFill: () => void triggerInPageFill(),
         });
       }
@@ -150,6 +187,15 @@ async function maybeShowTrigger(): Promise<void> {
   }
 
   await observeForTrigger(tryDetect, isStale);
+}
+
+function fillableFieldCount(adapter: PlatformAdapter): number {
+  const known =
+    adapter.detectFields(document).length + (adapter.siteAnswers?.(document).length ?? 0);
+  if (known > 0 || !adapter.detectAll) return known;
+  return adapter
+    .detectAll(document)
+    .unclassified.filter((u) => isRequiredField(u.el, u.label)).length;
 }
 
 function observeForTrigger(
@@ -181,6 +227,39 @@ function observeForTrigger(
     observer.observe(body, { childList: true, subtree: true });
     const cap = setTimeout(finish, TRIGGER_OBSERVE_MS);
   });
+}
+
+type FilledAt = Map<HTMLElement | string, number>;
+
+const RECHECK_HOLDS: ReadonlySet<string> = new Set(['already filled', 'already in desired state']);
+
+function fieldKey(el: HTMLElement): HTMLElement | string {
+  return el.id || el;
+}
+
+async function recheckFilled(
+  adapter: PlatformAdapter,
+  profile: Profile,
+  fields: DetectedField[],
+  filledAt: FilledAt,
+  actions: FillAction[],
+): Promise<void> {
+  const opts = { forceOverwrite: false, suppressFlash: true };
+  const settle = (el: HTMLElement, again: FillAction): void => {
+    const index = filledAt.get(fieldKey(el));
+    if (index === undefined) return;
+    if (again.status === 'filled' || RECHECK_HOLDS.has(again.note ?? '')) return;
+    actions[index] = again;
+  };
+  for (const answer of adapter.siteAnswers?.(document) ?? []) {
+    if (!filledAt.has(fieldKey(answer.field.el))) continue;
+    settle(answer.field.el, await fillSiteAnswer(answer, opts));
+  }
+  for (const field of fields) {
+    if (!field.el.isConnected || !filledAt.has(fieldKey(field.el))) continue;
+    const value = valueForField(profile, field.kind, field.label, field.group);
+    settle(field.el, await fillDetectedField(field, value, opts));
+  }
 }
 
 async function triggerInPageFill(): Promise<void> {
@@ -520,7 +599,11 @@ async function runFill(forceFromMsg?: boolean) {
         ),
       )
     : [];
+  if (adapter.historyPanels) {
+    historyOutcomes.push(...(await addHistoryPanels(document, adapter.historyPanels, profile)));
+  }
 
+  const fieldsDetected = fillableFieldCount(adapter);
   const fields = assignHistoryGroups(adapter.detectFields(document));
   if (animate) pillProgress(0, fields.length);
 
@@ -536,11 +619,13 @@ async function runFill(forceFromMsg?: boolean) {
       el,
     });
   }
+  const filledAt: FilledAt = new Map();
   for (const siteAnswer of adapter.siteAnswers?.(document) ?? []) {
     const { field } = siteAnswer;
     const action = await fillSiteAnswer(siteAnswer, { forceOverwrite, suppressFlash: animate });
     actions.push(action);
     if (action.status === 'filled') {
+      filledAt.set(fieldKey(field.el), actions.length - 1);
       reviewItems.push({ group: 'filled', label: action.label, el: field.el });
       if (animate) applyFlash(field.el);
     } else if (action.status === 'skipped') {
@@ -559,6 +644,7 @@ async function runFill(forceFromMsg?: boolean) {
     actions.push(action);
     if (field.el instanceof HTMLElement) {
       if (action.status === 'filled') {
+        filledAt.set(fieldKey(field.el), actions.length - 1);
         reviewItems.push({ group: 'filled', label: action.label, el: field.el });
       } else if (action.status === 'skipped') {
         reviewItems.push({ group: 'skipped', label: action.label, el: field.el });
@@ -594,6 +680,7 @@ async function runFill(forceFromMsg?: boolean) {
     });
     actions.push(action);
     if (action.status === 'filled') {
+      filledAt.set(fieldKey(field.el), actions.length - 1);
       reviewItems.push({ group: 'filled', label: action.label, el: field.el });
       if (animate) applyFlash(field.el);
     } else if (action.status === 'skipped') {
@@ -603,6 +690,11 @@ async function runFill(forceFromMsg?: boolean) {
         if (u) skippedForAi.push(u);
       }
     }
+  }
+
+  if (adapter.recheckAfterMs) {
+    await delay(adapter.recheckAfterMs);
+    await recheckFilled(adapter, profile, [...fields, ...newFields], filledAt, actions);
   }
 
   let resumeStatus: 'attached' | 'skipped' | 'notFound' | 'noResume' | 'noHook' =
@@ -862,10 +954,21 @@ async function runFill(forceFromMsg?: boolean) {
       skipped,
       failed,
       total: actions.length,
-      fieldsDetected: fields.length,
+      fieldsDetected,
       actions: wire,
     },
   };
+}
+
+type ComboboxFiller = (
+  field: DetectedField,
+  value: string,
+  opts: { forceOverwrite: boolean; suppressFlash: boolean; preferFirstOption: boolean },
+) => Promise<FillAction>;
+
+function comboboxFiller(widget: UnclassifiedField['widget']): ComboboxFiller {
+  if (widget === 'searchPrompt') return fillSearchPrompt;
+  return widget === 'shadowCombobox' ? fillShadowCombobox : fillVirtualizedDropdown;
 }
 
 function isRetryableSkip(note: string | undefined): boolean {
@@ -917,6 +1020,7 @@ async function runAiFallbackQueue(
     try {
       if (
         u.fieldType === 'combobox' &&
+        u.widget !== 'searchPrompt' &&
         (!u.options || u.options.length === 0) &&
         u.el instanceof HTMLElement
       ) {
@@ -937,7 +1041,11 @@ async function runAiFallbackQueue(
       } else {
         try {
           const fieldTypeForAi =
-            u.fieldType === 'buttongroup' ? 'radio' : u.fieldType;
+            u.fieldType === 'buttongroup'
+              ? 'radio'
+              : u.widget === 'searchPrompt'
+                ? 'text'
+                : u.fieldType;
           const request: {
             question: string;
             description?: string;
@@ -1078,9 +1186,7 @@ async function runAiFallbackQueue(
         };
         let action: FillAction;
         if (u.fieldType === 'combobox') {
-          const fillCombobox =
-            u.widget === 'shadowCombobox' ? fillShadowCombobox : fillVirtualizedDropdown;
-          action = await fillCombobox(fakeField, value, {
+          action = await comboboxFiller(u.widget)(fakeField, value, {
             forceOverwrite,
             suppressFlash: true,
             preferFirstOption: !u.options || u.options.length === 0,
