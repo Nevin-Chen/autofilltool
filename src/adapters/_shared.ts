@@ -723,12 +723,19 @@ export const COMPLIANCE_PATTERN = new RegExp(
   'i',
 );
 
+const EXCEPTION_CLAUSE_RE =
+  /\b(?:other than|except(?: for)?|aside from|apart from)\b[^?]*?,\s*(?=(?:are|can|could|do|does|have|is|will|would)\b)/gi;
+
+export function withoutExceptionClauses(label: string): string {
+  return label.replace(EXCEPTION_CLAUSE_RE, ' ');
+}
+
 export function isCompliancePattern(label: string): boolean {
-  return COMPLIANCE_PATTERN.test(label);
+  return COMPLIANCE_PATTERN.test(withoutExceptionClauses(label));
 }
 
 export function selfIdKindFromLabel(label: string): SelfIdKind | null {
-  const hit = fromKeywords(normalize(label));
+  const hit = fromKeywords(normalize(withoutExceptionClauses(label)));
   if (!hit) return null;
   return isSelfIdKind(hit.kind) ? hit.kind : null;
 }
