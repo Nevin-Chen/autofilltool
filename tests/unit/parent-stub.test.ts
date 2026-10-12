@@ -40,6 +40,7 @@ describe('parent-stub — postMessage protocol', () => {
       'https://jobs.lever.co',
       'https://jobs.ashbyhq.com',
       'https://nvidia.myworkdayjobs.com',
+      'https://wd1.myworkdaysite.com',
     ];
     for (const origin of hosts) {
       __resetAffordanceForTests();

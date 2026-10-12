@@ -6,6 +6,7 @@ const SHARED_ATS_HOSTS: ReadonlyArray<RegExp> = [
   /(^|\.)ashbyhq\.com$/i,
   /(^|\.)workable\.com$/i,
   /(^|\.)smartrecruiters\.com$/i,
+  /(^|\.)myworkdaysite\.com$/i,
 ];
 
 export function companyKeyFromUrl(url: URL | string): string {
@@ -29,6 +30,11 @@ export function companyKeyFromUrl(url: URL | string): string {
     const at = segments.indexOf('company');
     const company = at === -1 ? '' : (segments[at + 1] ?? '');
     return company ? `${host}/${company}` : host;
+  }
+
+  if (segments.includes('recruiting')) {
+    const tenant = segments[segments.indexOf('recruiting') + 1] ?? '';
+    return tenant ? `${host}/${tenant}` : host;
   }
 
   if (segment === 'embed') {

@@ -83,6 +83,10 @@ function companyFromAtsUrl(url: URL): string | null {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
   }
+  if (url.hostname.endsWith('myworkdaysite.com')) {
+    const tenant = workdaySiteTenant(url);
+    if (tenant) return titleCase(tenant.replace(/-/g, ' '));
+  }
   if (url.hostname.endsWith('applytojob.com')) {
     const sub = url.hostname.split('.')[0];
     if (sub) return titleCase(sub.replace(/-/g, ' '));
@@ -102,6 +106,12 @@ function companyFromAtsUrl(url: URL): string | null {
     if (company) return titleCase(company.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/-/g, ' '));
   }
   return null;
+}
+
+function workdaySiteTenant(url: URL): string | null {
+  const parts = url.pathname.split('/').filter(Boolean);
+  const at = parts.indexOf('recruiting');
+  return at === -1 ? null : (parts[at + 1] ?? null);
 }
 
 function readJobPostingLd(doc: Document): { title?: string; company?: string } | null {

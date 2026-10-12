@@ -121,7 +121,7 @@ export const workdayAdapter: PlatformAdapter = {
   id: 'workday',
   name: 'Workday',
   matches: (url, doc) => {
-    if (/(^|\.)myworkdayjobs\.com$/.test(url.hostname)) return true;
+    if (/(^|\.)myworkday(jobs|site)\.com$/.test(url.hostname)) return true;
     return !!doc.querySelector('[data-automation-id]');
   },
   detectFields,

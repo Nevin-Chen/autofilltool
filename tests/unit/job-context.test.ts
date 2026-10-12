@@ -59,6 +59,14 @@ describe('extractJobContext', () => {
     expect(ctx.company).toBe('Boston Dynamics');
   });
 
+  it('derives company from the tenant in a myworkdaysite.com URL', () => {
+    const ctx = extractJobContext(
+      document,
+      new URL('https://wd1.myworkdaysite.com/en-US/recruiting/recursion-pharma/careers/job/x/apply'),
+    );
+    expect(ctx.company).toBe('Recursion Pharma');
+  });
+
   it('strips utm tracking params from jobUrl', () => {
     const ctx = extractJobContext(
       document,
