@@ -7,6 +7,7 @@ import {
 } from '@/lib/events';
 import { bestLabel, deepQueryAll, findLocateButton } from '@/adapters/_shared';
 import type { DetectedField, SiteAnswer } from '@/adapters/types';
+import { usStateName } from '@/lib/us-states';
 
 const SUBMIT_DENY = /\b(submit|apply now|send application|continue to submit)\b/i;
 
@@ -168,6 +169,8 @@ export async function fillDetectedField(
       return fillShadowCombobox(field, value, opts);
     case 'monthYearPicker':
       return fillMonthYearPicker(field, value, opts);
+    case 'searchPrompt':
+      return fillSearchPrompt(field, value, opts);
     default:
       return fillField(field, value, opts);
   }
@@ -735,7 +738,7 @@ export async function fillVirtualizedDropdown(
   if (rawValue === null || rawValue === undefined || rawValue === '') {
     return { label, kind, status: 'skipped', note: 'no value in profile' };
   }
-  const want = String(rawValue).trim();
+  const want = optionTextFor(kind, String(rawValue).trim());
   if (!want) {
     return { label, kind, status: 'skipped', note: 'no value in profile' };
   }
@@ -886,6 +889,10 @@ export async function fillVirtualizedDropdown(
   trigger.dispatchEvent(new Event('change', { bubbles: true }));
   if (!opts.suppressFlash) flashFilled(trigger);
   return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
+}
+
+function optionTextFor(kind: string, value: string): string {
+  return (kind === 'region' && usStateName(value)) || value;
 }
 
 const LOCATE_RESULT_TIMEOUT_MS = 4000;
@@ -1082,6 +1089,7 @@ export async function fillSiteAnswer(
   { field, answer }: SiteAnswer,
   opts: FillOptions,
 ): Promise<FillAction> {
+  if (field.widget === 'virtualizedDropdown') return fillDropdownSiteAnswer({ field, answer }, opts);
   if (field.widget !== 'shadowCombobox') return fillDetectedField(field, answer([]), opts);
   const meta: Meta = { label: field.label, kind: field.kind };
   const input = shadowComboboxInput(field.el);
@@ -1095,6 +1103,185 @@ export async function fillSiteAnswer(
     return { ...meta, status: 'skipped', note: 'no option matched the site default' };
   }
   return fillShadowCombobox(field, value, opts);
+}
+
+async function fillDropdownSiteAnswer(
+  { field, answer }: SiteAnswer,
+  opts: FillOptions,
+): Promise<FillAction> {
+  const meta: Meta = { label: field.label, kind: field.kind };
+  const trigger = field.el;
+  if (!opts.forceOverwrite && comboboxHasValue(trigger)) {
+    return { ...meta, status: 'skipped', note: 'already filled' };
+  }
+  const root = trigger.ownerDocument;
+  const preexisting = snapshotOpenListboxes(root);
+  openCombobox(trigger);
+  const listbox = await waitForListbox(root, trigger, 1500, preexisting);
+  if (!listbox) return { ...meta, status: 'skipped', note: 'dropdown popup did not appear' };
+
+  const texts = Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'))
+    .filter((el) => !isDisabled(el))
+    .map(textOfNode);
+  const value = answer(texts);
+  const option = value === null ? null : pickListboxOption(listbox, String(value));
+  if (!option) {
+    try {
+      trigger.click();
+    } catch {
+    }
+    return { ...meta, status: 'skipped', note: 'no option matched the site default' };
+  }
+  selectOption(option);
+  trigger.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!opts.suppressFlash) flashFilled(trigger);
+  return { ...meta, status: 'filled', note: `picked "${textOfNode(option)}"` };
+}
+
+const PROMPT_POLL_MS = 50;
+const PROMPT_SEARCH_TIMEOUT_MS = 20_000;
+const PROMPT_SELECTION_TIMEOUT_MS = 1500;
+const PROMPT_NO_ITEMS = '\u0000no items';
+
+type PromptOutcome = { selected: string } | { options: ShadowOption[] };
+type PromptResults = { options: ShadowOption[]; noItems: boolean };
+
+export async function fillSearchPrompt(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: FillOptions,
+): Promise<FillAction> {
+  const meta: Meta = { label: field.label, kind: field.kind };
+  const want = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+  if (!want) return { ...meta, status: 'skipped', note: 'no value in profile' };
+  const input = field.el;
+  const container = input.closest<HTMLElement>('[data-automation-id="multiSelectContainer"]');
+  if (!(input instanceof HTMLInputElement) || !container) {
+    return { ...meta, status: 'unsupported', note: 'search picker not found' };
+  }
+  const before = promptSelections(container);
+  if (before.length > 0 && (!opts.forceOverwrite || matchOptionText(before, want) !== null)) {
+    return { ...meta, status: 'skipped', note: 'already filled' };
+  }
+
+  const stale = promptSignature(promptResults(container));
+  enterField(input);
+  typeInto(input, want);
+  pressEnter(input);
+  const outcome = await waitForPromptOutcome(container, before, stale);
+  if (outcome && 'selected' in outcome) {
+    if (!opts.suppressFlash) flashFilled(input);
+    return { ...meta, status: 'filled', note: `the search picked "${outcome.selected}"` };
+  }
+
+  const options = outcome?.options ?? [];
+  const index = matchOptionText(options.map((o) => o.text), want);
+  const picked = index === null ? undefined : options[index];
+  if (!picked) {
+    typeInto(input, '');
+    closeCombobox(input, false);
+    const note =
+      options.length === 0
+        ? `no results for "${truncate(want, 60)}"`
+        : `no option matched "${truncate(want, 60)}"`;
+    return { ...meta, status: 'skipped', note };
+  }
+
+  selectOption(picked.el);
+  if (!(await waitForPromptSelection(container, before))) {
+    return { ...meta, status: 'error', note: `the picker did not take "${picked.text}"` };
+  }
+  if (!opts.suppressFlash) flashFilled(input);
+  return { ...meta, status: 'filled', note: `picked "${picked.text}"` };
+}
+
+function promptSelections(container: HTMLElement): string[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>('[data-automation-id="selectedItem"]'),
+  )
+    .map(textOfNode)
+    .filter(Boolean);
+}
+
+function newPromptSelection(container: HTMLElement, before: string[]): string | null {
+  return promptSelections(container).find((text) => !before.includes(text)) ?? null;
+}
+
+function promptResults(container: HTMLElement): PromptResults {
+  const none: PromptResults = { options: [], noItems: false };
+  if (!container.id) return none;
+  const popup = Array.from(
+    container.ownerDocument.querySelectorAll<HTMLElement>(
+      '[data-automation-id="responsiveMonikerPrompt"]',
+    ),
+  ).find((el) => el.getAttribute('data-associated-widget') === container.id);
+  if (!popup) return none;
+  const options: ShadowOption[] = [];
+  let noItems = false;
+  for (const option of Array.from(popup.querySelectorAll<HTMLElement>('[role="option"]'))) {
+    if (!option.querySelector('[data-automation-id="promptLeafNode"]')) continue;
+    if (option.id === 'menuItem-') {
+      noItems = true;
+      continue;
+    }
+    const label =
+      option.querySelector<HTMLElement>('[data-automation-id="promptOption"]') ?? option;
+    const text = textOfNode(label);
+    if (text) options.push({ el: label, text });
+  }
+  return { options, noItems };
+}
+
+function promptSignature({ options, noItems }: PromptResults): string {
+  return noItems ? PROMPT_NO_ITEMS : options.map((o) => o.text).join('\n');
+}
+
+function waitForPromptOutcome(
+  container: HTMLElement,
+  before: string[],
+  stale: string,
+): Promise<PromptOutcome | null> {
+  const view = container.ownerDocument.defaultView ?? window;
+  const started = Date.now();
+  let fresh = stale === '';
+  let lastCount = -1;
+  let stableSince = started;
+  return new Promise((resolve) => {
+    const poll = (): void => {
+      const selected = newPromptSelection(container, before);
+      if (selected) return resolve({ selected });
+      const results = promptResults(container);
+      const now = Date.now();
+      if (promptSignature(results) !== stale) fresh = true;
+      if (fresh && results.noItems) return resolve({ options: [] });
+      const options = fresh ? results.options : [];
+      if (options.length !== lastCount) {
+        lastCount = options.length;
+        stableSince = now;
+      }
+      if (options.length > 0 && now - stableSince >= SUGGESTION_SETTLE_MS) {
+        return resolve({ options });
+      }
+      if (now - started >= PROMPT_SEARCH_TIMEOUT_MS) {
+        return resolve(options.length > 0 ? { options } : null);
+      }
+      view.setTimeout(poll, PROMPT_POLL_MS);
+    };
+    poll();
+  });
+}
+
+function waitForPromptSelection(container: HTMLElement, before: string[]): Promise<boolean> {
+  const view = container.ownerDocument.defaultView ?? window;
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const poll = (): void => {
+      if (newPromptSelection(container, before)) return resolve(true);
+      if (Date.now() - started >= PROMPT_SELECTION_TIMEOUT_MS) return resolve(false);
+      view.setTimeout(poll, PROMPT_POLL_MS);
+    };
+    poll();
+  });
 }
 
 function shadowComboboxInput(host: HTMLElement): HTMLInputElement | null {
@@ -1419,6 +1606,13 @@ function matchOptionText(
 
 const ANSWER_ALIASES: ReadonlyArray<{ want: RegExp; option: RegExp }> = [
   { want: /\bnot a protected veteran\b/, option: /^(no,?\s*)?i am not a veteran\b/ },
+  { want: /^high school diploma$/, option: /\b(high school|hs)\b/ },
+  { want: /^associate's degree$/, option: /\bassociate/ },
+  { want: /^bachelor's degree$/, option: /\bbachelor/ },
+  { want: /^master's degree$/, option: /\bmaster/ },
+  { want: /^phd$/, option: /\b(ph\.?\s?d|doctor)/ },
+  { want: /^american indian or alaska native$/, option: /\b(american indian|native american|alaska)/ },
+  { want: /^native hawaiian or other pacific islander$/, option: /\b(hawaiian|pacific islander)/ },
 ];
 
 function waitForListbox(

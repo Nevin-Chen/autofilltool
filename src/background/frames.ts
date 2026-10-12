@@ -5,6 +5,7 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)lever\.co$/i,
   /(^|\.)ashbyhq\.com$/i,
   /(^|\.)myworkdayjobs\.com$/i,
+  /(^|\.)myworkdaysite\.com$/i,
   /(^|\.)applytojob\.com$/i,
   /(^|\.)workable\.com$/i,
   /(^|\.)breezy\.hr$/i,

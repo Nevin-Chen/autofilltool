@@ -48,6 +48,9 @@ export type FieldKind =
   | 'coverLetter'
   | 'referralSource'
   | 'agreement'
+  | 'language'
+  | 'phoneType'
+  | 'screening'
   | 'openEnded';
 
 export type HistoryGroupKind = 'experience' | 'education';
@@ -121,7 +124,8 @@ export type DetectedField = {
     | 'buttonGroup'
     | 'locateButton'
     | 'shadowCombobox'
-    | 'monthYearPicker';
+    | 'monthYearPicker'
+    | 'searchPrompt';
   group?: FieldGroup;
   datePart?: 'month' | 'year';
 };
@@ -133,7 +137,7 @@ export type UnclassifiedField = {
   label: string;
   fieldType: UnclassifiedFieldType;
   options?: string[];
-  widget?: 'shadowCombobox';
+  widget?: 'shadowCombobox' | 'searchPrompt';
 };
 
 export type DetectionResult = {
@@ -160,6 +164,11 @@ export interface HistoryEditor {
   summary(entry: HTMLElement): HistoryEntrySummary;
 }
 
+export interface HistoryPanels {
+  panels(root: Document, kind: HistoryGroupKind): HTMLElement[];
+  addButton(root: Document, kind: HistoryGroupKind): HTMLElement | null;
+}
+
 export interface PlatformAdapter {
   readonly id: AdapterId;
   readonly name: string;
@@ -167,9 +176,12 @@ export interface PlatformAdapter {
   detectFields(root: Document): DetectedField[];
   detectAll?(root: Document): DetectionResult;
   historyEditor?: HistoryEditor;
+  historyPanels?: HistoryPanels;
   fillResume?(file: File, root: Document): Promise<boolean>;
   resumeAttached?(root: Document): boolean;
   siteAnswers?(root: Document): SiteAnswer[];
   getJobDescription(doc: Document): string;
   detectSubmissionConfirmed?(doc: Document, url: URL): boolean;
+  pageKey?(doc: Document): string | null;
+  recheckAfterMs?: number;
 }

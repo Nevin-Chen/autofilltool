@@ -438,7 +438,7 @@ self.addEventListener('activate', () => {
 });
 
 const ATS_HOST_RE =
-  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|applytojob\.com|workable\.com|breezy\.hr|smartrecruiters\.com)$/i;
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkday(?:jobs|site)\.com|applytojob\.com|workable\.com|breezy\.hr|smartrecruiters\.com)$/i;
 
 function isAtsUrl(raw: string | undefined): boolean {
   if (!raw) return false;

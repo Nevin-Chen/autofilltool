@@ -9,50 +9,67 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 ## Features
 
 #### **Auto-fill**
-- Per-ATS selectors for Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters, with a heuristic fallback for anything else
-- Forms built from web components (SmartRecruiters) keep every input inside a shadow root. The filler reaches into them, picks from their custom dropdowns, and presses Enter on month/year pickers that ignore a typed date until you do
-- SmartRecruiters one-click apply is two steps. Fill handles the profile page; after **Next**, the Fill pill comes back on the Preliminary questions page for the self-identification answers
-- On that second page, "How did you hear about this job?" gets the option for an online job listing (not a fair, an event, or a referral), and the required certify, terms, and privacy-notice boxes are ticked. Read them before you submit: ticking one agrees on your behalf
-- Phone fields that come with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
-- Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't hand over a location
-- Location fields that search as you type get your saved city typed in and the top suggestion taken, so `Austin, TX` still lands on the `Austin, Texas, United States` the form wants. The search is given up to four seconds to answer instead of being written off as a miss
-- Skips fields that already have a value, including a search-as-you-type field you already picked a result in. **Force overwrite** if you want it to go over them again. Radios, checkboxes, and Yes/No toggles that already hold the right answer are never re-clicked: on forms where clicking the selected option clears it, a second click would wipe the answer
-- Fills ATS iframes embedded in company career pages, not just the ATS domain itself
-- Filled fields flash so you can see what it touched
-- The page follows the AI down the form as it answers each field. **Disable auto-scroll to field** in the popup if you would rather stay put
+- Works on Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters. Anything else falls back to matching keywords in the field labels
+- Fields that already have a value are skipped, including a search field where you already picked a result. Turn on **Force overwrite** to fill over them
+- Radios, checkboxes, and Yes/No toggles that already hold the right answer are never clicked again. Some forms clear the answer on a second click
+- Fills ATS iframes embedded in a company's careers page, not just the ATS domain itself
+- Filled fields flash so you can see what changed
+- While the AI works on a field, the page scrolls to it. Turn on **Disable auto-scroll to field** in the popup to stay put
+
+#### **Phone and Location**
+- Phone fields with their own country dropdown get the country picked and only the national number typed, so the dial code isn't doubled
+- US and Canadian numbers go in as `212-555-0142`, without the `+1`. Other countries keep their dial code
+- Location fields with a "Locate me" button use the button, and fall back to your saved city if the browser won't share a location
+- Location fields that search as you type get your city typed in and the top suggestion picked, so `Austin, TX` lands on the `Austin, Texas, United States` the form wants. The search gets up to 4 seconds to answer
+
+#### **Workday**
+- Covers all four steps of the apply wizard: My Information, My Experience, Application Questions, and Voluntary Disclosures. The Fill pill comes back on each step after **Save and Continue**
+- Works on both `myworkdayjobs.com` and `myworkdaysite.com`
+- Workday's own fields are filled by name. "How did you hear about us?" gets LinkedIn, Phone Device Type gets Mobile, and an acknowledgement that asks for today's date gets today's date
+- Questions the employer wrote are only answered from your profile when they ask about work authorization, sponsorship, relocation, or self-identification. Everything else goes to the AI with the question as written
+
+#### **SmartRecruiters**
+- Every input sits inside a web component's shadow root. The filler reaches into them, picks from the custom dropdowns, and presses Enter on the month/year pickers, which ignore a typed date until you do
+- One-click apply is two steps. Fill handles the profile page. After **Next**, the Fill pill comes back on the Preliminary questions page for the self-identification answers
+- On that second page, "How did you hear about this job?" gets the online job listing option (not a fair, an event, or a referral), and the required certify, terms, and privacy-notice boxes are ticked. Read them before you submit, ticking one agrees on your behalf
 
 #### **Résumé Attachment**
-- PDF, DOCX, or TXT up to 5 MB. Stored locally, attached to the file input as if you picked it yourself
+- PDF, DOCX, or TXT, up to 5 MB. Stored locally and attached to the file input as if you picked it yourself
 - Keep up to 5 labelled résumés (backend, ML, new grad) and mark one as the default
-- Pick a different one for a company in the popup and it sticks: the next posting from that company uses the same résumé
+- Pick a different one for a company in the popup and it sticks. The next posting from that company uses the same résumé
 
 #### **Work and Education History**
 - Save each job and each school as its own entry in Options, in the order forms ask for them
-- Platforms that make you type your history block by block (Workday, Workable, Breezy HR, JazzHR) get the matching entry per block, so the second job goes in the second block
-- SmartRecruiters turns your résumé into its own Experience and Education entries, often with the company folded into the title. Fill deletes those and adds your saved entries in their place, in your order. It leaves a section alone when the entries already match, or when you have one open for editing
-- Repeating blocks are found from the page structure, not a per-site selector list, so a form we have never seen still gets its entries lined up
-- Some of these platforms read your résumé themselves and prefill the blocks, often folding the company into the job title or getting the dates wrong. **Replace values in work and education blocks** in Options lets the filler correct those, and only those: every other field on the page still keeps whatever value it already had
+- Workday, Workable, Breezy HR, and JazzHR make you type your history block by block. Each block gets the matching entry, so the second job goes in the second block. On Workday, Fill clicks Add until there's a block for every saved entry
+- Blocks are found from the page structure, not a per-site selector list, so a form I haven't seen before still gets its entries lined up
+- SmartRecruiters turns your résumé into its own Experience and Education entries, often with the company folded into the title. Fill deletes those and adds your saved entries in your order. It leaves a section alone when the entries already match, or when one is open for editing
+- Some of these sites parse your résumé and prefill the blocks, usually with the company in the job title or the wrong dates. **Replace values in work and education blocks** in Options lets the filler correct those blocks and only those. Every other field on the page keeps whatever value it already had
 
-#### **AI Suggest**
-- Adds a "Suggest" textarea form fields
-- It reads the job description off the page, the text out of your résumé, and your profile before writing
+#### **AI**
+- Adds an **Autofill** button to textarea fields that drafts an answer from the job description on the page, the text in your résumé, and the role
 - Five providers: OpenAI, Anthropic, Gemini, Ollama, or your Claude Code subscription through the local bridge
-- **Use AI for skipped fields** lets the model answer whatever the profile could not. By default it only touches fields the form marks required (`required`, `aria-required`, a `*` or `✱` on the label); optional fields are listed as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
+- **Use AI for skipped fields** lets the model answer what your profile couldn't. It sees your saved jobs, your schools, and the role you're applying for, so "have you worked here before" or "do you meet the experience requirement" is answered from your history
+- By default it only touches fields the form marks required (`required`, `aria-required`, or a `*` or `✱` on the label). Optional fields show up as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Voluntary Self-Identification**
-- Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran and disability status once, in Options
-- Forms word these questions their own way ("Male" in your profile against a list of Man / Woman / Non-binary), so a saved answer is matched to whichever option the form offers rather than typed in literally
+- Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran status, and disability status once, in Options
+- Forms word these their own way ("Male" in your profile against Man / Woman / Non-binary on the form), so the saved answer is matched to whichever option the form offers instead of being typed in as-is
 - "I am not a protected veteran" picks a plain "I am not a veteran" when a form offers both that and "a veteran, but not a protected veteran"
-- Nothing here is ever guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
-- Sponsorship and work-authorization questions are answered from your saved Options answer, not by the model, and the wording is read before answering: "do you require sponsorship" gets No where "can you work without sponsorship" gets Yes
+- Nothing here is guessed. Leave an answer blank and the field is left for you, unless you opt in to letting the AI pick the decline option
+- A question that mentions disability or religion only as an exception ("other than for reasons related to a disability, can you work onsite four days a week?") isn't treated as a self-identification question
+
+#### **Work Authorization**
+- Sponsorship and work authorization questions are answered from your saved answer in Options, not by the model
+- The wording is read first. "Do you require sponsorship" gets No where "can you work without sponsorship" gets Yes
+- A question about how you got your work authorization ("is it based on being the spouse of an H-1B holder?") isn't answered from the authorized-to-work toggle. The AI gets it along with your saved answers
 
 #### **Submission Tracking**
-- Every apply goes to local history, browsable from the popup, exportable to CSV
-- Optional push to a Google Sheet you own, via Apps Script
+- Every application goes to local history, which you can browse from the popup and export to CSV
+- Optional push to a Google Sheet you own, through Apps Script
 - Optional auto-log that watches for your submission to go through and logs it for you
 
 #### **Safety**
-- The filler refuses to click anything labelled Submit, Apply now, or Send application
+- The filler won't click anything labelled Submit, Apply now, or Send application
 - Adapters only detect. They never write to storage and never touch the network
 
 ## Tech Stack
@@ -74,12 +91,12 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 
 **Fill flow:**
 - Popup → background worker → content script injected into every frame
-- The background picks which frames to fill: if a subframe is an ATS host, only those get it, so the company's newsletter signup on the parent page is left alone
+- The background picks which frames get filled. If a subframe is an ATS host, only those frames are filled, so the newsletter signup on the company's page is left alone
 - Each frame picks an adapter, classifies its fields, then writes through the native value setter so React's value tracker fires
 
-**AI Suggest flow:**
-- Content script opens a long-lived `ai-suggest` port to the background worker
-- The background worker is the only code that talks to an outside host. It builds the prompt from your résumé text, the job description, and your profile, then streams the tokens back
+**AI flow:**
+- The content script opens a long-lived `ai-suggest` port to the background worker
+- The background worker is the only code that talks to an outside host. It builds the prompt, sends it to your provider, and streams the tokens back
 - Nothing goes out unless you picked a provider and granted its host permission
 
 **Submission logging:**
@@ -115,9 +132,11 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 
 5. **Use it**
 
-   Open a job application, click the extension icon → **Fill this page**. Check what it filled, draft any open-ended answers with ✨, then submit it yourself.
+   Open a job application and click **Fill this page** on the pill, or in the extension popup. Check what it filled, use **Autofill** on any open-ended answers, then submit it yourself.
 
 For a distributable zip: `npm run package`.
+
+After every `npm run build`, reload the extension in `chrome://extensions`. A tab still running the old build can't load the new content script until you do.
 
 ### Watch mode
 
@@ -125,7 +144,7 @@ For a distributable zip: `npm run package`.
 npm run dev
 ```
 
-Vite 5 restricts its dev-server CORS allowlist to local HTTP origins, which blocks the service worker from fetching `@vite/env`. `vite.config.ts` allows `chrome-extension://*` so HMR works. Start `npm run dev` **before** reloading the extension. If that trips you up, `npm run build` produces a static `dist/` that needs no dev server.
+Vite 5 only allows local HTTP origins through its dev-server CORS, which blocks the service worker from fetching `@vite/env`. `vite.config.ts` allows `chrome-extension://*` so HMR works. Start `npm run dev` **before** reloading the extension. If that gives you trouble, `npm run build` makes a static `dist/` that doesn't need the dev server.
 
 ## AI Provider Setup
 
@@ -141,40 +160,49 @@ Vite 5 restricts its dev-server CORS allowlist to local HTTP origins, which bloc
 
 ### Claude Code Bridge
 
-Drafts through your Claude Code subscription instead of a paid API key, in a writing voice you define. It does **not** use Ollama.
+Drafts through your Claude Code subscription instead of a paid API key, in a writing voice you define. It doesn't use Ollama.
 
 ```bash
 npm run bridge         # start on http://localhost:11435
 npm run bridge:stop    # stop it from anywhere
 ```
 
-Then pick **Claude Code (local bridge)** in Options. Endpoint and model prefill. Full setup, including the writing-voice spec, is in [bridge/README.md](bridge/README.md).
+Then pick **Claude Code (local bridge)** in Options. The endpoint and model fill in on their own. Full setup, including the writing-voice spec, is in [bridge/README.md](bridge/README.md).
 
 ### What gets sent to the provider
 
-- The question and label from the page
-- Company, role, and job URL if the adapter could read them
-- A short profile summary (name, links, saved answers, cover-letter blurb, and self-identification answers when a form asks for them)
-- Extracted résumé text
-- The scraped job description
+**Autofill on a textarea** (the button, or AI fill on a long-form field):
+- The question, plus the help text under it when there is one (up to 800 characters)
+- The role and company, if the adapter could read them
+- The job description from the page (up to 3,000 characters)
+- Your résumé text (up to 6,000 characters)
 
-Nothing leaves the extension except that one request, to the provider URL you granted permission for.
+**AI fill on short fields:**
+- The question and its options
+- The role and company
+- A profile summary: name, email, phone, address, links, work authorization answers, desired salary, notice period, your saved jobs and schools, and your saved self-identification answers
+
+Each request only goes to the provider URL you granted permission for.
 
 ## Google Sheets Logging (optional)
 
-Forwards each tracked submission to a Google Sheet via an Apps Script web app **you own**. Nothing is sent unless you set it up. Create a Sheet, add an Apps Script `doPost` web app deployed as "Anyone with the link", then paste the `/exec` URL into **Options → Tracking** and click **Test**.
+Sends each tracked submission to a Google Sheet through an Apps Script web app **you own**. Nothing is sent unless you set it up.
+
+1. Create a Sheet and add an Apps Script `doPost` web app, deployed as "Anyone with the link"
+2. Paste the `/exec` URL into **Options → Tracking** and click **Test**
 
 ## Testing
 
 ```bash
 npm test           # vitest run
-npx tsc --noEmit   # type-check only
+npm run test:e2e   # playwright
+npx tsc --noEmit   # type check only
 npm run lint       # eslint
 ```
 
 ### Environment Variables
 
-The extension itself needs none. Everything you configure lives in the Options page and is stored in `chrome.storage.local`.
+The extension itself doesn't need any. Everything you configure lives in the Options page and is stored in `chrome.storage.local`.
 
 The Claude Code bridge reads these, all optional:
 
@@ -192,10 +220,12 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 
 | Permission | Why |
 |------------|-----|
-| `storage` | Persist profile, settings, résumés, and history locally |
+| `storage` | Keep your profile, settings, résumés, and history locally |
 | `scripting` | Inject the filler into pages when you click Fill |
-| `activeTab` | Reach the currently focused tab from the popup |
+| `activeTab` | Reach the focused tab from the popup |
+| `webNavigation` | Notice an ATS iframe loading inside another page, and route changes inside single-page apply flows |
 | Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters forms |
+| Host: `<all_urls>` | Show the Fill pill on a company's careers page when the application is an ATS iframe embedded in it |
 
 **Optional**, asked for when you need them and revocable from Options:
 
@@ -207,14 +237,14 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `generativelanguage.googleapis.com` | Google Gemini |
 | `http://localhost/*`, `http://127.0.0.1/*` | Ollama (11434) or the Claude Code bridge (11435) |
 
-No `tabs`, no `webRequest`, no broad host access beyond the ATS list.
+No `tabs` and no `webRequest`. The background only injects into a page outside the ATS list when an ATS iframe loads inside it.
 
 ## Privacy
 
 - API keys, webhook URLs, and résumé bytes live in `chrome.storage.local`, never `chrome.storage.sync`
 - No analytics, no telemetry, no remote error reporting
 - AI requests go straight from your browser to the provider you picked
-- The webhook POSTs only to the URL you paste in
+- The webhook only POSTs to the URL you paste in
 
 ## Project Layout
 
@@ -242,10 +272,10 @@ bridge/           Local Claude Code subscription bridge (not part of the extensi
 
 Three rules I stuck to:
 
-- **Local-first.** No backend ships with the extension. The only network calls are the page you're on, the AI provider you picked, and your own Apps Script webhook.
-- **User-in-the-loop.** The filler never clicks Submit. `SUBMIT_DENY` in `src/content/filler.ts` is what enforces it.
-- **Safe autofill.** Skip non-empty fields by default, write through the native value setter so React registers the change, then dispatch `input` → `change` → `blur`.
+- **Local-first.** No backend ships with the extension. The only network calls are the page you're on, the AI provider you picked, and your own Apps Script webhook
+- **User-in-the-loop.** The filler never clicks Submit. `SUBMIT_DENY` in `src/content/filler.ts` enforces it
+- **Safe autofill.** Fields with a value are skipped by default. Values go through the native value setter so React registers the change, followed by `input`, `change`, and a blur
 
 ## Author
 
-**Author:** [Nevin Chen](https://linkedin.com/in/nevin-chen) | [Portfolio](https://nevinchen.dev)
+[Nevin Chen](https://linkedin.com/in/nevin-chen) | [Portfolio](https://nevinchen.dev)

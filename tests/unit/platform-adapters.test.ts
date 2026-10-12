@@ -63,6 +63,11 @@ describe('adapter matches()', () => {
     expect(workdayAdapter.matches(url, document)).toBe(true);
   });
 
+  it('workday matches *.myworkdaysite.com', () => {
+    const url = new URL('https://wd1.myworkdaysite.com/en-US/recruiting/stripe/careers/job/123/apply');
+    expect(workdayAdapter.matches(url, document)).toBe(true);
+  });
+
   it('workday matches via data-automation-id on custom domains', () => {
     document.body.innerHTML = '<input data-automation-id="firstName" />';
     const url = new URL('https://careers.stripe.com/apply');

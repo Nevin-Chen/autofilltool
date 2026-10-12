@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Workday Application Questions fixture (rich-text legends)</title>
+  </head>
+  <body>
+    <!--
+      Captured from a live wd1.myworkdaysite.com apply flow, "Application
+      Questions" step, with hashed classes, data-uxi-* attributes and SVG icons
+      stripped. The employer is replaced with Globex and the question wording
+      is paraphrased.
+
+      What this records, versus workday-application-questions.html:
+        * The question is not a <label for>. It sits in a fieldset <legend> as
+          rich text: data-automation-id="richText" holding one <p> per
+          paragraph. The dropdown button's aria-label is only " Select One
+          Required", so a label read off the button finds no question.
+        * A footnote paragraph starting with "*" can follow the question. It
+          talks about other questions and about sponsorship in the negative,
+          so it must not feed the work-eligibility reading of the question.
+        * A follow-up that Workday mounts once question 1 is answered asks how
+          the work authorization was obtained (spouse of a visa holder). It
+          mentions authorization and visas but is neither "are you authorized"
+          nor "do you need sponsorship".
+        * One question asks about the answers to two others.
+        * The onsite question names disability and religion only as
+          exceptions, so it is not a self-identification question.
+        * The acknowledgement asks for today's date in three spinbuttons
+          (dateSectionMonth/Day/Year-input) inside dateInputWrapper.
+    -->
+    <div data-automation-id="applyFlowPrimaryQuestionsPage">
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090000" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090000">
+        <fieldset>
+          <legend><div id="rich-label145"><div data-automation-id="richText"><p>1.  Are you legally authorized to work in the United States?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090000" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090000">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee97881725520a01" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee97881725520a01">
+        <fieldset>
+          <legend><div id="rich-label160"><div data-automation-id="richText"><p>Is your current U.S. work authorization based on your status as a spouse of an H-1B, L-1, or E-1/E-2/E-3 visa holder? For example, do you hold H-4, L-2, or E-1/E-2/E-3 spousal status?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee97881725520a01" id="primaryQuestionnaire--29dab01e5e4e1001ee97881725520a01">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090001" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090001">
+        <fieldset>
+          <legend><div id="rich-label146"><div data-automation-id="richText"><p>2. Will you need Globex to sponsor you for a visa to work legally in the United States, now or in the future (meaning you will need visa sponsorship by an employer in order to work in the United States)?<abbr title="required">*</abbr></p><p>* Candidates in F1 OPT/CPT status should answer "Yes" to Question 3 when they expect to need sponsorship after OPT/CPT. Candidates who can renew employment authorization without Globex's sponsorship should answer "No" to Question 2.</p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090001" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090001">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090002" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090002">
+        <fieldset>
+          <legend><div id="rich-label147"><div data-automation-id="richText"><p>3. Did you answer "No" to Question 1 (you are not legally authorized to work in the United States) or "Yes" to Question 2 (you will need Globex to sponsor you for a visa)?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090002" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090002">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090003" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090003">
+        <fieldset>
+          <legend><div id="rich-label148"><div data-automation-id="richText"><p>Do you currently live in or are you able to relocate to the location this job is advertised in?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090003" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090003">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090004" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090004">
+        <fieldset>
+          <legend><div id="rich-label149"><div data-automation-id="richText"><p>This position requires employees to work onsite at the office at least four days per week, with reasonable accommodations available. Other than for reasons related to your religion, a disability, or a medical condition, are you able to meet this requirement?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090004" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090004">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090005" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090005">
+        <fieldset>
+          <legend><div id="rich-label150"><div data-automation-id="richText"><p>Can you confirm that you meet the minimum qualification for years of professional work experience for this role?<abbr title="required">*</abbr></p><p></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090005" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090005">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee9786e38c090006" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090006">
+        <fieldset>
+          <legend><div id="rich-label151"><div data-automation-id="richText"><p>Are you a current or former (prior 18 months) employee of the accounting firm that audits Globex?<abbr title="required">*</abbr></p></div></div></legend>
+          <div>
+            <button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="29dab01e5e4e1001ee9786e38c090006" id="primaryQuestionnaire--29dab01e5e4e1001ee9786e38c090006">Select One</button>
+            <input type="text" value="" style="display: none" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-29dab01e5e4e1001ee978ce85d2a0003" data-fkit-id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003">
+        <fieldset>
+          <legend><div id="rich-label152"><div data-automation-id="richText"><p>Acknowledgement: If any of these responses change, you will promptly share the update with your assigned recruiter.</p><br /><p>Please acknowledge this by entering today's date.<abbr title="required">*</abbr></p><br /></div></div></legend>
+          <div>
+            <div aria-hidden="true" id="helpText-primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003">current value is MM/DD/YYYY</div>
+            <div id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003" role="group" data-automation-id="dateInputWrapper">
+              <div id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionMonth">
+                <div aria-hidden="true" data-automation-id="dateSectionMonth-display">MM</div>
+                <input role="spinbutton" aria-label="Month" aria-valuemax="12" aria-valuemin="1" aria-valuetext="MM" id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionMonth-input" data-automation-id="dateSectionMonth-input" value="" />
+              </div>
+              <div>/</div>
+              <div id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionDay">
+                <div aria-hidden="true" data-automation-id="dateSectionDay-display">DD</div>
+                <input role="spinbutton" aria-label="Day" aria-valuemax="31" aria-valuemin="1" aria-valuetext="DD" id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionDay-input" data-automation-id="dateSectionDay-input" value="" />
+              </div>
+              <div>/</div>
+              <div id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionYear">
+                <div aria-hidden="true" data-automation-id="dateSectionYear-display">YYYY</div>
+                <input role="spinbutton" aria-label="Year" aria-valuemax="9999" aria-valuemin="1000" aria-valuetext="YYYY" id="primaryQuestionnaire--29dab01e5e4e1001ee978ce85d2a0003-dateSectionYear-input" data-automation-id="dateSectionYear-input" value="" />
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+  </body>
+</html>

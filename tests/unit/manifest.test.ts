@@ -36,6 +36,7 @@ describe('manifest content_scripts — invariants', () => {
     expect(matches).toContain('https://*.lever.co/*');
     expect(matches).toContain('https://*.ashbyhq.com/*');
     expect(matches).toContain('https://*.myworkdayjobs.com/*');
+    expect(matches).toContain('https://*.myworkdaysite.com/*');
     expect(matches).toContain('https://*.applytojob.com/*');
     expect(matches).toContain('https://*.workable.com/*');
     expect(matches).toContain('https://apply.workable.com/*');

@@ -72,6 +72,13 @@ describe('valueForField — work authorization question polarity', () => {
     expect(valueForField(noSponsorship, 'authorizedToWorkInUS', 'Work status')).toBe('Yes');
   });
 
+  it('leaves a question about how the authorization was obtained to the AI', () => {
+    const label =
+      'Is your current U.S. work authorization based on your status as a spouse of an H-1B, L-1, or E-1/E-2/E-3 visa holder?';
+    expect(valueForField(noSponsorship, 'authorizedToWorkInUS', label)).toBeNull();
+    expect(valueForField(noSponsorship, 'requiresSponsorship', label)).toBeNull();
+  });
+
   it('leaves willingToRelocate on the raw toggle regardless of label', () => {
     const p = withWorkAuth({ willingToRelocate: false, requiresSponsorship: false });
     expect(
@@ -109,11 +116,21 @@ describe('valueForField — phone split for widgets with their own dial-code pic
     return { ...p, phone, phoneCountry, address: { ...p.address, country } };
   }
 
-  it('keeps the dial code on a plain phone input but strips it for the national field', () => {
+  it('strips the dial code for the national field', () => {
     const p = withPhone('+1 4155551234', 'US');
-    expect(valueForField(p, 'phone')).toBe('+1 4155551234');
-    expect(valueForField(p, 'phoneNational')).toBe('4155551234');
+    expect(valueForField(p, 'phoneNational')).toBe('415-555-1234');
     expect(valueForField(p, 'phoneCountry')).toBe('United States');
+  });
+
+  it('leaves +1 off a plain phone input', () => {
+    expect(valueForField(withPhone('+1 4155551234', 'US'), 'phone')).toBe('415-555-1234');
+    expect(valueForField(withPhone('+1 416.555.0142', 'CA'), 'phone')).toBe('416-555-0142');
+    expect(valueForField(withPhone('4155551234', '', 'United States'), 'phone')).toBe('415-555-1234');
+  });
+
+  it('keeps the dial code on a plain phone input for numbers outside North America', () => {
+    expect(valueForField(withPhone('+44 7700900123', 'GB'), 'phone')).toBe('+44 7700900123');
+    expect(valueForField(withPhone('+44 7700900123', ''), 'phone')).toBe('+44 7700900123');
   });
 
   it('infers the dial-code country from the number when no country was picked', () => {
@@ -125,11 +142,21 @@ describe('valueForField — phone split for widgets with their own dial-code pic
   it('falls back to the address country when the number carries no dial code', () => {
     const p = withPhone('4155551234', '', 'United States');
     expect(valueForField(p, 'phoneCountry')).toBe('United States');
-    expect(valueForField(p, 'phoneNational')).toBe('4155551234');
+    expect(valueForField(p, 'phoneNational')).toBe('415-555-1234');
   });
 
-  it('returns null for both when no phone is stored, so the filler skips them', () => {
+  it('dashes a ten-digit North American number however it was stored', () => {
+    expect(valueForField(withPhone('(646) 555-0198', 'US'), 'phoneNational')).toBe('646-555-0198');
+    expect(valueForField(withPhone('+1 416.555.0142', 'CA'), 'phoneNational')).toBe('416-555-0142');
+  });
+
+  it('leaves a North American number alone when it is not ten digits', () => {
+    expect(valueForField(withPhone('+1 555 0142', 'US'), 'phoneNational')).toBe('555 0142');
+  });
+
+  it('returns null for every phone kind when no phone is stored, so the filler skips them', () => {
     const p = withPhone('', '');
+    expect(valueForField(p, 'phone')).toBeNull();
     expect(valueForField(p, 'phoneNational')).toBeNull();
     expect(valueForField(p, 'phoneCountry')).toBeNull();
   });
@@ -149,13 +176,13 @@ describe('valueForField — phone country for the Greenhouse dial-code picker', 
   it('reads the country off the dial code when the number carries one', () => {
     const p = withPhone('+1 4155550142', '', '');
     expect(valueForField(p, 'phoneCountry')).toBe('United States');
-    expect(valueForField(p, 'phoneNational')).toBe('4155550142');
+    expect(valueForField(p, 'phoneNational')).toBe('415-555-0142');
   });
 
   it('falls back to the address country when the number has no dial code', () => {
     const p = withPhone('4155550142', '', 'USA');
     expect(valueForField(p, 'phoneCountry')).toBe('United States');
-    expect(valueForField(p, 'phoneNational')).toBe('4155550142');
+    expect(valueForField(p, 'phoneNational')).toBe('415-555-0142');
   });
 
   it('normalises the address country so it matches a dropdown option', () => {

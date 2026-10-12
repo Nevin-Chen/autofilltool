@@ -67,6 +67,15 @@ describe('companyKeyFromUrl', () => {
     );
   });
 
+  it('keys the shared myworkdaysite.com host by the tenant after /recruiting/', () => {
+    expect(
+      companyKeyFromUrl('https://wd1.myworkdaysite.com/en-US/recruiting/stripe/careers/job/x/apply'),
+    ).toBe('wd1.myworkdaysite.com/stripe');
+    expect(
+      companyKeyFromUrl('https://wd1.myworkdaysite.com/recruiting/bostondynamics/jobs/job/y'),
+    ).toBe('wd1.myworkdaysite.com/bostondynamics');
+  });
+
   it('keys company-specific hosts by host alone', () => {
     expect(
       companyKeyFromUrl('https://stripe.wd1.myworkdayjobs.com/en-US/Careers/job/x'),

@@ -96,6 +96,7 @@ describe('isAtsFrameUrl', () => {
     expect(isAtsFrameUrl('https://jobs.lever.co/stripe/abc')).toBe(true);
     expect(isAtsFrameUrl('https://jobs.ashbyhq.com/stripe/job-xyz')).toBe(true);
     expect(isAtsFrameUrl('https://nvidia.myworkdayjobs.com/Careers')).toBe(true);
+    expect(isAtsFrameUrl('https://wd1.myworkdaysite.com/en-US/recruiting/stripe/careers')).toBe(true);
     expect(isAtsFrameUrl('https://x.applytojob.com/apply/ByZk')).toBe(
       true,
     );

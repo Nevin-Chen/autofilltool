@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Workday "My Information" fixture (formField wrappers)</title>
+  </head>
+  <body>
+    <!--
+      Captured from a live <tenant>.wd5.myworkdayjobs.com apply flow, step 1
+      ("My Information"), with hashed classes, data-uxi-* attributes and SVG
+      icons stripped.
+
+      What this records, versus workday-form.html:
+        * data-automation-id sits on a `formField-<name>` wrapper div, not on
+          the control. The control is found by `name--<name>` / `address--<name>`
+          ids, so the adapter keys off the wrapper name.
+        * Dropdowns are <button aria-haspopup="listbox"> with a visible label
+          and a sibling text input holding the option's id. The listbox only
+          mounts after a click (the unit test mounts it).
+        * "How Did You Hear About Us?" and "Country Phone Code" are search
+          prompts: an empty text input inside multiSelectContainer, with the
+          current choice shown as a selectedItem pill. The input stays empty
+          after a pick, so the input value says nothing about whether the
+          field is filled.
+        * Search results portal into <body> under responsiveMonikerPrompt,
+          linked by data-associated-widget = multiSelectContainer id.
+        * Some tenants add a required Yes/No radio question to this step
+          ("previously employed by"), copied from a second tenant. The radios
+          sit in a fieldset whose legend holds the question, and their values
+          are "true"/"false", not the visible Yes/No.
+        * Below the phone fields sits an SMS opt-in checkbox outside any
+          formField wrapper, tagged data-automation-id="phone-sms-opt-in".
+    -->
+    <div data-automation-id="applyFlowMyInfoPage">
+      <div data-automation-id="formField-source" data-fkit-id="source--source">
+        <label for="source--source"><span>How Did You Hear About Us?<abbr aria-hidden="true">*</abbr></span></label>
+        <div data-automation-id="multiSelectContainer" id="ms-source">
+          <div data-automation-id="multiselectInputContainer">
+            <div data-automation-hiddensearch="false">
+              <input enterkeyhint="search" placeholder="Search" aria-required="true" autocomplete="off" id="source--source" value="" />
+              <div data-automation-id="promptSelectionLabel"></div>
+              <div aria-hidden="true" data-automation-id="promptAriaInstruction"></div>
+            </div>
+            <div><ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected"></ul></div>
+            <span data-automation-id="promptIcon" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+
+      <div data-automation-id="formField-candidateIsPreviousWorker" data-fkit-id="previousWorker--candidateIsPreviousWorker">
+        <fieldset>
+          <legend><label id="radio-label1"><span>Have you previously been employed by Globex? CURRENT EMPLOYEES: Please apply via the Career worklet on your internal Workday account instead.<abbr aria-hidden="true">*</abbr></span></label></legend>
+          <div name="candidateIsPreviousWorker" aria-labelledby="radio-label1" id="previousWorker--candidateIsPreviousWorker" aria-required="true">
+            <div><input id="previousWorker-yes" name="candidateIsPreviousWorker" type="radio" aria-checked="false" value="true" /><label for="previousWorker-yes">Yes</label></div>
+            <div><input id="previousWorker-no" name="candidateIsPreviousWorker" type="radio" aria-checked="false" value="false" /><label for="previousWorker-no">No</label></div>
+          </div>
+        </fieldset>
+      </div>
+
+      <div data-automation-id="formField-country" data-fkit-id="country--country">
+        <label for="country--country"><span>Country<abbr aria-hidden="true">*</abbr></span></label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="bc33aa3152ec42d4995f4791a106ed09" aria-label="Country United States of America Required" name="country" id="country--country">United States of America</button>
+          <input type="text" value="bc33aa3152ec42d4995f4791a106ed09" />
+        </div>
+      </div>
+
+      <h3>Legal Name</h3>
+      <div data-automation-id="formField-legalName--title" data-fkit-id="name--legalName--title">
+        <label for="name--legalName--title">Prefix</label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="Prefix Select One" name="legalName--title" id="name--legalName--title">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-legalName--firstName" data-fkit-id="name--legalName--firstName">
+        <label for="name--legalName--firstName"><span>First Name<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="name--legalName--firstName" name="legalName--firstName" value="" />
+      </div>
+      <div data-automation-id="formField-legalName--middleName" data-fkit-id="name--legalName--middleName">
+        <label for="name--legalName--middleName">Middle Name</label>
+        <input type="text" id="name--legalName--middleName" name="legalName--middleName" value="" />
+      </div>
+      <div data-automation-id="formField-legalName--lastName" data-fkit-id="name--legalName--lastName">
+        <label for="name--legalName--lastName"><span>Last Name<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="name--legalName--lastName" name="legalName--lastName" value="" />
+      </div>
+      <div data-automation-id="formField-legalName--social" data-fkit-id="name--legalName--social">
+        <label for="name--legalName--social">Suffix</label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="Suffix Select One" name="legalName--social" id="name--legalName--social">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-preferredCheck" data-fkit-id="name--preferredCheck">
+        <label for="name--preferredCheck">I have a preferred name</label>
+        <input id="name--preferredCheck" type="checkbox" aria-checked="false" name="preferredCheck" aria-required="false" />
+      </div>
+
+      <h3>Address</h3>
+      <div data-automation-id="formField-addressLine1" data-fkit-id="address--addressLine1">
+        <label for="address--addressLine1"><span>Address Line 1<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="address--addressLine1" name="addressLine1" value="" />
+      </div>
+      <div data-automation-id="formField-addressLine2" data-fkit-id="address--addressLine2">
+        <label for="address--addressLine2">Address Line 2</label>
+        <input type="text" id="address--addressLine2" name="addressLine2" value="" />
+      </div>
+      <div data-automation-id="formField-city" data-fkit-id="address--city">
+        <label for="address--city"><span>City<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="address--city" name="city" value="" />
+      </div>
+      <div data-automation-id="formField-countryRegion" data-fkit-id="address--countryRegion">
+        <label for="address--countryRegion"><span>State<abbr aria-hidden="true">*</abbr></span></label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="" aria-label="State Select One Required" name="countryRegion" id="address--countryRegion">Select One</button>
+          <input type="text" value="" />
+        </div>
+      </div>
+      <div data-automation-id="formField-postalCode" data-fkit-id="address--postalCode">
+        <label for="address--postalCode"><span>Postal Code<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="address--postalCode" name="postalCode" value="" />
+      </div>
+      <div data-automation-id="formField-regionSubdivision1" data-fkit-id="address--regionSubdivision1">
+        <label for="address--regionSubdivision1">County</label>
+        <input type="text" id="address--regionSubdivision1" name="regionSubdivision1" value="" />
+      </div>
+
+      <h3>Phone</h3>
+      <div data-automation-id="formField-phoneType" data-fkit-id="phoneNumber--phoneType">
+        <label for="phoneNumber--phoneType"><span>Phone Device Type<abbr aria-hidden="true">*</abbr></span></label>
+        <div>
+          <button aria-haspopup="listbox" type="button" value="3e82bdec28fd01471313ec3a18115d7b" aria-label="Phone Device Type Mobile Required" name="phoneType" id="phoneNumber--phoneType">Mobile</button>
+          <input type="text" value="3e82bdec28fd01471313ec3a18115d7b" />
+        </div>
+      </div>
+      <div data-automation-id="formField-countryPhoneCode" data-fkit-id="phoneNumber--countryPhoneCode">
+        <label for="phoneNumber--countryPhoneCode"><span>Country Phone Code<abbr aria-hidden="true">*</abbr></span></label>
+        <div data-automation-id="multiSelectContainer" id="ms-phone-code">
+          <div data-automation-id="multiselectInputContainer">
+            <div data-automation-hiddensearch="false">
+              <input enterkeyhint="search" placeholder="Search" aria-required="true" autocomplete="off" id="phoneNumber--countryPhoneCode" value="" />
+              <div data-automation-id="promptSelectionLabel"></div>
+              <div aria-hidden="true" data-automation-id="promptAriaInstruction">1 item selected, United States of America (+1)</div>
+            </div>
+            <div>
+              <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected">
+                <li role="presentation" data-automation-id="menuItem">
+                  <div aria-label="United States of America (+1), press delete to clear value." role="option" data-automation-id="selectedItem">
+                    <div data-automation-id="DELETE_charm" role="presentation" aria-hidden="true"><span></span></div>
+                    <p data-automation-id="promptOption" data-automation-label="United States of America (+1)">United States of America (+1)</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <span data-automation-id="promptIcon" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div data-automation-id="formField-phoneNumber" data-fkit-id="phoneNumber--phoneNumber">
+        <label for="phoneNumber--phoneNumber"><span>Phone Number<abbr aria-hidden="true">*</abbr></span></label>
+        <input type="text" aria-required="true" id="phoneNumber--phoneNumber" name="phoneNumber" value="" />
+      </div>
+      <div data-automation-id="formField-extension" data-fkit-id="phoneNumber--extension">
+        <label for="phoneNumber--extension">Phone Extension</label>
+        <input type="text" id="phoneNumber--extension" name="extension" value="" />
+      </div>
+      <div>
+        <input id="phone-sms-opt-in" type="checkbox" aria-checked="false" data-automation-id="phone-sms-opt-in" />
+        <a data-automation-id="phone-terms-and-condition-link" href="">Terms and Conditions</a>
+      </div>
+    </div>
+  </body>
+</html>

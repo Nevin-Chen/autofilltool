@@ -119,6 +119,24 @@ describe('valueForField for self-ID kinds', () => {
   });
 });
 
+describe('questions that name a protected trait only as an exception', () => {
+  const ONSITE =
+    'This position requires employees to work onsite at the office at least four days per week. Other than for reasons related to your religion, a disability, or a medical condition, are you able to meet this requirement?*';
+
+  it('are not self-identification questions', () => {
+    expect(selfIdKindFromLabel(ONSITE)).toBeNull();
+    expect(isCompliancePattern(ONSITE)).toBe(false);
+  });
+
+  it('still leave the real self-ID questions alone', () => {
+    expect(selfIdKindFromLabel('Do you have a disability?')).toBe('disabilityStatus');
+    expect(selfIdKindFromLabel('Except where noted, do you identify as a protected veteran?')).toBe(
+      'veteranStatus',
+    );
+    expect(isCompliancePattern('Are you Hispanic or Latino?')).toBe(true);
+  });
+});
+
 describe('summarizeProfileForClassifier', () => {
   it('labels the Hispanic question as a question, not as "Ethnicity"', () => {
     const summary = summarizeProfileForClassifier(

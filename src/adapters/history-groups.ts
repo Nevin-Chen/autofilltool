@@ -7,6 +7,7 @@ import {
 } from './types';
 
 export function assignHistoryGroups(fields: DetectedField[]): DetectedField[] {
+  if (fields.some((f) => f.group)) return fields;
   const named = namedGroups(fields);
   if (named) return named;
 

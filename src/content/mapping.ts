@@ -1,7 +1,11 @@
 import type { Education, Experience, Profile } from '@/profile/schema';
 import type { FieldGroup, FieldKind } from '@/adapters/types';
 import { countryByIso, countryByName, splitPhone } from '@/lib/countries';
-import { workAuthAnswerFromLabel } from '@/lib/work-auth';
+import {
+  mentionsSponsorship,
+  mentionsWorkAuthorization,
+  workAuthAnswerFromLabel,
+} from '@/lib/work-auth';
 
 export function valueForField(
   profile: Profile,
@@ -21,11 +25,11 @@ export function valueForField(
     case 'email':
       return profile.email || null;
     case 'phone':
-      return profile.phone || null;
+      return (isNorthAmericanPhone(profile) ? nationalPhone(profile) : profile.phone) || null;
     case 'phoneCountry':
       return phoneCountryName(profile);
     case 'phoneNational':
-      return splitPhone(profile.phone, profile.phoneCountry).national || null;
+      return nationalPhone(profile) || null;
 
     case 'addressLine1':
       return profile.address.line1 || null;
@@ -54,9 +58,9 @@ export function valueForField(
       return profile.links.other || null;
 
     case 'authorizedToWorkInUS':
-      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.authorizedToWorkInUS);
+      return workAuthAnswer(profile, label, profile.workAuth.authorizedToWorkInUS, mentionsSponsorship);
     case 'requiresSponsorship':
-      return workAuthAnswer(profile, label) ?? yesNo(profile.workAuth.requiresSponsorship);
+      return workAuthAnswer(profile, label, profile.workAuth.requiresSponsorship, mentionsWorkAuthorization);
     case 'willingToRelocate':
       return yesNo(profile.workAuth.willingToRelocate);
     case 'desiredSalary':
@@ -114,6 +118,9 @@ export function valueForField(
 
     case 'referralSource':
     case 'agreement':
+    case 'language':
+    case 'phoneType':
+    case 'screening':
       return null;
 
     case 'openEnded':
@@ -157,6 +164,18 @@ function addressCountryName(profile: Profile): string | null {
   return countryByName(raw)?.name ?? (raw || null);
 }
 
+function nationalPhone(profile: Profile): string {
+  const { national } = splitPhone(profile.phone, profile.phoneCountry);
+  const digits = national.replace(/\D/g, '');
+  if (!isNorthAmericanPhone(profile) || digits.length !== 10) return national;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function isNorthAmericanPhone(profile: Profile): boolean {
+  const { iso } = splitPhone(profile.phone, profile.phoneCountry);
+  return (countryByIso(iso) ?? countryByName(profile.address.country))?.dial === '1';
+}
+
 function phoneCountryName(profile: Profile): string | null {
   const { iso } = splitPhone(profile.phone, profile.phoneCountry);
   const named = countryByIso(iso)?.name;
@@ -166,9 +185,16 @@ function phoneCountryName(profile: Profile): string | null {
   return profile.address.country || null;
 }
 
-function workAuthAnswer(profile: Profile, label: string | undefined): string | null {
-  if (!label) return null;
-  return workAuthAnswerFromLabel(label, profile.workAuth);
+function workAuthAnswer(
+  profile: Profile,
+  label: string | undefined,
+  saved: boolean | null,
+  mentionsOtherQuestion: (label: string) => boolean,
+): string | null {
+  if (!label) return yesNo(saved);
+  const read = workAuthAnswerFromLabel(label, profile.workAuth);
+  if (read) return read;
+  return mentionsOtherQuestion(label) ? null : yesNo(saved);
 }
 
 function yesNo(v: boolean | null): string | null {

@@ -82,7 +82,7 @@ describe('greenhouse phone widget — detection through fill', () => {
     });
 
     expect(action.status).toBe('filled');
-    expect((phone.el as HTMLInputElement).value).toBe('4155551234');
+    expect((phone.el as HTMLInputElement).value).toBe('415-555-1234');
   });
 
   it('commits a real selection in the dial-code react-select instead of typing into it', async () => {
