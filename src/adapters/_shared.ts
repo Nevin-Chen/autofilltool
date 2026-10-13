@@ -850,7 +850,11 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
   if (field.widget === 'virtualizedDropdown' || field.widget === 'locateButton') {
     return { el, label, fieldType: 'combobox' };
   }
-  if (field.widget === 'shadowCombobox' || field.widget === 'searchPrompt') {
+  if (
+    field.widget === 'shadowCombobox' ||
+    field.widget === 'searchPrompt' ||
+    field.widget === 'menuButton'
+  ) {
     return { el, label, fieldType: 'combobox', widget: field.widget };
   }
   if (field.widget === 'monthYearPicker') return null;
@@ -865,9 +869,12 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
   }
   if (el instanceof HTMLInputElement) {
     if (el.type === 'radio') {
-      const name = el.name;
-      if (!name) return null;
-      const options = collectRadioGroupOptions(el.ownerDocument, name);
+      const options = el.name
+        ? collectRadioGroupOptions(el.ownerDocument, el.name)
+        : unnamedChoiceGroup(el)
+            .map((r) => bestLabel(r).trim())
+            .filter((s) => s.length > 0);
+      if (options.length === 0) return null;
       return { el, label, fieldType: 'radio', options };
     }
     if (el.type === 'checkbox') return null;
@@ -1117,6 +1124,16 @@ export function collectCheckboxGroup(
     boxes = [el];
   }
   return boxes.filter((b) => isFillable(b));
+}
+
+export function unnamedChoiceGroup(rep: HTMLInputElement): HTMLInputElement[] {
+  const selector = `input[type="${rep.type}"]`;
+  for (let cursor = rep.parentElement; cursor; cursor = cursor.parentElement) {
+    const members = Array.from(cursor.querySelectorAll<HTMLInputElement>(selector));
+    if (hasFillableOutside(cursor, new Set(members))) break;
+    if (members.length > 1) return members;
+  }
+  return [rep];
 }
 
 export function defaultDetectAll(

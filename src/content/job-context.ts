@@ -105,6 +105,10 @@ function companyFromAtsUrl(url: URL): string | null {
     const company = parts[0] === 'oneclick-ui' ? (at === -1 ? undefined : parts[at + 1]) : parts[0];
     if (company) return titleCase(company.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/-/g, ' '));
   }
+  if (url.hostname === 'jobs.gem.com') {
+    const m = url.pathname.match(/^\/([^/]+)\//);
+    if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
+  }
   return null;
 }
 

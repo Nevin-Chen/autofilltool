@@ -10,6 +10,7 @@ const ATS_HOST_PATTERNS: ReadonlyArray<RegExp> = [
   /(^|\.)workable\.com$/i,
   /(^|\.)breezy\.hr$/i,
   /(^|\.)smartrecruiters\.com$/i,
+  /^jobs\.gem\.com$/i,
 ];
 
 export type AtsHint =

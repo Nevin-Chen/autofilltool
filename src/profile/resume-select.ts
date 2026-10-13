@@ -7,6 +7,7 @@ const SHARED_ATS_HOSTS: ReadonlyArray<RegExp> = [
   /(^|\.)workable\.com$/i,
   /(^|\.)smartrecruiters\.com$/i,
   /(^|\.)myworkdaysite\.com$/i,
+  /^jobs\.gem\.com$/i,
 ];
 
 export function companyKeyFromUrl(url: URL | string): string {

@@ -7,6 +7,7 @@ import { jazzhrAdapter } from './jazzhr';
 import { workableAdapter } from './workable';
 import { breezyAdapter } from './breezy';
 import { smartRecruitersAdapter } from './smartrecruiters';
+import { gemAdapter } from './gem';
 import { genericAdapter } from './generic';
 
 export const adapters: PlatformAdapter[] = [
@@ -18,5 +19,6 @@ export const adapters: PlatformAdapter[] = [
   jazzhrAdapter,
   workableAdapter,
   breezyAdapter,
+  gemAdapter,
   genericAdapter,
 ];

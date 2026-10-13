@@ -125,7 +125,8 @@ export type DetectedField = {
     | 'locateButton'
     | 'shadowCombobox'
     | 'monthYearPicker'
-    | 'searchPrompt';
+    | 'searchPrompt'
+    | 'menuButton';
   group?: FieldGroup;
   datePart?: 'month' | 'year';
 };
@@ -137,7 +138,7 @@ export type UnclassifiedField = {
   label: string;
   fieldType: UnclassifiedFieldType;
   options?: string[];
-  widget?: 'shadowCombobox' | 'searchPrompt';
+  widget?: 'shadowCombobox' | 'searchPrompt' | 'menuButton';
 };
 
 export type DetectionResult = {

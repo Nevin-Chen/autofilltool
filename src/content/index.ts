@@ -12,10 +12,12 @@ import {
   fillVirtualizedDropdown,
   fillShadowCombobox,
   fillSearchPrompt,
+  fillMenuButton,
   fillCheckboxGroup,
   fillButtonGroup,
   harvestComboboxOptions,
   harvestShadowComboboxOptions,
+  harvestMenuButtonOptions,
   fillSiteAnswer,
   isFileAlreadyAttached,
   markThinking,
@@ -968,7 +970,15 @@ type ComboboxFiller = (
 
 function comboboxFiller(widget: UnclassifiedField['widget']): ComboboxFiller {
   if (widget === 'searchPrompt') return fillSearchPrompt;
+  if (widget === 'menuButton') return fillMenuButton;
   return widget === 'shadowCombobox' ? fillShadowCombobox : fillVirtualizedDropdown;
+}
+
+function comboboxHarvester(
+  widget: UnclassifiedField['widget'],
+): (trigger: HTMLElement) => Promise<string[]> {
+  if (widget === 'menuButton') return harvestMenuButtonOptions;
+  return widget === 'shadowCombobox' ? harvestShadowComboboxOptions : harvestComboboxOptions;
 }
 
 function isRetryableSkip(note: string | undefined): boolean {
@@ -1025,10 +1035,7 @@ async function runAiFallbackQueue(
         u.el instanceof HTMLElement
       ) {
         try {
-          const harvested =
-            u.widget === 'shadowCombobox'
-              ? await harvestShadowComboboxOptions(u.el)
-              : await harvestComboboxOptions(u.el);
+          const harvested = await comboboxHarvester(u.widget)(u.el);
           if (harvested.length > 0) u.options = harvested;
         } catch (err) {
           log.warn('combobox option harvest failed', err);
