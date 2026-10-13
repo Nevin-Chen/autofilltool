@@ -9,7 +9,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 ## Features
 
 #### **Auto-fill**
-- Works on Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters. Anything else falls back to matching keywords in the field labels
+- Works on Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, SmartRecruiters, and Gem. Anything else falls back to matching keywords in the field labels
 - Fields that already have a value are skipped, including a search field where you already picked a result. Turn on **Force overwrite** to fill over them
 - Radios, checkboxes, and Yes/No toggles that already hold the right answer are never clicked again. Some forms clear the answer on a second click
 - Fills ATS iframes embedded in a company's careers page, not just the ATS domain itself
@@ -224,7 +224,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `scripting` | Inject the filler into pages when you click Fill |
 | `activeTab` | Reach the focused tab from the popup |
 | `webNavigation` | Notice an ATS iframe loading inside another page, and route changes inside single-page apply flows |
-| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, and SmartRecruiters forms |
+| Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, SmartRecruiters, and Gem forms |
 | Host: `<all_urls>` | Show the Fill pill on a company's careers page when the application is an ATS iframe embedded in it |
 
 **Optional**, asked for when you need them and revocable from Options:
@@ -252,7 +252,7 @@ No `tabs` and no `webRequest`. The background only injects into a page outside t
 src/
 ├── background/   MV3 service worker (the only code that talks to external hosts)
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
-├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR / SmartRecruiters + generic)
+├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR / SmartRecruiters / Gem + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client

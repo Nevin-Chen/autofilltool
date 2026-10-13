@@ -5,7 +5,12 @@ import {
   enterField,
   leaveField,
 } from '@/lib/events';
-import { bestLabel, deepQueryAll, findLocateButton } from '@/adapters/_shared';
+import {
+  bestLabel,
+  deepQueryAll,
+  findLocateButton,
+  unnamedChoiceGroup,
+} from '@/adapters/_shared';
 import type { DetectedField, SiteAnswer } from '@/adapters/types';
 import { usStateName } from '@/lib/us-states';
 
@@ -171,6 +176,8 @@ export async function fillDetectedField(
       return fillMonthYearPicker(field, value, opts);
     case 'searchPrompt':
       return fillSearchPrompt(field, value, opts);
+    case 'menuButton':
+      return fillMenuButton(field, value, opts);
     default:
       return fillField(field, value, opts);
   }
@@ -332,14 +339,13 @@ function fillRadio(
   meta: Meta,
 ): FillAction {
   const want = String(rawValue).trim().toLowerCase();
-  const root = el.form ?? el.ownerDocument;
-  const name = el.name;
-  if (!name) {
-    return { ...meta, status: 'error', note: 'radio has no name attribute' };
-  }
-  const group = Array.from(
-    root.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${cssEscape(name)}"]`),
-  );
+  const group = el.name
+    ? Array.from(
+        (el.form ?? el.ownerDocument).querySelectorAll<HTMLInputElement>(
+          `input[type="radio"][name="${cssEscape(el.name)}"]`,
+        ),
+      )
+    : unnamedChoiceGroup(el);
 
   const synonyms: Record<string, string[]> = {
     yes: ['yes', 'true', 'y'],
@@ -534,7 +540,7 @@ function checkboxGroupForFill(rep: HTMLInputElement): HTMLInputElement[] {
     );
     if (byName.length > 0) return byName;
   }
-  return [rep];
+  return unnamedChoiceGroup(rep);
 }
 
 function matchCheckboxByLabel(
@@ -1016,6 +1022,91 @@ export async function harvestComboboxOptions(
 
   closeCombobox(trigger, wasFocused);
   return out;
+}
+
+const MENU_SELECTOR = '[role="menu"], menu';
+const MENU_ITEM_SELECTOR = '[role="menuitem"], [role="menuitemradio"]';
+
+export async function fillMenuButton(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: VirtualizedDropdownOptions = {},
+): Promise<FillAction> {
+  const { el: trigger, kind, label } = field;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { label, kind, status: 'skipped', note: 'no value in profile' };
+  }
+  if (!opts.forceOverwrite && comboboxHasValue(trigger)) {
+    return { label, kind, status: 'skipped', note: 'already filled' };
+  }
+  const want = String(rawValue).trim();
+  const items = await openMenuItems(trigger, opts.timeoutMs ?? 1500);
+  if (!items) {
+    return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
+  }
+  const index = matchOptionText(items.map(textOfNode), want);
+  if (index === null) {
+    closeCombobox(trigger, false);
+    return {
+      label,
+      kind,
+      status: 'skipped',
+      note: `no option matched "${truncate(want, 60)}"`,
+    };
+  }
+  const item = items[index]!;
+  selectOption(item);
+  if (!opts.suppressFlash) flashFilled(trigger);
+  return { label, kind, status: 'filled', note: `selected "${textOfNode(item)}"` };
+}
+
+export async function harvestMenuButtonOptions(
+  trigger: HTMLElement,
+  opts: { timeoutMs?: number } = {},
+): Promise<string[]> {
+  const items = await openMenuItems(trigger, opts.timeoutMs ?? 1500);
+  if (!items) return [];
+  const texts = [...new Set(items.map(textOfNode).filter((t) => t.length > 0))];
+  closeCombobox(trigger, false);
+  return texts;
+}
+
+function openMenuItems(trigger: HTMLElement, timeoutMs: number): Promise<HTMLElement[] | null> {
+  const root = trigger.ownerDocument;
+  const preexisting = new Set(Array.from(root.querySelectorAll(MENU_SELECTOR)));
+  const find = (): HTMLElement[] | null => {
+    for (const menu of Array.from(root.querySelectorAll(MENU_SELECTOR))) {
+      if (preexisting.has(menu)) continue;
+      const items = Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)).filter(
+        (el) => !isDisabled(el),
+      );
+      if (items.length > 0) return items;
+    }
+    return null;
+  };
+  try {
+    trigger.click();
+  } catch {
+    return Promise.resolve(null);
+  }
+  const existing = find();
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: HTMLElement[] | null) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const observer = new MutationObserver(() => {
+      const found = find();
+      if (found) finish(found);
+    });
+    observer.observe(root.documentElement, { childList: true, subtree: true });
+    const timer = setTimeout(() => finish(null), timeoutMs);
+  });
 }
 
 const SHADOW_LIST_OPEN_MS = 600;
