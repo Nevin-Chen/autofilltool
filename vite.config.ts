@@ -71,7 +71,11 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     rollupOptions: {
-      // crxjs handles inputs declared in manifest.json; nothing extra needed here.
+      // crxjs handles inputs declared in manifest.json. The job feed page is
+      // only opened from the popup, so it is not in the manifest.
+      input: {
+        jobs: resolve(__dirname, 'src/ui/jobs/index.html'),
+      },
     },
   },
   server: {

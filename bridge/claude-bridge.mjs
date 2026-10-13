@@ -26,6 +26,10 @@
  *    startup from bridge/voice-spec.md plus whatever samples your writing-style
  *    skill carries that it does not. Both stay local; neither ships anywhere.
  *
+ * `/v1/raw/chat/completions` skips the last two: no output contract, no voice.
+ * The job feed uses it to get JSON verdicts back, which a "write a plain-text
+ * draft in my voice" prompt would fight.
+ *
  * Terms-of-service note: driving a Claude *subscription* through a wrapper to
  * power a separate app is a gray area versus its intended interactive use. Use
  * on your own account with that in view. An Anthropic API key sidesteps it.
@@ -361,7 +365,7 @@ function extractFromEvent(obj, state) {
   return '';
 }
 
-function handleChat(req, res, body) {
+function handleChat(req, res, body, { raw = false } = {}) {
   let parsed;
   try {
     parsed = JSON.parse(body);
@@ -391,8 +395,14 @@ function handleChat(req, res, body) {
     // pulls in ~/.claude/CLAUDE.md. Auth is stored separately and still applies.
     '--setting-sources', '',
   ];
-  args.push('--system-prompt', system ? `${system}\n\n${OUTPUT_CONTRACT}` : OUTPUT_CONTRACT);
-  if (VOICE_PROMPT_PATH) args.push('--append-system-prompt-file', VOICE_PROMPT_PATH);
+  if (raw) {
+    // Still replace the coding-agent prompt, or an empty system message would
+    // fall back to it.
+    args.push('--system-prompt', system || 'Answer the request directly.');
+  } else {
+    args.push('--system-prompt', system ? `${system}\n\n${OUTPUT_CONTRACT}` : OUTPUT_CONTRACT);
+    if (VOICE_PROMPT_PATH) args.push('--append-system-prompt-file', VOICE_PROMPT_PATH);
+  }
 
   const child = spawn(CLAUDE_BIN, args, { cwd: WORK_DIR, env: process.env });
   // A `claude` child outlives its parent if we exit without reaping it, and it
@@ -503,10 +513,11 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-  if (req.method === 'POST' && req.url && req.url.startsWith('/v1/chat/completions')) {
+  const raw = Boolean(req.url && req.url.startsWith('/v1/raw/chat/completions'));
+  if (req.method === 'POST' && req.url && (raw || req.url.startsWith('/v1/chat/completions'))) {
     try {
       const body = await readBody(req);
-      handleChat(req, res, body);
+      handleChat(req, res, body, { raw });
     } catch (err) {
       sendJson(res, 400, { error: { message: err instanceof Error ? err.message : String(err) } });
     }

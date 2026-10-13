@@ -3,6 +3,7 @@ import { streamChatCompletions } from './openai-compat';
 export const CLAUDE_BRIDGE_DEFAULT_MODEL = 'opus';
 export const CLAUDE_BRIDGE_DEFAULT_BASE = 'http://localhost:11435';
 const CHAT_PATH = '/v1/chat/completions';
+const RAW_CHAT_PATH = '/v1/raw/chat/completions';
 
 export type ClaudeBridgeStreamParams = {
   apiKey: string;
@@ -12,11 +13,14 @@ export type ClaudeBridgeStreamParams = {
   maxTokens: number;
   temperature?: number;
   endpoint?: string;
+  raw?: boolean;
   fetchImpl?: typeof fetch;
 };
 
 export function streamClaudeBridge(params: ClaudeBridgeStreamParams) {
-  const endpoint = resolveEndpoint(params.endpoint ?? '');
+  const endpoint = params.raw
+    ? resolveRawEndpoint(params.endpoint ?? '')
+    : resolveEndpoint(params.endpoint ?? '');
   const apiKey = params.apiKey || 'claude-bridge';
   return streamChatCompletions({
     endpoint,
@@ -36,6 +40,12 @@ export function resolveEndpoint(raw: string): string {
   if (trimmed.endsWith('/chat/completions')) return trimmed;
   const noTrailing = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
   return `${noTrailing}${CHAT_PATH}`;
+}
+
+export function resolveRawEndpoint(raw: string): string {
+  const origin = resolveOriginForPermission(raw);
+  const base = origin ? origin.slice(0, -1) : CLAUDE_BRIDGE_DEFAULT_BASE;
+  return `${base}${RAW_CHAT_PATH}`;
 }
 
 export function resolveOriginForPermission(raw: string): string | null {

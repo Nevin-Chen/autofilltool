@@ -1,0 +1,388 @@
+import { getProfile, getResumeLibrary, getSettings } from '@/profile/store';
+import { defaultVariant } from '@/profile/resume-select';
+import type { JobSearch, Settings } from '@/profile/schema';
+import { extractResumeText, summarizeProfileForClassifier } from '@/ai/client';
+import {
+  CLAUDE_BRIDGE_DEFAULT_BASE,
+  resolveOriginForPermission,
+  streamClaudeBridge,
+} from '@/ai/providers/claude-bridge';
+import { hasOriginPermission } from '@/lib/permissions';
+import { sourceForUrl, type JobSource } from '@/jobs/sources';
+import { localDateKey, selectNewListings, type JudgeCandidate } from '@/jobs/dedupe';
+import type { CandidateContext } from '@/jobs/candidate';
+import {
+  JOB_SCREEN_BATCH_SIZE,
+  JOB_SCREEN_MAX_TOKENS,
+  JOB_SCREEN_MODEL,
+  buildScreenPrompt,
+  parseScreenResponse,
+  type ScreenResult,
+} from '@/jobs/screen';
+import {
+  JOB_REVIEW_CONCURRENCY,
+  JOB_REVIEW_MAX_TOKENS,
+  JOB_REVIEW_MODEL,
+  MIN_FULL_DESCRIPTION_CHARS,
+  buildReviewPrompt,
+  finalizeReview,
+  parseReviewResponse,
+} from '@/jobs/review';
+import { getJobFeedback, recentDisagreements } from '@/jobs/feedback';
+import { getJobFeed, updateJobFeed } from '@/jobs/store';
+import {
+  emptyJobCounts,
+  type DeepReview,
+  type JobCheck,
+  type JobCheckCounts,
+  type JobFeed,
+  type JobListing,
+  type JudgedJob,
+} from '@/jobs/schema';
+
+export const TAB_LOAD_TIMEOUT_MS = 30_000;
+
+type Prompt = { system: string; user: string };
+
+export type JobCheckDeps = {
+  sourceForUrl: (url: string) => JobSource | null;
+  readSearchPage: (url: string, source: JobSource) => Promise<unknown>;
+  readListingPage: (url: string, source: JobSource) => Promise<unknown>;
+  screenBatch: (prompt: Prompt, endpoint: string) => Promise<string>;
+  reviewJob: (prompt: Prompt, endpoint: string) => Promise<string>;
+  canReachBridge: (endpoint: string) => Promise<boolean>;
+  setBadge: (fits: number) => Promise<void>;
+  now: () => Date;
+  newId: () => string;
+};
+
+export const defaultJobCheckDeps: JobCheckDeps = {
+  sourceForUrl,
+  readSearchPage: (url, source) => readInBackgroundTab(url, source.readPage),
+  readListingPage: (url, source) =>
+    source.readListingPage ? readInBackgroundTab(url, source.readListingPage) : Promise.resolve(null),
+  screenBatch: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS),
+  reviewJob: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS),
+  canReachBridge: (endpoint) => hasOriginPermission(endpoint),
+  setBadge: showFitsOnBadge,
+  now: () => new Date(),
+  newId: () => crypto.randomUUID(),
+};
+
+type Advanced = { candidate: JudgeCandidate; source: JobSource };
+
+export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Promise<JobCheck> {
+  const checkId = deps.newId();
+  const writeFeed = serializedWriter(deps.now);
+  await writeFeed((feed) => ({
+    ...feed,
+    checks: [
+      ...feed.checks,
+      {
+        id: checkId,
+        startedAt: deps.now().toISOString(),
+        finishedAt: null,
+        status: 'running',
+        phase: 'Starting',
+        error: null,
+        counts: null,
+      },
+    ],
+  }));
+  const patchCheck = (patch: Partial<JobCheck>) =>
+    writeFeed((feed) => ({
+      ...feed,
+      checks: feed.checks.map((check) => (check.id === checkId ? { ...check, ...patch } : check)),
+    }));
+  const storeJobs = async (jobs: JudgedJob[]) => {
+    if (jobs.length > 0) await writeFeed((feed) => ({ ...feed, jobs: [...feed.jobs, ...jobs] }));
+  };
+
+  const counts = emptyJobCounts();
+  try {
+    const [settings, profile, library, feedback] = await Promise.all([
+      getSettings(),
+      getProfile(),
+      getResumeLibrary(),
+      getJobFeedback(),
+    ]);
+    const searches = settings.jobs.searches;
+    if (searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
+    const endpoint = bridgeEndpoint(settings);
+    if (!(await deps.canReachBridge(endpoint))) {
+      throw new Error(`No permission to reach the Claude bridge at ${endpoint}. Grant it in Options > AI.`);
+    }
+
+    const listings: Array<{ listing: JobListing; source: JobSource }> = [];
+    for (const search of searches) {
+      const source = deps.sourceForUrl(search.url);
+      if (!source) throw new Error(`${searchName(search)} isn't on a supported job board yet.`);
+      await patchCheck({ phase: `Reading ${searchName(search)}` });
+      const found = source.toListings(await deps.readSearchPage(search.url, source));
+      if (!found) {
+        throw new Error(
+          `Couldn't read ${searchName(search)}. If the job board is showing a bot check, open the search in a tab yourself, then check again.`,
+        );
+      }
+      listings.push(...found.map((listing) => ({ listing, source })));
+    }
+    const sourceById = new Map(listings.map(({ listing, source }) => [listing.id, source]));
+
+    const selection = selectNewListings(
+      listings.map(({ listing }) => listing),
+      (await getJobFeed()).jobs,
+      localDateKey(deps.now()),
+    );
+    counts.postedToday = selection.postedToday;
+    counts.alreadySeen = selection.alreadySeen;
+    counts.identicalRepeats = selection.identicalRepeats;
+
+    const resume = defaultVariant(library);
+    const context: CandidateContext = {
+      profileSummary: summarizeProfileForClassifier(profile),
+      resumeText: resume ? await extractResumeText(resume) : '',
+      criteria: settings.jobs.criteria,
+      disagreements: recentDisagreements(feedback),
+    };
+
+    const { candidates } = selection;
+    const advanced: Advanced[] = [];
+    for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
+      const batch = candidates.slice(start, start + JOB_SCREEN_BATCH_SIZE);
+      await patchCheck({
+        phase: `Screening ${start + 1}-${start + batch.length} of ${candidates.length}`,
+      });
+      const results = parseScreenResponse(await deps.screenBatch(buildScreenPrompt(batch, context), endpoint));
+      const judgedAt = deps.now().toISOString();
+      const settled: JudgedJob[] = [];
+      for (const candidate of batch) {
+        const result = results.get(candidate.listing.id);
+        const source = sourceById.get(candidate.listing.id);
+        if (!result || !source) {
+          counts.unjudged++;
+        } else if (result.verdict === 'review') {
+          advanced.push({ candidate, source });
+        } else {
+          settled.push(toScreenedJob(candidate, result, checkId, judgedAt));
+        }
+      }
+      tally(counts, settled);
+      await storeJobs(settled);
+    }
+
+    let finishedReviews = 0;
+    let lastReviewError: unknown = null;
+    const reportProgress = () =>
+      patchCheck({ phase: `Claude is reviewing full postings: ${finishedReviews} of ${advanced.length} done` });
+    if (advanced.length > 0) await reportProgress();
+    await mapWithConcurrency(advanced, JOB_REVIEW_CONCURRENCY, async ({ candidate, source }) => {
+      try {
+        const job = await reviewCandidate(candidate, source, context, endpoint, checkId, deps);
+        if (job) {
+          tally(counts, [job]);
+          counts.reviewed++;
+          if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
+          await storeJobs([job]);
+        } else {
+          counts.unjudged++;
+        }
+      } catch (err) {
+        counts.unjudged++;
+        lastReviewError = err;
+      } finally {
+        finishedReviews++;
+        if (finishedReviews < advanced.length) await reportProgress();
+      }
+    });
+    if (advanced.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
+
+    const feed = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
+    await deps.setBadge(counts.strong + counts.maybe);
+    return checkById(feed, checkId);
+  } catch (err) {
+    const feed = await patchCheck({
+      status: 'failed',
+      phase: '',
+      finishedAt: deps.now().toISOString(),
+      error: err instanceof Error ? err.message : String(err),
+      counts,
+    });
+    return checkById(feed, checkId);
+  }
+}
+
+async function reviewCandidate(
+  candidate: JudgeCandidate,
+  source: JobSource,
+  context: CandidateContext,
+  endpoint: string,
+  checkId: string,
+  deps: JobCheckDeps,
+): Promise<JudgedJob | null> {
+  const { listing } = candidate;
+  const fullDescription = await readFullDescription(listing, source, deps);
+  const descriptionSource: DeepReview['descriptionSource'] = fullDescription ? 'full' : 'summary';
+  const description = fullDescription ?? listing.requirements;
+  const raw = parseReviewResponse(
+    await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint),
+  );
+  if (!raw) return null;
+  const { verdict, review } = finalizeReview(
+    raw,
+    `${context.resumeText}\n${context.profileSummary}`,
+    descriptionSource,
+  );
+  return {
+    ...listing,
+    fingerprint: candidate.fingerprint,
+    verdict,
+    reason: review.summary,
+    repeatOf: null,
+    checkId,
+    judgedAt: deps.now().toISOString(),
+    review,
+  };
+}
+
+async function readFullDescription(
+  listing: JobListing,
+  source: JobSource,
+  deps: JobCheckDeps,
+): Promise<string | null> {
+  if (!source.readListingPage || !source.toDescription || !listing.listingUrl) return null;
+  try {
+    const text = source.toDescription(await deps.readListingPage(listing.listingUrl, source));
+    return text && text.length >= MIN_FULL_DESCRIPTION_CHARS ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+export function toScreenedJob(
+  candidate: JudgeCandidate,
+  result: ScreenResult,
+  checkId: string,
+  judgedAt: string,
+): JudgedJob {
+  const repeatOf = result.verdict === 'repeat' ? (candidate.sameTitleAs?.id ?? null) : null;
+  return {
+    ...candidate.listing,
+    fingerprint: candidate.fingerprint,
+    verdict: repeatOf ? 'repeat' : 'skip',
+    reason: result.reason,
+    repeatOf,
+    checkId,
+    judgedAt,
+    review: null,
+  };
+}
+
+function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
+  counts.judged += judged.length;
+  for (const job of judged) counts[job.verdict]++;
+}
+
+function serializedWriter(now: () => Date) {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (change: (feed: JobFeed) => JobFeed): Promise<JobFeed> => {
+    const next = queue.then(() => updateJobFeed(change, now()));
+    queue = next.catch(() => undefined);
+    return next;
+  };
+}
+
+export async function mapWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const item = items[index++]!;
+      await run(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function checkById(feed: JobFeed, id: string): JobCheck {
+  const check = feed.checks.find((c) => c.id === id);
+  if (!check) throw new Error(`Check ${id} disappeared from storage.`);
+  return check;
+}
+
+export function bridgeEndpoint(settings: Settings): string {
+  const configured = settings.ai.provider === 'claude-bridge' ? settings.ai.endpoint.trim() : '';
+  const origin = resolveOriginForPermission(configured || CLAUDE_BRIDGE_DEFAULT_BASE);
+  return origin ? origin.slice(0, -1) : CLAUDE_BRIDGE_DEFAULT_BASE;
+}
+
+function searchName(search: JobSearch): string {
+  return search.label.trim() || new URL(search.url).hostname;
+}
+
+async function readInBackgroundTab(url: string, readPage: () => unknown): Promise<unknown> {
+  const tab = await chrome.tabs.create({ url, active: false });
+  const tabId = tab.id;
+  if (tabId == null) throw new Error('Chrome did not open a background tab.');
+  try {
+    await waitForTabLoad(tabId, TAB_LOAD_TIMEOUT_MS);
+    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: readPage });
+    return frame?.result ?? null;
+  } finally {
+    await chrome.tabs.remove(tabId).catch(() => {});
+  }
+}
+
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error(`The page took longer than ${timeoutMs / 1000}s to load.`));
+    }, timeoutMs);
+    const done = () => {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+    const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
+      if (updatedId === tabId && info.status === 'complete') done();
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === 'complete') done();
+      })
+      .catch(() => {});
+  });
+}
+
+async function askBridge(prompt: Prompt, endpoint: string, model: string, maxTokens: number): Promise<string> {
+  let text = '';
+  try {
+    for await (const chunk of streamClaudeBridge({
+      apiKey: '',
+      model,
+      system: prompt.system,
+      user: prompt.user,
+      maxTokens,
+      endpoint,
+      raw: true,
+    })) {
+      text += chunk;
+    }
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(`Couldn't reach the Claude bridge at ${endpoint}. Start it with \`npm run bridge\`.`);
+    }
+    throw err;
+  }
+  return text;
+}
+
+async function showFitsOnBadge(fits: number): Promise<void> {
+  await chrome.action.setBadgeBackgroundColor({ color: '#0284c7' });
+  await chrome.action.setBadgeText({ text: fits > 0 ? String(fits) : '' });
+}
