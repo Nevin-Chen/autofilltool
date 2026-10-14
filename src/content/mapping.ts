@@ -113,9 +113,6 @@ export function valueForField(
     case 'endDate':
       return historyDate(profile, group, 'endDate');
 
-    case 'coverLetter':
-      return profile.defaultCoverLetter || null;
-
     case 'referralSource':
     case 'agreement':
     case 'language':
@@ -123,6 +120,7 @@ export function valueForField(
     case 'screening':
       return null;
 
+    case 'coverLetter':
     case 'openEnded':
       return null;
 

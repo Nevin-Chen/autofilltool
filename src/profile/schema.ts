@@ -104,7 +104,6 @@ export const ProfileSchema = z.object({
   demographics: DemographicsSchema.default({}),
   experience: z.array(ExperienceSchema).default([]),
   education: z.array(EducationSchema).default([]),
-  defaultCoverLetter: z.string().default(''),
   savedAnswers: z.array(SavedAnswerSchema).default([]),
 });
 export type Profile = z.infer<typeof ProfileSchema>;
