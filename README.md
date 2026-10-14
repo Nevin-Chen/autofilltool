@@ -60,7 +60,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - The same posting on another job board (identical title, company, city, and requirements summary) is dropped. When only the title and company match, Claude compares the two descriptions: a reworded copy goes under Repeats, a different role gets judged
 - Results show on the Jobs page with a **Why** list for each match, the job page and direct apply links, and how often you've agreed with Claude. The count of strong and maybe matches shows on the extension icon. Results are kept for 7 days
 - Works on LinkedIn. Paste a search URL with your filters already set (keywords, location, date posted, salary). Every result is judged, up to 10 pages of 25, because LinkedIn's own date filter already limits them
-- The check browses LinkedIn like you would: it opens one page at a time in a background tab, waits 3 to 8 seconds between pages, reads what's on the page, and opens at most 40 job pages per check. Jobs past that limit are reviewed on the next check
+- The check browses LinkedIn like you would, in one background tab per search: it loads a results page, reads the cards, and clicks each job worth a closer look so the detail pane loads, newest postings first. It waits 2 to 5 seconds between clicks and 3 to 8 seconds between pages, and clicks at most 60 jobs per check. Jobs past that limit are reviewed on the next check. Claude reviews jobs while the browsing continues
 - If LinkedIn shows a security check or sign-in page, the check stops opening pages and tells you. It never touches the check itself
 - Easy Apply jobs are marked, since you apply to those on LinkedIn and autofill can't help there. Other jobs get a direct link to the employer's application
 

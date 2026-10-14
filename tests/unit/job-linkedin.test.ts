@@ -8,6 +8,7 @@ import {
   parseLinkedInCard,
   readLinkedInJobPage,
   readLinkedInSearchPage,
+  readLinkedInSelectedJob,
 } from '@/jobs/sources/linkedin';
 import { sourceForUrl } from '@/jobs/sources';
 
@@ -273,5 +274,76 @@ describe('readLinkedInJobPage', () => {
   it('falls back to the text under the "About the job" heading', async () => {
     document.body.innerHTML = `<section><h2>About the job</h2><div>${POSTING}</div></section>`;
     expect((await read()).description).toBe(POSTING);
+  });
+});
+
+describe('readLinkedInSelectedJob', () => {
+  const POSTING = 'You will build payment APIs in TypeScript and React for millions of businesses. '.repeat(8).trim();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  function pane(jobId: string, extra = '') {
+    return `<div componentkey="JobDetails_AboutTheJob_${jobId}"><h2>About the job</h2><div data-testid="expandable-text-box">${POSTING}<button>… more</button></div></div>${extra}`;
+  }
+
+  function searchPage(cards: string[], openPane = '') {
+    document.body.innerHTML = `<div data-testid="lazy-column">${cards
+      .map(
+        (id) =>
+          `<div role="button" tabindex="0" componentkey="job-card-component-ref-${id}"><p>Software Engineer</p><button aria-label="Dismiss Software Engineer job">x</button></div>`,
+      )
+      .join('')}</div><section id="pane">${openPane}</section>`;
+  }
+
+  async function select(listingId: string) {
+    const pending = readLinkedInSelectedJob(listingId);
+    await vi.advanceTimersByTimeAsync(20_000);
+    return pending;
+  }
+
+  it('clicks the card, waits for that job in the detail pane, and reads it', async () => {
+    searchPage(['4400000001', '4400000002']);
+    const dismiss = vi.fn();
+    document.querySelector('[aria-label^="Dismiss"]')?.addEventListener('click', dismiss);
+    document.querySelector('[componentkey="job-card-component-ref-4400000002"]')?.addEventListener('click', () => {
+      setTimeout(() => {
+        document.getElementById('pane')!.innerHTML = pane(
+          '4400000002',
+          '<a href="https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fjob-boards.greenhouse.io%2Fstripe%2Fjobs%2F7000001&amp;urlhash=abc">Apply on company website</a>',
+        );
+      }, 1_200);
+    });
+    expect(await select('linkedin:4400000002')).toEqual({
+      blocked: false,
+      description: POSTING,
+      applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
+      easyApply: false,
+    });
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it('does not click when the pane already shows that job', async () => {
+    searchPage(['4400000001'], pane('4400000001', '<button aria-label="Easy Apply to this job">Easy Apply</button>'));
+    const clicked = vi.fn();
+    document.querySelector('[componentkey="job-card-component-ref-4400000001"]')?.addEventListener('click', clicked);
+    expect(await select('linkedin:4400000001')).toMatchObject({ easyApply: true, applyUrl: null });
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('ignores the pane of a different job', async () => {
+    searchPage(['4400000001', '4400000002'], pane('4400000001'));
+    expect(await select('linkedin:4400000002')).toEqual({ missing: true });
+  });
+
+  it('reports a card that is not on the page', async () => {
+    searchPage(['4400000001']);
+    expect(await select('linkedin:4400000009')).toEqual({ missing: true });
   });
 });

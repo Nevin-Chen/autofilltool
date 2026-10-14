@@ -1,10 +1,12 @@
-import type { JobListing, JudgedJob } from './schema';
+import type { JobListing } from './schema';
 
 export type JudgeCandidate = {
   listing: JobListing;
   fingerprint: string;
   sameTitleAs: JobListing | null;
 };
+
+export type SeenListing = JobListing & { fingerprint: string };
 
 export type ListingSelection = {
   candidates: JudgeCandidate[];
@@ -44,7 +46,7 @@ function fnv1a(input: string): string {
 
 export function selectNewListings(
   listings: readonly JobListing[],
-  judged: readonly JudgedJob[],
+  judged: readonly SeenListing[],
   today: string,
   todayOnly: (listing: JobListing) => boolean = () => true,
 ): ListingSelection {

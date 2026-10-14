@@ -104,6 +104,50 @@ export async function readLinkedInJobPage(): Promise<unknown> {
   return { blocked: false, description, applyUrl, easyApply };
 }
 
+export async function readLinkedInSelectedJob(listingId: string): Promise<unknown> {
+  if (/^\/(checkpoint|authwall|login|uas|signup)(\/|$)/.test(location.pathname)) return { blocked: true };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const jobId = listingId.replace(/^linkedin:/, '');
+  const card =
+    document.querySelector(`div[role="button"][componentkey="job-card-component-ref-${jobId}"]`) ??
+    document.querySelector(`[componentkey="job-card-component-ref-${jobId}"]`);
+  if (!card) return { missing: true };
+
+  const descriptionSelector = `[componentkey="JobDetails_AboutTheJob_${jobId}"] [data-testid="expandable-text-box"]`;
+  if (!document.querySelector(descriptionSelector)) {
+    (card as HTMLElement).click();
+    const deadline = Date.now() + 15_000;
+    while (!document.querySelector(descriptionSelector) && Date.now() < deadline) await sleep(250);
+  }
+  const box = document.querySelector(descriptionSelector);
+  if (!box) return { missing: true };
+
+  const applyLink = () =>
+    [...document.querySelectorAll('a[href*="/safety/go"]')].find((a) =>
+      /apply/i.test(a.getAttribute('aria-label') || a.textContent || ''),
+    );
+  const easyApplyButton = () =>
+    [...document.querySelectorAll('button, a')].find((el) =>
+      /^Easy Apply\b/i.test((el.getAttribute('aria-label') || el.textContent || '').trim()),
+    );
+  const buttonsDeadline = Date.now() + 3_000;
+  while (!applyLink() && !easyApplyButton() && Date.now() < buttonsDeadline) await sleep(200);
+
+  const inner = (box as HTMLElement).innerText;
+  const text = typeof inner === 'string' && inner.trim() ? inner : (box.textContent ?? '');
+  const description = text.replace(/\s*…\s*more\s*$/i, '').trim();
+  let applyUrl: string | null = null;
+  const link = applyLink();
+  if (link) {
+    try {
+      applyUrl = new URL(link.getAttribute('href') ?? '', location.href).searchParams.get('url');
+    } catch {
+      applyUrl = null;
+    }
+  }
+  return { blocked: false, description, applyUrl, easyApply: !!easyApplyButton() };
+}
+
 type RawCard = { id: string; lines: string[] };
 
 export function linkedInListings(raw: unknown, now: number = Date.now()): JobListing[] | null {
@@ -178,7 +222,7 @@ function postedAt(lines: readonly string[], now: number): string {
 }
 
 export function linkedInDetails(raw: unknown): ListingDetails | null {
-  if (!isRecord(raw) || raw.blocked === true) return null;
+  if (!isRecord(raw) || raw.blocked === true || raw.missing === true) return null;
   const description = typeof raw.description === 'string' && raw.description.trim() ? raw.description.trim() : null;
   const applyUrl = typeof raw.applyUrl === 'string' && /^https?:\/\//.test(raw.applyUrl) ? raw.applyUrl : null;
   return { description, applyUrl, easyApply: raw.easyApply === true };
@@ -209,7 +253,14 @@ export const linkedInSource: JobSource = {
   id: 'linkedin',
   matches: (url) => LINKEDIN_HOSTS.has(url.hostname) && SEARCH_PATH_RE.test(url.pathname),
   postedTodayOnly: false,
-  limits: { minGapMs: 3_000, maxGapMs: 8_000, maxSearchPages: 10, maxListingPages: 40 },
+  limits: {
+    minGapMs: 3_000,
+    maxGapMs: 8_000,
+    minClickGapMs: 2_000,
+    maxClickGapMs: 5_000,
+    maxSearchPages: 10,
+    maxDetailReads: 60,
+  },
   searchPageUrl: linkedInSearchPageUrl,
   readPage: readLinkedInSearchPage,
   toListings: (raw) => linkedInListings(raw),
@@ -217,6 +268,7 @@ export const linkedInSource: JobSource = {
   isBlocked: (raw) => isRecord(raw) && raw.blocked === true,
   unreadCards: (raw) =>
     isRecord(raw) && Array.isArray(raw.cards) ? raw.cards.filter((card) => !isRawCard(card) || card.lines.length < 3).length : 0,
+  readSelected: readLinkedInSelectedJob,
   readListingPage: readLinkedInJobPage,
   toDetails: linkedInDetails,
 };

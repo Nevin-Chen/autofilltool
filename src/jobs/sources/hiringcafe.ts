@@ -140,7 +140,7 @@ export const hiringCafeSource: JobSource = {
   id: 'hiringcafe',
   matches: (url) => HIRING_CAFE_HOSTS.has(url.hostname),
   postedTodayOnly: true,
-  limits: { minGapMs: 0, maxGapMs: 0, maxSearchPages: 1, maxListingPages: 60 },
+  limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 1, maxDetailReads: 60 },
   searchPageUrl: (searchUrl) => searchUrl,
   readPage: readHiringCafePage,
   toListings: hiringCafeListings,
