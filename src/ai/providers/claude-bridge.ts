@@ -14,6 +14,7 @@ export type ClaudeBridgeStreamParams = {
   temperature?: number;
   endpoint?: string;
   raw?: boolean;
+  signal?: AbortSignal;
   fetchImpl?: typeof fetch;
 };
 
@@ -30,6 +31,7 @@ export function streamClaudeBridge(params: ClaudeBridgeStreamParams) {
     user: params.user,
     maxTokens: params.maxTokens,
     ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+    ...(params.signal ? { signal: params.signal } : {}),
     ...(params.fetchImpl ? { fetchImpl: params.fetchImpl } : {}),
   });
 }

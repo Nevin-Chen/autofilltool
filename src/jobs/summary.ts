@@ -18,7 +18,8 @@ export function describeCheck(check: JobCheck | null, now: Date): string {
   }
   const at = formatCheckTime(check.finishedAt ?? check.startedAt, now);
   if (check.status === 'failed') return `Check failed at ${at}`;
+  const verb = check.status === 'stopped' ? 'Stopped' : 'Checked';
   const counts = check.counts;
-  if (!counts) return `Checked at ${at}`;
-  return `Checked at ${at}: ${counts.strong} strong, ${counts.maybe} maybe, ${counts.judged} new`;
+  if (!counts) return `${verb} at ${at}`;
+  return `${verb} at ${at}: ${counts.strong} strong, ${counts.maybe} maybe, ${counts.judged} new`;
 }

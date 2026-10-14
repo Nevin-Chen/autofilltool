@@ -42,6 +42,7 @@ import {
 } from '@/jobs/schema';
 
 export const TAB_LOAD_TIMEOUT_MS = 30_000;
+export const STOP_GRACE_MS = 2_000;
 
 type Prompt = { system: string; user: string };
 
@@ -55,8 +56,8 @@ export type JobCheckDeps = {
   sourceForUrl: (url: string) => JobSource | null;
   openSession: () => BrowsingSession;
   readListingPage: (url: string, source: JobSource) => Promise<unknown>;
-  screenBatch: (prompt: Prompt, endpoint: string) => Promise<string>;
-  reviewJob: (prompt: Prompt, endpoint: string) => Promise<string>;
+  screenBatch: (prompt: Prompt, endpoint: string, signal?: AbortSignal) => Promise<string>;
+  reviewJob: (prompt: Prompt, endpoint: string, signal?: AbortSignal) => Promise<string>;
   canReachBridge: (endpoint: string) => Promise<boolean>;
   setBadge: (fits: number) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
@@ -77,8 +78,8 @@ export const defaultJobCheckDeps: JobCheckDeps = {
       await session.close();
     }
   },
-  screenBatch: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS),
-  reviewJob: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS),
+  screenBatch: (prompt, endpoint, signal) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS, signal),
+  reviewJob: (prompt, endpoint, signal) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS, signal),
   canReachBridge: (endpoint) => hasOriginPermission(endpoint),
   setBadge: showFitsOnBadge,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -89,8 +90,41 @@ export const defaultJobCheckDeps: JobCheckDeps = {
 
 export type Pacer = <T>(kind: 'load' | 'click', task: () => Promise<T>) => Promise<T>;
 
-export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Promise<JobCheck> {
+export class CheckStopped extends Error {
+  constructor() {
+    super('The check was stopped.');
+  }
+}
+
+export function untilStopped<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  promise.catch(() => {});
+  if (signal.aborted) return Promise.reject(new CheckStopped());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new CheckStopped());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+export async function runJobCheck(
+  deps: JobCheckDeps = defaultJobCheckDeps,
+  signal?: AbortSignal,
+): Promise<JobCheck> {
   const checkId = deps.newId();
+  const guard = <T>(promise: Promise<T>) => untilStopped(promise, signal);
+  const throwIfStopped = () => {
+    if (signal?.aborted) throw new CheckStopped();
+  };
   const writeFeed = serializedWriter(deps.now);
   await writeFeed((feed) => ({
     ...feed,
@@ -183,8 +217,9 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       void reportProgress();
       reviews.push(
         reviewSlots(async () => {
+          if (signal?.aborted) return;
           try {
-            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps);
+            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps, signal);
             if (!job) {
               counts.unjudged++;
               return;
@@ -196,6 +231,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
             if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
             await storeJobs([job]);
           } catch (err) {
+            if (signal?.aborted) return;
             counts.unjudged++;
             lastReviewError = err;
           }
@@ -210,8 +246,11 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       const advanced: JudgeCandidate[] = [];
       for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
         const batch = candidates.slice(start, start + JOB_SCREEN_BATCH_SIZE);
+        throwIfStopped();
         await patchCheck({ phase: `Screening ${batch.length} new listings from ${where}` });
-        const results = parseScreenResponse(await deps.screenBatch(buildScreenPrompt(batch, context), endpoint));
+        const results = parseScreenResponse(
+          await guard(deps.screenBatch(buildScreenPrompt(batch, context), endpoint, signal)),
+        );
         const judgedAt = deps.now().toISOString();
         const settled: JudgedJob[] = [];
         for (const candidate of batch) {
@@ -237,6 +276,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       progress.pageJobsTotal = newestFirst.length;
       progress.pageJobsDone = 0;
       for (const [index, candidate] of newestFirst.entries()) {
+        throwIfStopped();
         const left = detailReadsLeft.get(source.id) ?? budgetFor(source).detailReads;
         const needsPage = !!(source.readSelected || source.readListingPage) && !!source.toDetails;
         if (needsPage && left <= 0) {
@@ -268,13 +308,13 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       if (!source.toDetails) return null;
       if (source.readSelected) {
         const select = source.readSelected;
-        const raw = await pace('click', () => session.run(select, listing.id).catch(() => null));
+        const raw = await guard(pace('click', () => session.run(select, listing.id).catch(() => null)));
         if (source.isBlocked(raw)) return 'blocked';
         const details = source.toDetails(raw);
         if (details) return details;
       }
       if (!source.readListingPage || !listing.listingUrl) return null;
-      const raw = await pace('load', () => deps.readListingPage(listing.listingUrl, source).catch(() => null));
+      const raw = await guard(pace('load', () => deps.readListingPage(listing.listingUrl, source).catch(() => null)));
       if (source.isBlocked(raw)) return 'blocked';
       return source.toDetails(raw);
     };
@@ -289,8 +329,11 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
         let pagesRead = 0;
         for (let page = 0; page < budget; page++) {
           const where = page === 0 ? searchName(search) : `${searchName(search)}, page ${page + 1}`;
+          throwIfStopped();
           await patchCheck({ phase: `Reading ${where}` });
-          const raw = await pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage));
+          const raw = await guard(
+            pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage)),
+          );
           if (source.isBlocked(raw)) {
             throw new Error(
               `${searchName(search)} showed a security check or sign-in page. Open it in a tab yourself and deal with it there, then check again.`,
@@ -331,14 +374,28 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       }
     }
 
+    throwIfStopped();
     if (reviews.length > 0) await patchCheck({ phase: `Claude is finishing ${reviews.length} reviews` });
-    await Promise.all(reviews);
+    await guard(Promise.all(reviews));
+    throwIfStopped();
     if (reviews.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
 
     const done = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
     await deps.setBadge(counts.strong + counts.maybe);
     return checkById(done, checkId);
   } catch (err) {
+    if (err instanceof CheckStopped || signal?.aborted) {
+      await Promise.race([Promise.all(reviews), deps.sleep(STOP_GRACE_MS)]);
+      const stopped = await patchCheck({
+        status: 'stopped',
+        phase: '',
+        finishedAt: deps.now().toISOString(),
+        error: null,
+        counts,
+      });
+      await deps.setBadge(counts.strong + counts.maybe);
+      return checkById(stopped, checkId);
+    }
     await Promise.all(reviews);
     const failed = await patchCheck({
       status: 'failed',
@@ -358,6 +415,7 @@ async function reviewCandidate(
   endpoint: string,
   checkId: string,
   deps: JobCheckDeps,
+  signal?: AbortSignal,
 ): Promise<JudgedJob | null> {
   const listing: JobListing = {
     ...candidate.listing,
@@ -371,7 +429,7 @@ async function reviewCandidate(
   if (!description) return null;
   const descriptionSource: DeepReview['descriptionSource'] = fullDescription ? 'full' : 'summary';
   const raw = parseReviewResponse(
-    await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint),
+    await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint, signal),
   );
   if (!raw) return null;
   const { verdict, review } = finalizeReview(
@@ -542,7 +600,13 @@ function waitForTabLoad(tabId: number, navigate: () => Promise<void>, alreadySta
   });
 }
 
-async function askBridge(prompt: Prompt, endpoint: string, model: string, maxTokens: number): Promise<string> {
+async function askBridge(
+  prompt: Prompt,
+  endpoint: string,
+  model: string,
+  maxTokens: number,
+  signal?: AbortSignal,
+): Promise<string> {
   let text = '';
   try {
     for await (const chunk of streamClaudeBridge({
@@ -553,6 +617,7 @@ async function askBridge(prompt: Prompt, endpoint: string, model: string, maxTok
       maxTokens,
       endpoint,
       raw: true,
+      ...(signal ? { signal } : {}),
     })) {
       text += chunk;
     }

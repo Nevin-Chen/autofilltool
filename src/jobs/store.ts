@@ -59,6 +59,15 @@ export function runningCheck(feed: JobFeed, now: Date): JobCheck | null {
   return check && check.status === 'running' && !isStale(check, now) ? check : null;
 }
 
+export function markRunningCheckStopped(feed: JobFeed, now: Date): JobFeed {
+  return {
+    ...feed,
+    checks: feed.checks.map((check) =>
+      check.status === 'running' ? { ...check, status: 'stopped', phase: '', finishedAt: now.toISOString() } : check,
+    ),
+  };
+}
+
 export function latestCheck(feed: JobFeed): JobCheck | null {
   return feed.checks.at(-1) ?? null;
 }

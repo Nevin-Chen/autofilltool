@@ -49,6 +49,7 @@ export type AiClassifyMsg = {
 };
 
 export type CheckJobsMsg = { type: 'CHECK_JOBS' };
+export type StopJobsMsg = { type: 'STOP_JOBS' };
 
 export type RequestMessage =
   | GetProfileMsg
@@ -63,7 +64,8 @@ export type RequestMessage =
   | RouteChangedMsg
   | ResolveResumeMsg
   | AiClassifyMsg
-  | CheckJobsMsg;
+  | CheckJobsMsg
+  | StopJobsMsg;
 
 export type Ok<T> = { ok: true; value: T };
 export type Err = { ok: false; error: string };
@@ -104,6 +106,7 @@ export type ResolveResumeResponse = Result<{
 }>;
 export type AiClassifyResponse = Result<{ value: string | null }>;
 export type CheckJobsResponse = Result<{ started: true }>;
+export type StopJobsResponse = Result<{ stopped: boolean }>;
 
 export interface MessageMap {
   GET_PROFILE: GetProfileResponse;
@@ -119,6 +122,7 @@ export interface MessageMap {
   RESOLVE_RESUME: ResolveResumeResponse;
   AI_CLASSIFY: AiClassifyResponse;
   CHECK_JOBS: CheckJobsResponse;
+  STOP_JOBS: StopJobsResponse;
 }
 
 export type ResponseFor<M extends RequestMessage> = MessageMap[M['type']];
@@ -139,6 +143,7 @@ export function isRequestMessage(value: unknown): value is RequestMessage {
     t === 'ROUTE_CHANGED' ||
     t === 'RESOLVE_RESUME' ||
     t === 'AI_CLASSIFY' ||
-    t === 'CHECK_JOBS'
+    t === 'CHECK_JOBS' ||
+    t === 'STOP_JOBS'
   );
 }

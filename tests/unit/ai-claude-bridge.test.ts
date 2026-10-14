@@ -220,4 +220,23 @@ describe('streamClaudeBridge', () => {
     const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(call[0]).toBe('http://localhost:11435/v1/raw/chat/completions');
   });
+
+  it('passes an abort signal through to the request', async () => {
+    const fetchImpl = vi.fn(async () => sseResponse(['data: [DONE]\n\n']));
+    const controller = new AbortController();
+    await collect(
+      streamClaudeBridge({
+        apiKey: '',
+        model: 'sonnet',
+        system: 's',
+        user: 'u',
+        maxTokens: 1,
+        raw: true,
+        signal: controller.signal,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    );
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.signal).toBe(controller.signal);
+  });
 });
