@@ -86,4 +86,14 @@ describe('selectNewListings', () => {
     expect(selection.identicalRepeats).toBe(0);
     expect(selection.candidates).toHaveLength(1);
   });
+
+  it('keeps older listings from boards without the posted-today rule', () => {
+    const selection = selectNewListings(
+      [listing({ id: 'example:rolling', postedAt: POSTED_YESTERDAY, source: 'rolling' }), listing({ id: 'example:old', postedAt: POSTED_YESTERDAY })],
+      [],
+      today,
+      (l) => l.source !== 'rolling',
+    );
+    expect(selection.candidates.map((c) => c.listing.id)).toEqual(['example:rolling']);
+  });
 });

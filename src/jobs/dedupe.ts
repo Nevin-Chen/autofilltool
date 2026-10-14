@@ -46,6 +46,7 @@ export function selectNewListings(
   listings: readonly JobListing[],
   judged: readonly JudgedJob[],
   today: string,
+  todayOnly: (listing: JobListing) => boolean = () => true,
 ): ListingSelection {
   const judgedIds = new Set(judged.map((job) => job.id));
   const knownFingerprints = new Set(judged.map((job) => job.fingerprint));
@@ -59,7 +60,7 @@ export function selectNewListings(
   const postedToday = listings.filter((listing) => {
     if (listingIds.has(listing.id)) return false;
     listingIds.add(listing.id);
-    return localDateKey(listing.postedAt) === today;
+    return !todayOnly(listing) || localDateKey(listing.postedAt) === today;
   });
 
   let alreadySeen = 0;

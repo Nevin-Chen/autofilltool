@@ -3,7 +3,7 @@ import { sourceForUrl } from '@/jobs/sources';
 
 describe('sourceForUrl', () => {
   it('returns null for boards without a source yet', () => {
-    expect(sourceForUrl('https://www.linkedin.com/jobs/search/?keywords=software')).toBeNull();
+    expect(sourceForUrl('https://www.indeed.com/jobs?q=software+engineer&l=New+York')).toBeNull();
     expect(sourceForUrl('https://jobs.example.com/search?q=software')).toBeNull();
   });
 

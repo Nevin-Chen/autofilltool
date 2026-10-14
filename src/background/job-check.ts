@@ -8,7 +8,7 @@ import {
   streamClaudeBridge,
 } from '@/ai/providers/claude-bridge';
 import { hasOriginPermission } from '@/lib/permissions';
-import { sourceForUrl, type JobSource } from '@/jobs/sources';
+import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails } from '@/jobs/sources';
 import { localDateKey, selectNewListings, type JudgeCandidate } from '@/jobs/dedupe';
 import type { CandidateContext } from '@/jobs/candidate';
 import {
@@ -52,6 +52,8 @@ export type JobCheckDeps = {
   reviewJob: (prompt: Prompt, endpoint: string) => Promise<string>;
   canReachBridge: (endpoint: string) => Promise<boolean>;
   setBadge: (fits: number) => Promise<void>;
+  sleep: (ms: number) => Promise<void>;
+  random: () => number;
   now: () => Date;
   newId: () => string;
 };
@@ -65,11 +67,16 @@ export const defaultJobCheckDeps: JobCheckDeps = {
   reviewJob: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS),
   canReachBridge: (endpoint) => hasOriginPermission(endpoint),
   setBadge: showFitsOnBadge,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  random: Math.random,
   now: () => new Date(),
   newId: () => crypto.randomUUID(),
 };
 
+type Pacer = <T>(task: () => Promise<T>) => Promise<T>;
 type Advanced = { candidate: JudgeCandidate; source: JobSource };
+
+const BLOCKED_ELSEWHERE = Symbol('blocked-elsewhere');
 
 export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Promise<JobCheck> {
   const checkId = deps.newId();
@@ -98,6 +105,16 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     if (jobs.length > 0) await writeFeed((feed) => ({ ...feed, jobs: [...feed.jobs, ...jobs] }));
   };
 
+  const pacers = new Map<string, Pacer>();
+  const paceFor = (source: JobSource): Pacer => {
+    let pacer = pacers.get(source.id);
+    if (!pacer) {
+      pacer = createPacer(source.limits, deps.sleep, deps.random);
+      pacers.set(source.id, pacer);
+    }
+    return pacer;
+  };
+
   const counts = emptyJobCounts();
   try {
     const [settings, profile, library, feedback] = await Promise.all([
@@ -117,13 +134,9 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     for (const search of searches) {
       const source = deps.sourceForUrl(search.url);
       if (!source) throw new Error(`${searchName(search)} isn't on a supported job board yet.`);
-      await patchCheck({ phase: `Reading ${searchName(search)}` });
-      const found = source.toListings(await deps.readSearchPage(search.url, source));
-      if (!found) {
-        throw new Error(
-          `Couldn't read ${searchName(search)}. If the job board is showing a bot check, open the search in a tab yourself, then check again.`,
-        );
-      }
+      const found = await readSearchResults(search, source, paceFor(source), deps, counts, (phase) =>
+        patchCheck({ phase }),
+      );
       listings.push(...found.map((listing) => ({ listing, source })));
     }
     const sourceById = new Map(listings.map(({ listing, source }) => [listing.id, source]));
@@ -132,6 +145,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       listings.map(({ listing }) => listing),
       (await getJobFeed()).jobs,
       localDateKey(deps.now()),
+      (listing) => sourceById.get(listing.id)?.postedTodayOnly ?? true,
     );
     counts.postedToday = selection.postedToday;
     counts.alreadySeen = selection.alreadySeen;
@@ -170,6 +184,33 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       await storeJobs(settled);
     }
 
+    const listingPagesLeft = new Map<string, number>();
+    const blockedSources = new Set<string>();
+    let blockedMessage: string | null = null;
+    const readDetails = async (
+      listing: JobListing,
+      source: JobSource,
+    ): Promise<ListingDetails | null | 'deferred'> => {
+      if (!source.readListingPage || !source.toDetails || !listing.listingUrl) return null;
+      if (blockedSources.has(source.id)) return 'deferred';
+      const left = listingPagesLeft.get(source.id) ?? source.limits.maxListingPages;
+      if (left <= 0) return 'deferred';
+      listingPagesLeft.set(source.id, left - 1);
+      const raw = await paceFor(source)(async () =>
+        blockedSources.has(source.id)
+          ? BLOCKED_ELSEWHERE
+          : deps.readListingPage(listing.listingUrl, source).catch(() => null),
+      );
+      if (raw === BLOCKED_ELSEWHERE) return 'deferred';
+      if (source.isBlocked(raw)) {
+        blockedSources.add(source.id);
+        blockedMessage ??=
+          'A job page showed a security check or sign-in page, so the check stopped opening pages on that board. Open it in a tab yourself and deal with it there, then check again.';
+        return 'deferred';
+      }
+      return source.toDetails(raw);
+    };
+
     let finishedReviews = 0;
     let lastReviewError: unknown = null;
     const reportProgress = () =>
@@ -177,7 +218,12 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     if (advanced.length > 0) await reportProgress();
     await mapWithConcurrency(advanced, JOB_REVIEW_CONCURRENCY, async ({ candidate, source }) => {
       try {
-        const job = await reviewCandidate(candidate, source, context, endpoint, checkId, deps);
+        const details = await readDetails(candidate.listing, source);
+        if (details === 'deferred') {
+          counts.deferred++;
+          return;
+        }
+        const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps);
         if (job) {
           tally(counts, [job]);
           counts.reviewed++;
@@ -194,6 +240,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
         if (finishedReviews < advanced.length) await reportProgress();
       }
     });
+    if (blockedMessage) throw new Error(blockedMessage);
     if (advanced.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
 
     const feed = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
@@ -211,18 +258,57 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
   }
 }
 
+async function readSearchResults(
+  search: JobSearch,
+  source: JobSource,
+  pace: Pacer,
+  deps: JobCheckDeps,
+  counts: JobCheckCounts,
+  report: (phase: string) => Promise<unknown>,
+): Promise<JobListing[]> {
+  const listings: JobListing[] = [];
+  for (let page = 0; page < source.limits.maxSearchPages; page++) {
+    await report(page === 0 ? `Reading ${searchName(search)}` : `Reading ${searchName(search)}, page ${page + 1}`);
+    const raw = await pace(() => deps.readSearchPage(source.searchPageUrl(search.url, page), source));
+    if (source.isBlocked(raw)) {
+      throw new Error(
+        `${searchName(search)} showed a security check or sign-in page. Open it in a tab yourself and deal with it there, then check again.`,
+      );
+    }
+    const found = source.toListings(raw);
+    if (!found) {
+      if (page === 0) {
+        throw new Error(
+          `Couldn't read ${searchName(search)}. If the job board is showing a bot check, open the search in a tab yourself, then check again.`,
+        );
+      }
+      break;
+    }
+    listings.push(...found);
+    counts.unreadCards += source.unreadCards?.(raw) ?? 0;
+    if (found.length === 0 || !source.hasMorePages(raw)) break;
+  }
+  return listings;
+}
+
 async function reviewCandidate(
   candidate: JudgeCandidate,
-  source: JobSource,
+  details: ListingDetails | null,
   context: CandidateContext,
   endpoint: string,
   checkId: string,
   deps: JobCheckDeps,
 ): Promise<JudgedJob | null> {
-  const { listing } = candidate;
-  const fullDescription = await readFullDescription(listing, source, deps);
+  const listing: JobListing = {
+    ...candidate.listing,
+    applyUrl: details?.applyUrl ?? candidate.listing.applyUrl,
+    easyApply: candidate.listing.easyApply || (details?.easyApply ?? false),
+  };
+  const fullDescription =
+    details?.description && details.description.length >= MIN_FULL_DESCRIPTION_CHARS ? details.description : null;
+  const description = fullDescription ?? (listing.requirements.trim() || null);
+  if (!description) return null;
   const descriptionSource: DeepReview['descriptionSource'] = fullDescription ? 'full' : 'summary';
-  const description = fullDescription ?? listing.requirements;
   const raw = parseReviewResponse(
     await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint),
   );
@@ -242,20 +328,6 @@ async function reviewCandidate(
     judgedAt: deps.now().toISOString(),
     review,
   };
-}
-
-async function readFullDescription(
-  listing: JobListing,
-  source: JobSource,
-  deps: JobCheckDeps,
-): Promise<string | null> {
-  if (!source.readListingPage || !source.toDescription || !listing.listingUrl) return null;
-  try {
-    const text = source.toDescription(await deps.readListingPage(listing.listingUrl, source));
-    return text && text.length >= MIN_FULL_DESCRIPTION_CHARS ? text : null;
-  } catch {
-    return null;
-  }
 }
 
 export function toScreenedJob(
@@ -280,6 +352,27 @@ export function toScreenedJob(
 function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
   counts.judged += judged.length;
   for (const job of judged) counts[job.verdict]++;
+}
+
+export function createPacer(
+  limits: Pick<BrowsingLimits, 'minGapMs' | 'maxGapMs'>,
+  sleep: (ms: number) => Promise<void>,
+  random: () => number,
+): Pacer {
+  let queue: Promise<unknown> = Promise.resolve();
+  let started = false;
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(async () => {
+      if (started) {
+        const gap = Math.round(limits.minGapMs + random() * (limits.maxGapMs - limits.minGapMs));
+        if (gap > 0) await sleep(gap);
+      }
+      started = true;
+      return task();
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
 }
 
 function serializedWriter(now: () => Date) {

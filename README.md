@@ -59,7 +59,10 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - **Agree** or **Disagree** on any verdict. Disagreements, with your note on what Claude got wrong, go into every later check
 - The same posting on another job board (identical title, company, city, and requirements summary) is dropped. When only the title and company match, Claude compares the two descriptions: a reworded copy goes under Repeats, a different role gets judged
 - Results show on the Jobs page with a **Why** list for each match, the job page and direct apply links, and how often you've agreed with Claude. The count of strong and maybe matches shows on the extension icon. Results are kept for 7 days
-- Each job board needs its own reader, added one board at a time. LinkedIn and Indeed are next
+- Works on LinkedIn. Paste a search URL with your filters already set (keywords, location, date posted, salary). Every result is judged, up to 10 pages of 25, because LinkedIn's own date filter already limits them
+- The check browses LinkedIn like you would: it opens one page at a time in a background tab, waits 3 to 8 seconds between pages, reads what's on the page, and opens at most 40 job pages per check. Jobs past that limit are reviewed on the next check
+- If LinkedIn shows a security check or sign-in page, the check stops opening pages and tells you. It never touches the check itself
+- Easy Apply jobs are marked, since you apply to those on LinkedIn and autofill can't help there. Other jobs get a direct link to the employer's application
 
 #### **Voluntary Self-Identification**
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran status, and disability status once, in Options
@@ -281,7 +284,7 @@ bridge/           Local Claude Code subscription bridge (not part of the extensi
 
 ## Roadmap
 
-- LinkedIn and Indeed sources for the job feed
+- An Indeed source for the job feed
 - Per-site allowlist for persistent injection without a click
 - Cache the job description across Workday's multi-page wizard
 - Single-source-of-truth versioning across `package.json`, `manifest.json`, and `package-lock.json`

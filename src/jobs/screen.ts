@@ -19,6 +19,8 @@ const SCREEN_SYSTEM_PROMPT = [
   '- skip: clearly not worth a closer look. That means not a software engineering role, a main language or domain the candidate has no experience in, a hard requirement they cannot meet (an active security clearance, 6+ years with senior scope), or anything the candidate\'s criteria call a dealbreaker.',
   '- repeat: only for a listing that has a sameTitleAs object, when the two describe the same role: same duties and requirements, even reworded or in another city. If they differ, judge the listing on its own.',
   '',
+  'Some listings have no requirements or tools because the job board only shows title, company, location and pay in its results. Judge those from what is there, and choose review unless the title is clearly not a software engineering role or the listing hits a dealbreaker.',
+  '',
   'When the candidate has disagreed with a past verdict, follow their judgment for similar listings.',
   '',
   'Give each listing one reason under 20 words naming what decided it.',
