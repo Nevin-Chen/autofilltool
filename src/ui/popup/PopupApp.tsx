@@ -16,7 +16,8 @@ import {
 import { toCsv, csvFilename } from '@/lib/history-export';
 import { emptyJobFeed, getJobFeed, latestCheck, runningCheck, subscribeJobFeed } from '@/jobs/store';
 import { describeCheck, JOBS_PAGE_PATH } from '@/jobs/summary';
-import type { JobFeed } from '@/jobs/schema';
+import { progressFractions, type JobFeed } from '@/jobs/schema';
+import { ProgressBar } from '@/ui/ProgressBar';
 
 type TabInfo = {
   id: number;
@@ -87,7 +88,8 @@ export function PopupApp() {
   };
 
   const hasJobSearches = (settings?.jobs.searches.length ?? 0) > 0;
-  const jobsRunning = runningCheck(jobFeed, new Date()) !== null;
+  const jobsRunningCheck = runningCheck(jobFeed, new Date());
+  const jobsRunning = jobsRunningCheck !== null;
 
   const onClear = async () => {
     const r = await sendToBackground({ type: 'CLEAR_HISTORY' });
@@ -342,6 +344,16 @@ export function PopupApp() {
               {hasJobSearches ? describeCheck(latestCheck(jobFeed), new Date()) : 'No saved searches'}
             </span>
           </div>
+          {jobsRunningCheck?.progress && (
+            <div className="mt-2">
+              <ProgressBar
+                compact
+                label="Job feed progress"
+                detail={`Page ${Math.min(jobsRunningCheck.progress.pagesDone + 1, jobsRunningCheck.progress.pagesPlanned)} of ${jobsRunningCheck.progress.pagesPlanned}`}
+                fraction={progressFractions(jobsRunningCheck.progress).browsing}
+              />
+            </div>
+          )}
           {jobsError && (
             <div className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{jobsError}</div>
           )}

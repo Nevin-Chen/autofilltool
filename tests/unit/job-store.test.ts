@@ -37,6 +37,7 @@ function check(overrides: Partial<JobCheck> = {}): JobCheck {
     phase: 'Reading Software engineer',
     error: null,
     counts: null,
+    progress: null,
     ...overrides,
   };
 }
