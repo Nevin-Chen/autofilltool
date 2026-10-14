@@ -126,19 +126,11 @@ export function JobsApp() {
         </div>
       </header>
 
-      {jobSettings && jobSettings.searches.length > 0 && (
-        <ActiveSearches settings={jobSettings} onChange={setJobSettings} checkRunning={running !== null} />
-      )}
-
       <CheckStatus check={check} now={now} startError={startError} />
       <AgreementLine feedback={feedback} />
 
       {jobSettings && (
-        <SearchSettings
-          initial={jobSettings}
-          onSaved={setJobSettings}
-          defaultCollapsed={jobSettings.searches.length > 0}
-        />
+        <SearchSettings initial={jobSettings} onSaved={setJobSettings} checkRunning={running !== null} />
       )}
 
       <Results jobs={feed.jobs} checks={feed.checks} now={now} feedback={feedback} />
@@ -241,66 +233,44 @@ function CheckProgress({ progress }: { progress: JobProgress }) {
   );
 }
 
-type SearchDraft = { id: string; label: string; url: string; maxPages?: number | null; pagesInput?: string };
+type SearchDraft = {
+  id: string;
+  label: string;
+  url: string;
+  maxPages?: number | null;
+  pagesInput?: string;
+  active?: boolean;
+};
 
 function readsSeveralPages(source: JobSource | null): source is JobSource {
   return !!source && source.limits.searchPages.max > 1;
 }
 
-function ActiveSearches(props: {
-  settings: JobFeedSettings;
-  onChange: (settings: JobFeedSettings) => void;
-  checkRunning: boolean;
-}) {
-  const toggle = async (id: string, active: boolean) => {
-    const fresh = await getSettings();
-    const jobs: JobFeedSettings = {
-      ...fresh.jobs,
-      searches: fresh.jobs.searches.map((search) => (search.id === id ? { ...search, active } : search)),
-    };
-    await setSettings({ ...fresh, jobs });
-    props.onChange(jobs);
-  };
-
+function ActiveSwitch(props: { on: boolean; label: string; onChange: (on: boolean) => void }) {
   return (
-    <fieldset className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60">
-      <legend className="px-1 text-xs font-medium text-slate-600 dark:text-slate-300">Searches to check</legend>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
-        {props.settings.searches.map((search) => (
-          <label key={search.id} className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
-            <input
-              type="checkbox"
-              checked={search.active}
-              onChange={(e) => void toggle(search.id, e.target.checked)}
-            />
-            <span>{search.label || searchHost(search.url)}</span>
-            {search.maxPages && (
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                {search.maxPages} page{search.maxPages === 1 ? '' : 's'}
-              </span>
-            )}
-          </label>
-        ))}
-      </div>
-      {props.checkRunning && (
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Changes apply to the next check.</p>
-      )}
-    </fieldset>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={props.on}
+      aria-label={`Include ${props.label} in checks`}
+      title={props.on ? 'On: included in checks' : 'Off: skipped in checks'}
+      onClick={() => props.onChange(!props.on)}
+      className={`relative mt-1.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
+        props.on ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-600'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${props.on ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+      />
+    </button>
   );
-}
-
-function searchHost(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
 }
 
 function SearchSettings(props: {
   initial: JobFeedSettings;
   onSaved: (settings: JobFeedSettings) => void;
-  defaultCollapsed: boolean;
+  checkRunning: boolean;
 }) {
   const [searches, setSearches] = useState<SearchDraft[]>(() =>
     props.initial.searches.map((search) => ({ ...search, pagesInput: search.maxPages ? String(search.maxPages) : '' })),
@@ -311,9 +281,20 @@ function SearchSettings(props: {
   const updateSearch = (id: string, patch: Partial<SearchDraft>) =>
     setSearches((current) => current.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
+  const onToggle = async (id: string, active: boolean) => {
+    updateSearch(id, { active });
+    const fresh = await getSettings();
+    if (!fresh.jobs.searches.some((search) => search.id === id)) return;
+    const jobs: JobFeedSettings = {
+      ...fresh.jobs,
+      searches: fresh.jobs.searches.map((search) => (search.id === id ? { ...search, active } : search)),
+    };
+    await setSettings({ ...fresh, jobs });
+    props.onSaved(jobs);
+  };
+
   const onSave = async () => {
     const fresh = await getSettings();
-    const activeById = new Map(fresh.jobs.searches.map((search) => [search.id, search.active]));
     const nextErrors: Record<string, string> = {};
     const valid: JobSearch[] = [];
     for (const search of searches) {
@@ -334,7 +315,7 @@ function SearchSettings(props: {
         }
         maxPages = pages;
       }
-      valid.push({ id: search.id, label: search.label.trim(), url, maxPages, active: activeById.get(search.id) ?? true });
+      valid.push({ id: search.id, label: search.label.trim(), url, maxPages, active: search.active ?? true });
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -353,21 +334,26 @@ function SearchSettings(props: {
     <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
       <Section
         title="Saved searches"
-        hint="Paste the URL of a LinkedIn search with your filters already set: keywords, location, date posted, salary. Claude judges each job against your profile and default résumé from Settings, and follows the notes you leave when you disagree with a verdict."
+        hint="Paste the URL of a LinkedIn search with your filters already set: keywords, location, date posted, salary. Turn a search off to skip it in checks; the switch saves right away. Claude judges each job against your profile and default résumé from Settings, and follows the notes you leave when you disagree with a verdict."
         collapsible
-        defaultCollapsed={props.defaultCollapsed}
+        defaultCollapsed={false}
       >
         <div className="space-y-3">
           {searches.map((search) => (
             <div key={search.id}>
               <div className="flex gap-2">
+                <ActiveSwitch
+                  on={search.active ?? true}
+                  label={search.label || 'this search'}
+                  onChange={(on) => void onToggle(search.id, on)}
+                />
                 <input
                   type="text"
                   value={search.label}
                   onChange={(e) => updateSearch(search.id, { label: e.target.value })}
                   placeholder="Label"
                   aria-label="Search label"
-                  className="w-36 shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className={`${search.active === false ? 'opacity-60 ' : ''}w-36 shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100`}
                 />
                 <input
                   type="url"
@@ -376,7 +362,7 @@ function SearchSettings(props: {
                   placeholder="https://www.linkedin.com/jobs/search-results/?keywords=…"
                   aria-label="Search URL"
                   aria-invalid={Boolean(errors[search.id])}
-                  className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className={`${search.active === false ? 'opacity-60 ' : ''}min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100`}
                 />
                 {readsSeveralPages(sourceForUrl(search.url.trim())) && (
                   <input
@@ -406,6 +392,11 @@ function SearchSettings(props: {
               )}
             </div>
           ))}
+          {props.checkRunning && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              A check is running. Switching a search on or off applies to the next check.
+            </p>
+          )}
           {(() => {
             const paged = searches.map((search) => sourceForUrl(search.url.trim())).find(readsSeveralPages);
             return paged ? (
