@@ -11,8 +11,8 @@ import {
   runningCheck,
   subscribeJobFeed,
 } from '@/jobs/store';
-import { describeCheck, formatCheckTime } from '@/jobs/summary';
-import { localDateKey } from '@/jobs/dedupe';
+import { describeCheck, formatCheckDateTime, formatCheckTime } from '@/jobs/summary';
+import { groupByCheck, type CheckGroup } from '@/jobs/groups';
 import { sourceForUrl, type JobSource } from '@/jobs/sources';
 import { ProgressBar } from '@/ui/ProgressBar';
 import {
@@ -137,7 +137,7 @@ export function JobsApp() {
         />
       )}
 
-      <Results jobs={feed.jobs} now={now} feedback={feedback} />
+      <Results jobs={feed.jobs} checks={feed.checks} now={now} feedback={feedback} />
 
       {feed.jobs.length > 0 && (
         <div className="flex justify-end gap-2 text-xs">
@@ -416,8 +416,13 @@ function AgreementLine(props: { feedback: readonly JobFeedback[] }) {
   );
 }
 
-function Results(props: { jobs: readonly JudgedJob[]; now: Date; feedback: readonly JobFeedback[] }) {
-  const days = useMemo(() => groupByPostingDay(props.jobs), [props.jobs]);
+function Results(props: {
+  jobs: readonly JudgedJob[];
+  checks: readonly JobCheck[];
+  now: Date;
+  feedback: readonly JobFeedback[];
+}) {
+  const groups = useMemo(() => groupByCheck(props.jobs, props.checks), [props.jobs, props.checks]);
   const byId = useMemo(() => new Map(props.jobs.map((job) => [job.id, job])), [props.jobs]);
   const feedbackById = useMemo(
     () => new Map(props.feedback.map((entry) => [entry.jobId, entry])),
@@ -433,25 +438,35 @@ function Results(props: { jobs: readonly JudgedJob[]; now: Date; feedback: reado
   }
 
   return (
-    <div className="space-y-8">
-      {days.map(([day, jobs]) => (
-        <section key={day} className="space-y-4">
-          <h2 className="text-base font-semibold">{dayLabel(day, props.now)}</h2>
-          <JobList title="Strong" jobs={withVerdict(jobs, 'strong')} now={props.now} feedbackById={feedbackById} />
-          <JobList title="Maybe" jobs={withVerdict(jobs, 'maybe')} now={props.now} feedbackById={feedbackById} />
-          <CompactList
-            title="Skipped"
-            jobs={withVerdict(jobs, 'skip')}
-            describe={(job) => job.reason}
-            feedbackById={feedbackById}
-          />
-          <CompactList
-            title="Repeats"
-            jobs={withVerdict(jobs, 'repeat')}
-            describe={(job) => repeatNote(job, job.repeatOf ? byId.get(job.repeatOf) : undefined)}
-            feedbackById={feedbackById}
-          />
-        </section>
+    <div className="space-y-3">
+      {groups.map((group, index) => (
+        <details
+          key={group.checkId}
+          open={index === 0}
+          className="rounded-lg border border-slate-200 bg-white/60 dark:border-slate-700 dark:bg-slate-800/40"
+        >
+          <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/80">
+            <h2 className="text-base font-semibold">{formatCheckDateTime(group.startedAt, props.now)}</h2>
+            <span className="text-sm text-slate-500 dark:text-slate-400">{tallyLine(group.tally)}</span>
+            {group.status && group.status !== 'ok' && <CheckStatusChip status={group.status} />}
+          </summary>
+          <div className="space-y-4 px-4 pb-4 pt-1">
+            <JobList title="Strong" jobs={withVerdict(group.jobs, 'strong')} now={props.now} feedbackById={feedbackById} />
+            <JobList title="Maybe" jobs={withVerdict(group.jobs, 'maybe')} now={props.now} feedbackById={feedbackById} />
+            <CompactList
+              title="Skipped"
+              jobs={withVerdict(group.jobs, 'skip')}
+              describe={(job) => job.reason}
+              feedbackById={feedbackById}
+            />
+            <CompactList
+              title="Repeats"
+              jobs={withVerdict(group.jobs, 'repeat')}
+              describe={(job) => repeatNote(job, job.repeatOf ? byId.get(job.repeatOf) : undefined)}
+              feedbackById={feedbackById}
+            />
+          </div>
+        </details>
       ))}
     </div>
   );
@@ -718,19 +733,23 @@ function withVerdict(jobs: readonly JudgedJob[], verdict: JobVerdict): JudgedJob
     .sort((a, b) => Date.parse(b.postedAt) - Date.parse(a.postedAt));
 }
 
-function groupByPostingDay(jobs: readonly JudgedJob[]): Array<[string, JudgedJob[]]> {
-  const days = new Map<string, JudgedJob[]>();
-  for (const job of jobs) {
-    const day = localDateKey(job.postedAt);
-    days.set(day, [...(days.get(day) ?? []), job]);
-  }
-  return [...days.entries()].sort(([a], [b]) => b.localeCompare(a));
+function tallyLine(tally: CheckGroup['tally']): string {
+  const parts = [
+    tally.strong > 0 ? `${tally.strong} strong` : '',
+    tally.maybe > 0 ? `${tally.maybe} maybe` : '',
+    tally.skip > 0 ? `${tally.skip} skipped` : '',
+    tally.repeat > 0 ? `${tally.repeat} repeat${tally.repeat === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ') || 'nothing judged';
 }
 
-function dayLabel(day: string, now: Date): string {
-  if (day === localDateKey(now)) return 'Today';
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (day === localDateKey(yesterday)) return 'Yesterday';
-  return new Date(`${day}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+const STATUS_CHIPS: Record<Exclude<JobCheck['status'], 'ok'>, { label: string; className: string }> = {
+  running: { label: 'In progress', className: 'bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300' },
+  stopped: { label: 'Stopped', className: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200' },
+  failed: { label: 'Failed', className: 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300' },
+};
+
+function CheckStatusChip({ status }: { status: Exclude<JobCheck['status'], 'ok'> }) {
+  const { label, className } = STATUS_CHIPS[status];
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] ${className}`}>{label}</span>;
 }

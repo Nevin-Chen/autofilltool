@@ -11,6 +11,16 @@ export function formatCheckTime(iso: string, now: Date): string {
   return `${at.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
+export function formatCheckDateTime(iso: string, now: Date): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (localDateKey(at) === localDateKey(now)) return `Today, ${time}`;
+  if (localDateKey(at) === localDateKey(yesterday)) return `Yesterday, ${time}`;
+  return `${at.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 export function describeCheck(check: JobCheck | null, now: Date): string {
   if (!check) return 'No checks yet';
   if (check.status === 'running') {
