@@ -20,7 +20,6 @@ const RESUME = [
 const context = {
   profileSummary: 'Brooklyn, NY. 2.5 years as a software engineer.',
   resumeText: RESUME,
-  criteria: 'Remote or NYC preferred.',
   disagreements: [] as JobFeedback[],
 };
 
@@ -51,7 +50,7 @@ describe('buildReviewPrompt', () => {
     expect(user).toContain('Title: Software Engineer, Payments');
     expect(user).toContain('Company: Stripe');
     expect(user).toContain(RESUME);
-    expect(user).toContain('Remote or NYC preferred.');
+    expect(user).not.toMatch(/criteria/i);
   });
 
   it('says when only the board summary was available', () => {

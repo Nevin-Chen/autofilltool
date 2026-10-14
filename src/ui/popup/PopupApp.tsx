@@ -96,6 +96,7 @@ export function PopupApp() {
   };
 
   const hasJobSearches = (settings?.jobs.searches.length ?? 0) > 0;
+  const hasActiveSearches = settings?.jobs.searches.some((search) => search.active) ?? false;
   const jobsRunningCheck = runningCheck(jobFeed, new Date());
   const jobsRunning = jobsRunningCheck !== null;
 
@@ -380,7 +381,7 @@ export function PopupApp() {
                 {stoppingJobs ? 'Stopping…' : 'Stop'}
               </button>
             )}
-            {hasJobSearches && !jobsRunning && (
+            {hasActiveSearches && !jobsRunning && (
               <button
                 type="button"
                 onClick={() => void onCheckJobs()}

@@ -185,8 +185,9 @@ export async function runJobCheck(
       getJobFeedback(),
       getJobFeed(),
     ]);
-    const searches = settings.jobs.searches;
-    if (searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
+    if (settings.jobs.searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
+    const searches = settings.jobs.searches.filter((search) => search.active);
+    if (searches.length === 0) throw new Error('All your saved searches are turned off. Tick at least one on the Jobs page.');
     const endpoint = bridgeEndpoint(settings);
     if (!(await deps.canReachBridge(endpoint))) {
       throw new Error(`No permission to reach the Claude bridge at ${endpoint}. Grant it in Options > AI.`);
@@ -196,7 +197,6 @@ export async function runJobCheck(
     const context: CandidateContext = {
       profileSummary: summarizeProfileForClassifier(profile),
       resumeText: resume ? await extractResumeText(resume) : '',
-      criteria: settings.jobs.criteria,
       disagreements: recentDisagreements(feedback),
     };
     const today = localDateKey(deps.now());
