@@ -56,7 +56,7 @@ export function readHiringCafeJobPage(): unknown {
 
 export function hiringCafeDetails(raw: unknown): ListingDetails | null {
   const description = typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
-  return description ? { description, applyUrl: null, easyApply: false } : null;
+  return description ? { description, applyUrl: null, easyApply: false, postedAt: null } : null;
 }
 
 export function hiringCafeListings(raw: unknown): JobListing[] | null {
@@ -140,7 +140,12 @@ export const hiringCafeSource: JobSource = {
   id: 'hiringcafe',
   matches: (url) => HIRING_CAFE_HOSTS.has(url.hostname),
   postedTodayOnly: true,
-  limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 1, maxDetailReads: 60 },
+  limits: {
+    loadGapMs: { min: 0, max: 0 },
+    clickGapMs: { min: 0, max: 0 },
+    searchPages: { min: 1, max: 1 },
+    detailReads: { min: 60, max: 60 },
+  },
   searchPageUrl: (searchUrl) => searchUrl,
   readPage: readHiringCafePage,
   toListings: hiringCafeListings,

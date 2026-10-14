@@ -8,7 +8,7 @@ import {
   streamClaudeBridge,
 } from '@/ai/providers/claude-bridge';
 import { hasOriginPermission } from '@/lib/permissions';
-import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails } from '@/jobs/sources';
+import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails, type Range } from '@/jobs/sources';
 import { localDateKey, selectNewListings, type JudgeCandidate, type SeenListing } from '@/jobs/dedupe';
 import type { CandidateContext } from '@/jobs/candidate';
 import {
@@ -115,6 +115,19 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     if (jobs.length > 0) await writeFeed((feed) => ({ ...feed, jobs: [...feed.jobs, ...jobs] }));
   };
 
+  const budgets = new Map<string, { searchPages: number; detailReads: number }>();
+  const budgetFor = (source: JobSource) => {
+    let budget = budgets.get(source.id);
+    if (!budget) {
+      budget = {
+        searchPages: pickInRange(source.limits.searchPages, deps.random),
+        detailReads: pickInRange(source.limits.detailReads, deps.random),
+      };
+      budgets.set(source.id, budget);
+    }
+    return budget;
+  };
+
   const pacers = new Map<string, Pacer>();
   const paceFor = (source: JobSource): Pacer => {
     let pacer = pacers.get(source.id);
@@ -208,7 +221,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     ): Promise<void> => {
       const newestFirst = [...advanced].sort((a, b) => Date.parse(b.listing.postedAt) - Date.parse(a.listing.postedAt));
       for (const [index, candidate] of newestFirst.entries()) {
-        const left = detailReadsLeft.get(source.id) ?? source.limits.maxDetailReads;
+        const left = detailReadsLeft.get(source.id) ?? budgetFor(source).detailReads;
         const needsPage = !!(source.readSelected || source.readListingPage) && !!source.toDetails;
         if (needsPage && left <= 0) {
           counts.deferred += newestFirst.length - index;
@@ -255,7 +268,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       const pace = paceFor(source);
       const session = deps.openSession();
       try {
-        for (let page = 0; page < source.limits.maxSearchPages; page++) {
+        for (let page = 0; page < budgetFor(source).searchPages; page++) {
           const where = page === 0 ? searchName(search) : `${searchName(search)}, page ${page + 1}`;
           await patchCheck({ phase: `Reading ${where}` });
           const raw = await pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage));
@@ -321,6 +334,7 @@ async function reviewCandidate(
 ): Promise<JudgedJob | null> {
   const listing: JobListing = {
     ...candidate.listing,
+    postedAt: details?.postedAt ?? candidate.listing.postedAt,
     applyUrl: details?.applyUrl ?? candidate.listing.applyUrl,
     easyApply: candidate.listing.easyApply || (details?.easyApply ?? false),
   };
@@ -374,8 +388,12 @@ function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
   for (const job of judged) counts[job.verdict]++;
 }
 
+export function pickInRange(range: Range, random: () => number): number {
+  return range.min + Math.floor(random() * (range.max - range.min + 1));
+}
+
 export function createPacer(
-  limits: Pick<BrowsingLimits, 'minGapMs' | 'maxGapMs' | 'minClickGapMs' | 'maxClickGapMs'>,
+  limits: Pick<BrowsingLimits, 'loadGapMs' | 'clickGapMs'>,
   sleep: (ms: number) => Promise<void>,
   random: () => number,
 ): Pacer {
@@ -384,7 +402,7 @@ export function createPacer(
   return <T>(kind: 'load' | 'click', task: () => Promise<T>): Promise<T> => {
     const run = queue.then(async () => {
       if (started) {
-        const [min, max] = kind === 'click' ? [limits.minClickGapMs, limits.maxClickGapMs] : [limits.minGapMs, limits.maxGapMs];
+        const { min, max } = kind === 'click' ? limits.clickGapMs : limits.loadGapMs;
         const gap = Math.round(min + random() * (max - min));
         if (gap > 0) await sleep(gap);
       }

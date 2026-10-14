@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bridgeEndpoint,
   createLimiter,
+  pickInRange,
   runJobCheck,
   toScreenedJob,
   type JobCheckDeps,
@@ -419,7 +420,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('stops at the board\'s page limit', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 2, maxDetailReads: 40 } });
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 2, max: 2 }, detailReads: { min: 40, max: 40 } } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     deps.readSearchPage.mockResolvedValue({ listings: distinct('x', 1), hasNext: true });
     await runJobCheck(deps);
@@ -428,7 +429,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('waits a random gap between page loads on a board, but not before the first', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 3_000, maxGapMs: 8_000, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 5, maxDetailReads: 40 } });
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 3_000, max: 8_000 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 40, max: 40 } } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     const events: string[] = [];
     deps.sleep.mockImplementation(async (ms) => {
@@ -466,7 +467,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('leaves jobs past the per-check page limit for the next check', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 5, maxDetailReads: 2 } });
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 2, max: 2 } } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     deps.readSearchPage.mockResolvedValue(distinct('d', 5));
     const first = await runJobCheck(deps);
@@ -501,6 +502,14 @@ describe('runJobCheck on a paginated, paced board', () => {
     expect((await getJobFeed()).jobs).toHaveLength(1);
   });
 
+  it('uses the posting time from the job page over the one on the card', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readListingPage.mockResolvedValue({ description: FULL_POSTING, postedAt: '2026-10-13T17:50:00.000Z' });
+    await runJobCheck(deps);
+    expect((await getJobFeed()).jobs[0]?.postedAt).toBe('2026-10-13T17:50:00.000Z');
+  });
+
   it('stores the apply link and Easy Apply flag read from the job page', async () => {
     await saveSearches();
     const deps = makeDeps();
@@ -531,7 +540,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 describe('runJobCheck on a board that loads details in the page', () => {
   const spaBoard = makeExampleBoard({
     readSelected: () => null,
-    limits: { minGapMs: 3_000, maxGapMs: 8_000, minClickGapMs: 2_000, maxClickGapMs: 4_000, maxSearchPages: 5, maxDetailReads: 40 },
+    limits: { loadGapMs: { min: 3_000, max: 8_000 }, clickGapMs: { min: 2_000, max: 4_000 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 40, max: 40 } },
   });
 
   function spaDeps() {
@@ -610,5 +619,42 @@ describe('runJobCheck on a board that loads details in the page', () => {
     expect(deps.readSelected).toHaveBeenCalledTimes(1);
     expect(check.status).toBe('failed');
     expect(check.counts).toMatchObject({ deferred: 3, reviewed: 0 });
+  });
+});
+
+describe('randomized browsing limits', () => {
+  it('picks a whole number anywhere in the range, ends included', () => {
+    expect(pickInRange({ min: 7, max: 12 }, () => 0)).toBe(7);
+    expect(pickInRange({ min: 7, max: 12 }, () => 0.9999)).toBe(12);
+    expect(pickInRange({ min: 45, max: 75 }, () => 0.5)).toBe(60);
+  });
+
+  it('reads a different number of pages depending on the roll', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({
+      limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 2, max: 6 }, detailReads: { min: 40, max: 40 } },
+    });
+    for (const [roll, pages] of [[0, 2], [0.9999, 6]] as const) {
+      const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board), random: () => roll };
+      deps.readSearchPage.mockImplementation(async (url) => ({
+        listings: [listing({ id: `example:${roll}-${url.length}`, title: `Role ${url}`, requirements: url })],
+        hasNext: true,
+      }));
+      await runJobCheck(deps);
+      expect(deps.readSearchPage).toHaveBeenCalledTimes(pages);
+    }
+  });
+
+  it('clicks a different number of jobs depending on the roll', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({
+      limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 1, max: 1 }, detailReads: { min: 1, max: 3 } },
+    });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board), random: () => 0 };
+    deps.readSearchPage.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => listing({ id: `example:r-${i}`, title: `Role ${i}`, requirements: `Set ${i}.` })),
+    );
+    const check = await runJobCheck(deps);
+    expect(check.counts).toMatchObject({ reviewed: 1, deferred: 4 });
   });
 });

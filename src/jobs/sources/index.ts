@@ -6,15 +6,16 @@ export type ListingDetails = {
   description: string | null;
   applyUrl: string | null;
   easyApply: boolean;
+  postedAt: string | null;
 };
 
+export type Range = { min: number; max: number };
+
 export type BrowsingLimits = {
-  minGapMs: number;
-  maxGapMs: number;
-  minClickGapMs: number;
-  maxClickGapMs: number;
-  maxSearchPages: number;
-  maxDetailReads: number;
+  loadGapMs: Range;
+  clickGapMs: Range;
+  searchPages: Range;
+  detailReads: Range;
 };
 
 export type JobSource = {

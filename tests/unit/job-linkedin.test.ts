@@ -176,13 +176,20 @@ describe('linkedInDetails', () => {
   it('keeps the description, an http apply URL, and the Easy Apply flag', () => {
     expect(
       linkedInDetails({ blocked: false, description: ' Full posting. ', applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001', easyApply: false }),
-    ).toEqual({ description: 'Full posting.', applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001', easyApply: false });
+    ).toEqual({ description: 'Full posting.', applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001', easyApply: false, postedAt: null });
     expect(linkedInDetails({ blocked: false, description: '', applyUrl: 'javascript:alert(1)', easyApply: true })).toEqual({
       description: null,
       applyUrl: null,
       easyApply: true,
+      postedAt: null,
     });
     expect(linkedInDetails({ blocked: true })).toBeNull();
+  });
+
+  it('turns the posting time from the detail pane into a timestamp', () => {
+    expect(linkedInDetails({ blocked: false, description: 'x', postedAgo: '10 minutes ago' }, NOW)?.postedAt).toBe(
+      new Date(NOW - 10 * 60_000).toISOString(),
+    );
   });
 });
 
@@ -261,6 +268,7 @@ describe('readLinkedInJobPage', () => {
       description: POSTING,
       applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
       easyApply: false,
+      postedAgo: null,
     });
   });
 
@@ -325,6 +333,7 @@ describe('readLinkedInSelectedJob', () => {
       description: POSTING,
       applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
       easyApply: false,
+      postedAgo: null,
     });
     expect(dismiss).not.toHaveBeenCalled();
   });
@@ -345,5 +354,98 @@ describe('readLinkedInSelectedJob', () => {
   it('reports a card that is not on the page', async () => {
     searchPage(['4400000001']);
     expect(await select('linkedin:4400000009')).toEqual({ missing: true });
+  });
+});
+
+describe('LinkedIn classic layout', () => {
+  const POSTING = 'You will build payment APIs in TypeScript and React for millions of businesses. '.repeat(8).trim();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  async function settle<T>(pending: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(20_000);
+    return pending;
+  }
+
+  function classicCard(id: string, lines: string[]) {
+    return `<li data-occludable-job-id="${id}"><div data-job-id="${id}"><a href="/jobs/view/${id}/?trk=search">${lines[0] ?? ''}</a>${lines
+      .slice(1)
+      .map((line) => `<span>${line}</span>`)
+      .join('')}</div></li>`;
+  }
+
+  it('reads classic cards, fills in undrawn ones, and sees "View next page"', async () => {
+    document.body.innerHTML = `<ul>${classicCard('4400000011', ['Rust Software Engineer', 'Globex', 'Mountain View, CA (On-site)', '8 minutes ago', 'Easy Apply'])}<li data-occludable-job-id="4400000012"></li></ul>
+      <button aria-label="Company photos Next">Next</button><button aria-label="View next page">Next</button>`;
+    const list = document.querySelector('li[data-occludable-job-id="4400000012"]')!;
+    (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockImplementation(function (this: Element) {
+      if (this === list) this.innerHTML = '<div><a href="/jobs/view/4400000012/">Platform Engineer</a><span>Stripe</span><span>Remote</span></div>';
+    });
+    const result = (await settle(readLinkedInSearchPage())) as { cards: Array<{ id: string; lines: string[] }>; hasNext: boolean };
+    expect(result.hasNext).toBe(true);
+    expect(result.cards).toEqual([
+      { id: '4400000011', lines: ['Rust Software Engineer', 'Globex', 'Mountain View, CA (On-site)', '8 minutes ago', 'Easy Apply'] },
+      { id: '4400000012', lines: ['Platform Engineer', 'Stripe', 'Remote'] },
+    ]);
+    expect(linkedInListings(result, NOW)?.[0]).toMatchObject({ title: 'Rust Software Engineer', company: 'Globex', workplace: 'On-site', easyApply: true });
+  });
+
+  it('does not mistake the photo carousel for a next page', async () => {
+    document.body.innerHTML = `<ul>${classicCard('4400000011', ['Rust Software Engineer', 'Globex', 'Remote'])}</ul><button aria-label="Company photos Next">Next</button>`;
+    expect(((await settle(readLinkedInSearchPage())) as { hasNext: boolean }).hasNext).toBe(false);
+  });
+
+  function classicPane(id: string, applyLabel: string) {
+    return `<div class="jobs-search__job-details--wrapper"><div><h2><a href="/jobs/view/${id}/">Software Engineer</a></h2><p>West Huntsville, AL · Reposted 10 minutes ago · Over 100 people clicked apply</p></div>
+      <button id="jobs-apply-button-id" class="jobs-apply-button" aria-label="${applyLabel}">Apply</button>
+      <div id="job-details">About the job ${POSTING}</div></div>`;
+  }
+
+  it('clicks the classic card link and reads the job once the pane shows it', async () => {
+    document.body.innerHTML = `<ul>${classicCard('4400000011', ['Rust Software Engineer', 'Globex'])}${classicCard('4400000012', ['Platform Engineer', 'Stripe', '45 minutes ago'])}</ul><section id="detail">${classicPane('4400000011', 'Apply to Rust Software Engineer on company website')}</section>`;
+    document.querySelector('a[href^="/jobs/view/4400000012"]')!.addEventListener('click', (event) => {
+      event.preventDefault();
+      setTimeout(() => {
+        document.getElementById('detail')!.innerHTML = classicPane('4400000012', 'Easy Apply to Platform Engineer');
+      }, 900);
+    });
+    expect(await settle(readLinkedInSelectedJob('linkedin:4400000012'))).toEqual({
+      blocked: false,
+      description: POSTING,
+      applyUrl: null,
+      easyApply: true,
+      postedAgo: '10 minutes ago',
+    });
+  });
+
+  it('does not take the "Easy Apply" search filter for an Easy Apply job', async () => {
+    document.body.innerHTML = `<button aria-label="Easy Apply filter.">Easy Apply</button><ul>${classicCard('4400000011', ['Rust Software Engineer', 'Globex'])}</ul>${classicPane('4400000011', 'Apply to Rust Software Engineer on company website')}`;
+    expect(await settle(readLinkedInSelectedJob('linkedin:4400000011'))).toMatchObject({ easyApply: false });
+  });
+
+  it('reads the classic pane without clicking when it already shows the job', async () => {
+    document.body.innerHTML = `<ul>${classicCard('4400000011', ['Rust Software Engineer', 'Globex'])}</ul>${classicPane('4400000011', 'Apply to Rust Software Engineer on company website')}`;
+    const clicked = vi.fn();
+    document.querySelector('a[href^="/jobs/view/4400000011"]')!.addEventListener('click', clicked);
+    expect(await settle(readLinkedInSelectedJob('linkedin:4400000011'))).toMatchObject({ description: POSTING, easyApply: false });
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('reads #job-details on a classic job page', async () => {
+    document.body.innerHTML = `<div id="job-details">About the job ${POSTING}</div>`;
+    expect(((await settle(readLinkedInJobPage())) as { description: string }).description).toBe(POSTING);
+  });
+
+  it('randomizes how far each check goes', () => {
+    expect(linkedInSource.limits.searchPages.min).toBeLessThan(linkedInSource.limits.searchPages.max);
+    expect(linkedInSource.limits.detailReads.min).toBeLessThan(linkedInSource.limits.detailReads.max);
   });
 });
