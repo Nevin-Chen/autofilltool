@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { sendToBackground } from '@/lib/messaging';
 import { getSettings, setSettings } from '@/profile/store';
-import type { JobFeedSettings, JobSearch } from '@/profile/schema';
+import { MAX_JOB_SEARCH_PAGES, type JobFeedSettings, type JobSearch } from '@/profile/schema';
 import {
   clearJobFeed,
   emptyJobFeed,
@@ -13,7 +13,8 @@ import {
 } from '@/jobs/store';
 import { describeCheck, formatCheckTime } from '@/jobs/summary';
 import { localDateKey } from '@/jobs/dedupe';
-import { sourceForUrl } from '@/jobs/sources';
+import { sourceForUrl, type JobSource } from '@/jobs/sources';
+import { ProgressBar } from '@/ui/ProgressBar';
 import {
   agreementStats,
   getJobFeedback,
@@ -21,14 +22,16 @@ import {
   saveJobFeedback,
   subscribeJobFeedback,
 } from '@/jobs/feedback';
-import type {
-  DeepReview,
-  JobCheck,
-  JobFeed,
-  JobFeedback,
-  JobVerdict,
-  JudgedJob,
-  RequirementStatus,
+import {
+  progressFractions,
+  type DeepReview,
+  type JobCheck,
+  type JobFeed,
+  type JobFeedback,
+  type JobProgress,
+  type JobVerdict,
+  type JudgedJob,
+  type RequirementStatus,
 } from '@/jobs/schema';
 import { Section } from '@/ui/options/Section';
 
@@ -156,6 +159,7 @@ function CheckStatus(props: { check: JobCheck | null; now: Date; startError: str
         )}
         {describeCheck(check, now)}
       </p>
+      {check?.status === 'running' && !interrupted && check.progress && <CheckProgress progress={check.progress} />}
       {counts && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {counts.postedToday} recent listings on your searches · {counts.alreadySeen} already judged ·{' '}
@@ -164,7 +168,7 @@ function CheckStatus(props: { check: JobCheck | null; now: Date; startError: str
           {counts.unreadCards > 0 &&
             ` · ${counts.unreadCards} job cards hadn't finished loading in the background tab and were skipped`}
           {counts.deferred > 0 &&
-            ` · ${counts.deferred} left for the next check because of the per-check page limit or a security check`}
+            ` · ${counts.deferred} left for the next check because this check reached its click limit or hit a security check`}
           {counts.unjudged > 0 &&
             ` · ${counts.unjudged} got no verdict from Claude and will be judged on the next check`}
         </p>
@@ -181,14 +185,45 @@ function CheckStatus(props: { check: JobCheck | null; now: Date; startError: str
   );
 }
 
-type SearchDraft = { id: string; label: string; url: string };
+function CheckProgress({ progress }: { progress: JobProgress }) {
+  const { browsing, reviews } = progressFractions(progress);
+  const allPagesRead = progress.pagesDone >= progress.pagesPlanned;
+  const browsingDetail = allPagesRead
+    ? 'All pages read'
+    : [
+        `Page ${progress.pagesDone + 1} of ${progress.pagesPlanned}`,
+        progress.pageJobsTotal > 0 ? `job ${progress.pageJobsDone} of ${progress.pageJobsTotal} on this page` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+  return (
+    <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/60">
+      <ProgressBar label="Reading results" detail={browsingDetail} fraction={browsing} />
+      {reviews !== null && (
+        <ProgressBar
+          label="Claude reviews"
+          detail={`${progress.reviewsDone} of ${progress.reviewsQueued} done`}
+          fraction={reviews}
+        />
+      )}
+    </div>
+  );
+}
+
+type SearchDraft = { id: string; label: string; url: string; maxPages?: number | null; pagesInput?: string };
+
+function readsSeveralPages(source: JobSource | null): source is JobSource {
+  return !!source && source.limits.searchPages.max > 1;
+}
 
 function SearchSettings(props: {
   initial: JobFeedSettings;
   onSaved: (settings: JobFeedSettings) => void;
   defaultCollapsed: boolean;
 }) {
-  const [searches, setSearches] = useState<SearchDraft[]>(props.initial.searches);
+  const [searches, setSearches] = useState<SearchDraft[]>(() =>
+    props.initial.searches.map((search) => ({ ...search, pagesInput: search.maxPages ? String(search.maxPages) : '' })),
+  );
   const [criteria, setCriteria] = useState(props.initial.criteria);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -202,11 +237,22 @@ function SearchSettings(props: {
     for (const search of searches) {
       const url = search.url.trim();
       if (!url) continue;
-      if (!sourceForUrl(url)) {
+      const source = sourceForUrl(url);
+      if (!source) {
         nextErrors[search.id] = "This job board isn't supported yet.";
         continue;
       }
-      valid.push({ id: search.id, label: search.label.trim(), url });
+      const pagesText = (search.pagesInput ?? '').trim();
+      let maxPages: number | null = null;
+      if (readsSeveralPages(source) && pagesText) {
+        const pages = Number(pagesText);
+        if (!Number.isInteger(pages) || pages < 1 || pages > MAX_JOB_SEARCH_PAGES) {
+          nextErrors[search.id] = `Pages must be a whole number from 1 to ${MAX_JOB_SEARCH_PAGES}, or empty for the default.`;
+          continue;
+        }
+        maxPages = pages;
+      }
+      valid.push({ id: search.id, label: search.label.trim(), url, maxPages });
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -216,7 +262,7 @@ function SearchSettings(props: {
     const jobs: JobFeedSettings = { searches: valid, criteria };
     const fresh = await getSettings();
     await setSettings({ ...fresh, jobs });
-    setSearches(valid);
+    setSearches(valid.map((search) => ({ ...search, pagesInput: search.maxPages ? String(search.maxPages) : '' })));
     props.onSaved(jobs);
     setSaveState('saved');
     setTimeout(() => setSaveState('idle'), 1500);
@@ -251,6 +297,20 @@ function SearchSettings(props: {
                   aria-invalid={Boolean(errors[search.id])}
                   className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 />
+                {readsSeveralPages(sourceForUrl(search.url.trim())) && (
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={MAX_JOB_SEARCH_PAGES}
+                    value={search.pagesInput ?? ''}
+                    onChange={(e) => updateSearch(search.id, { pagesInput: e.target.value })}
+                    placeholder="Pages"
+                    aria-label={`Pages to read for ${search.label || 'this search'}`}
+                    title="Results pages to read each check. Empty uses the default."
+                    className="w-20 shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => setSearches((current) => current.filter((s) => s.id !== search.id))}
@@ -265,10 +325,21 @@ function SearchSettings(props: {
               )}
             </div>
           ))}
+          {(() => {
+            const paged = searches.map((search) => sourceForUrl(search.url.trim())).find(readsSeveralPages);
+            return paged ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Pages: how many results pages to read each check, up to {MAX_JOB_SEARCH_PAGES}. Leave it empty for{' '}
+                {paged.limits.searchPages.min} to {paged.limits.searchPages.max}, picked at random each check. A check
+                also stops early once it has clicked {paged.limits.detailReads.min} to {paged.limits.detailReads.max}{' '}
+                jobs.
+              </p>
+            ) : null;
+          })()}
           <button
             type="button"
             onClick={() =>
-              setSearches((current) => [...current, { id: crypto.randomUUID(), label: '', url: '' }])
+              setSearches((current) => [...current, { id: crypto.randomUUID(), label: '', url: '', pagesInput: '' }])
             }
             className="rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
           >

@@ -74,6 +74,16 @@ export const JobCheckCountsSchema = z.object({
 });
 export type JobCheckCounts = z.infer<typeof JobCheckCountsSchema>;
 
+export const JobProgressSchema = z.object({
+  pagesDone: z.number(),
+  pagesPlanned: z.number(),
+  pageJobsDone: z.number(),
+  pageJobsTotal: z.number(),
+  reviewsDone: z.number(),
+  reviewsQueued: z.number(),
+});
+export type JobProgress = z.infer<typeof JobProgressSchema>;
+
 export const JobCheckSchema = z.object({
   id: z.string(),
   startedAt: z.string(),
@@ -82,6 +92,7 @@ export const JobCheckSchema = z.object({
   phase: z.string().default(''),
   error: z.string().nullable(),
   counts: JobCheckCountsSchema.nullable(),
+  progress: JobProgressSchema.nullable().default(null),
 });
 export type JobCheck = z.infer<typeof JobCheckSchema>;
 
@@ -90,6 +101,17 @@ export const JobFeedSchema = z.object({
   checks: z.array(JobCheckSchema).default([]),
 });
 export type JobFeed = z.infer<typeof JobFeedSchema>;
+
+export function emptyJobProgress(): JobProgress {
+  return { pagesDone: 0, pagesPlanned: 0, pageJobsDone: 0, pageJobsTotal: 0, reviewsDone: 0, reviewsQueued: 0 };
+}
+
+export function progressFractions(progress: JobProgress): { browsing: number; reviews: number | null } {
+  const inPage = progress.pageJobsTotal > 0 ? progress.pageJobsDone / progress.pageJobsTotal : 0;
+  const browsing = progress.pagesPlanned > 0 ? Math.min(1, (progress.pagesDone + inPage) / progress.pagesPlanned) : 0;
+  const reviews = progress.reviewsQueued > 0 ? progress.reviewsDone / progress.reviewsQueued : null;
+  return { browsing, reviews };
+}
 
 export function emptyJobCounts(): JobCheckCounts {
   return {

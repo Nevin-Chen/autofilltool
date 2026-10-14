@@ -9,10 +9,11 @@ import {
 } from '@/background/job-check';
 import { setResumeLibrary, setSettings } from '@/profile/store';
 import { bytesToBase64 } from '@/profile/resume';
-import { defaultSettings, type JobSearch } from '@/profile/schema';
+import { SettingsSchema, defaultSettings, type JobSearch } from '@/profile/schema';
 import { getJobFeed } from '@/jobs/store';
 import { JOB_FEEDBACK_KEY } from '@/jobs/feedback';
 import { listingFingerprint } from '@/jobs/dedupe';
+import { progressFractions } from '@/jobs/schema';
 import {
   NOW,
   POSTED_YESTERDAY,
@@ -68,7 +69,7 @@ beforeEach(async () => {
 });
 
 async function saveSearches(
-  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL }],
+  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null }],
   criteria = 'Skip QA and field engineering roles.',
 ) {
   await setSettings({ ...defaultSettings(), jobs: { searches, criteria } });
@@ -311,7 +312,7 @@ describe('runJobCheck', () => {
   });
 
   it('fails on a board without a source', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software' }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software', maxPages: null }]);
     const check = await runJobCheck(makeDeps());
     expect(check.error).toBe("LinkedIn isn't on a supported job board yet.");
   });
@@ -566,8 +567,8 @@ describe('runJobCheck on a board that loads details in the page', () => {
 
   it('opens one tab per search and closes it', async () => {
     await saveSearches([
-      { id: 's1', label: 'Software engineer', url: SEARCH_URL },
-      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform' },
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform', maxPages: null },
     ]);
     const deps = spaDeps();
     deps.readSearchPage.mockImplementation(async (url) =>
@@ -656,5 +657,90 @@ describe('randomized browsing limits', () => {
     );
     const check = await runJobCheck(deps);
     expect(check.counts).toMatchObject({ reviewed: 1, deferred: 4 });
+  });
+});
+
+describe('page limits and progress', () => {
+  function pagedBoard(pages: number, detailReads = 40) {
+    return makeExampleBoard({
+      limits: {
+        loadGapMs: { min: 0, max: 0 },
+        clickGapMs: { min: 0, max: 0 },
+        searchPages: { min: pages, max: pages },
+        detailReads: { min: detailReads, max: detailReads },
+      },
+    });
+  }
+
+  function endlessPages(deps: ReturnType<typeof makeDeps>, perPage = 1) {
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: Array.from({ length: perPage }, (_, i) =>
+        listing({ id: `example:${encodeURIComponent(url)}-${i}`, title: `Role ${url} ${i}`, requirements: `${url} ${i}` }),
+      ),
+      hasNext: true,
+    }));
+  }
+
+  it("reads only the search's own page count when one is set", async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 2 }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    endlessPages(deps);
+    await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the board's default when the search has no page count", async () => {
+    await saveSearches();
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(4)) };
+    endlessPages(deps);
+    await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(4);
+  });
+
+  it('records pages and reviews as the check goes', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 3 }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    endlessPages(deps, 2);
+    const check = await runJobCheck(deps);
+    expect(check.progress).toEqual({ pagesDone: 3, pagesPlanned: 3, pageJobsDone: 0, pageJobsTotal: 0, reviewsDone: 6, reviewsQueued: 6 });
+  });
+
+  it('shrinks the planned page count when the results run out early', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 10 }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: [listing({ id: `example:${encodeURIComponent(url)}`, title: `Role ${url}`, requirements: url })],
+      hasNext: !url.includes('page=2'),
+    }));
+    const check = await runJobCheck(deps);
+    expect(check.progress).toMatchObject({ pagesDone: 2, pagesPlanned: 2 });
+  });
+
+  it('stops reading pages once the click limit is used up', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5 }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5, 3)) };
+    endlessPages(deps, 2);
+    const check = await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+    expect(check.counts).toMatchObject({ reviewed: 3, deferred: 1 });
+  });
+
+  it('loads saved searches from before page counts existed', () => {
+    const parsed = SettingsSchema.parse({ jobs: { searches: [{ id: 's1', label: '', url: SEARCH_URL }] } });
+    expect(parsed.jobs.searches[0]?.maxPages).toBeNull();
+  });
+});
+
+describe('progressFractions', () => {
+  it('moves through a page as its jobs are clicked', () => {
+    const progress = { pagesDone: 1, pagesPlanned: 4, pageJobsDone: 2, pageJobsTotal: 4, reviewsDone: 3, reviewsQueued: 4 };
+    expect(progressFractions(progress)).toEqual({ browsing: 1.5 / 4, reviews: 0.75 });
+  });
+
+  it('has no review fraction before anything is queued', () => {
+    expect(progressFractions({ pagesDone: 0, pagesPlanned: 0, pageJobsDone: 0, pageJobsTotal: 0, reviewsDone: 0, reviewsQueued: 0 })).toEqual({
+      browsing: 0,
+      reviews: null,
+    });
   });
 });

@@ -32,6 +32,7 @@ import { getJobFeedback, recentDisagreements } from '@/jobs/feedback';
 import { getJobFeed, updateJobFeed } from '@/jobs/store';
 import {
   emptyJobCounts,
+  emptyJobProgress,
   type DeepReview,
   type JobCheck,
   type JobCheckCounts,
@@ -103,6 +104,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
         phase: 'Starting',
         error: null,
         counts: null,
+        progress: null,
       },
     ],
   }));
@@ -166,9 +168,19 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     const today = localDateKey(deps.now());
     const seen: SeenListing[] = [...feed.jobs];
     const detailReadsLeft = new Map<string, number>();
+    const progress = emptyJobProgress();
+    const reportProgress = () => patchCheck({ progress: { ...progress } });
+    const pageBudget = (search: JobSearch, source: JobSource) => search.maxPages ?? budgetFor(source).searchPages;
+    for (const search of searches) {
+      const source = deps.sourceForUrl(search.url);
+      if (source) progress.pagesPlanned += pageBudget(search, source);
+    }
+    await reportProgress();
     const reviewSlots = createLimiter(JOB_REVIEW_CONCURRENCY);
 
     const queueReview = (candidate: JudgeCandidate, details: ListingDetails | null) => {
+      progress.reviewsQueued++;
+      void reportProgress();
       reviews.push(
         reviewSlots(async () => {
           try {
@@ -179,6 +191,8 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
             }
             tally(counts, [job]);
             counts.reviewed++;
+            progress.reviewsDone++;
+            void reportProgress();
             if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
             await storeJobs([job]);
           } catch (err) {
@@ -220,6 +234,8 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       where: string,
     ): Promise<void> => {
       const newestFirst = [...advanced].sort((a, b) => Date.parse(b.listing.postedAt) - Date.parse(a.listing.postedAt));
+      progress.pageJobsTotal = newestFirst.length;
+      progress.pageJobsDone = 0;
       for (const [index, candidate] of newestFirst.entries()) {
         const left = detailReadsLeft.get(source.id) ?? budgetFor(source).detailReads;
         const needsPage = !!(source.readSelected || source.readListingPage) && !!source.toDetails;
@@ -239,6 +255,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
           );
         }
         queueReview(candidate, details);
+        progress.pageJobsDone++;
       }
     };
 
@@ -268,7 +285,9 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       const pace = paceFor(source);
       const session = deps.openSession();
       try {
-        for (let page = 0; page < budgetFor(source).searchPages; page++) {
+        const budget = pageBudget(search, source);
+        let pagesRead = 0;
+        for (let page = 0; page < budget; page++) {
           const where = page === 0 ? searchName(search) : `${searchName(search)}, page ${page + 1}`;
           await patchCheck({ phase: `Reading ${where}` });
           const raw = await pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage));
@@ -296,9 +315,17 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
 
           const advanced = await screenCandidates(selection.candidates, where);
           await readDetailsInOrder(advanced, source, session, pace, where);
+          pagesRead++;
+          progress.pagesDone++;
+          progress.pageJobsDone = 0;
+          progress.pageJobsTotal = 0;
+          await reportProgress();
 
-          if (found.length === 0 || !source.hasMorePages(raw)) break;
+          const clickLimitReached = (detailReadsLeft.get(source.id) ?? 1) <= 0;
+          if (found.length === 0 || !source.hasMorePages(raw) || clickLimitReached) break;
         }
+        progress.pagesPlanned -= budget - pagesRead;
+        await reportProgress();
       } finally {
         await session.close();
       }
