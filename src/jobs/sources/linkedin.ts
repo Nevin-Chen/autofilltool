@@ -9,7 +9,6 @@ const SEARCH_PATH_RE = /^\/jobs\/(search|search-results)\/?$/;
 export async function readLinkedInSearchPage(): Promise<unknown> {
   if (/^\/(checkpoint|authwall|login|uas|signup)(\/|$)/.test(location.pathname)) return { blocked: true };
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const cardSelector = '[componentkey^="job-card-component-ref-"]';
   const textLines = (el: Element): string[] => {
     const inner = (el as HTMLElement).innerText;
     if (typeof inner === 'string' && inner.trim()) {
@@ -25,8 +24,10 @@ export async function readLinkedInSearchPage(): Promise<unknown> {
   };
   const cardElements = (): Map<string, Element> => {
     const byId = new Map<string, Element>();
-    for (const el of document.querySelectorAll(cardSelector)) {
-      const id = (el.getAttribute('componentkey') ?? '').replace('job-card-component-ref-', '');
+    for (const el of document.querySelectorAll('[componentkey^="job-card-component-ref-"], li[data-occludable-job-id]')) {
+      const id =
+        el.getAttribute('data-occludable-job-id') ??
+        (el.getAttribute('componentkey') ?? '').replace('job-card-component-ref-', '');
       if (/^\d+$/.test(id) && !byId.has(id)) byId.set(id, el);
     }
     return byId;
@@ -57,9 +58,10 @@ export async function readLinkedInSearchPage(): Promise<unknown> {
   }
 
   const cards = [...elements.entries()].map(([id, el]) => ({ id, lines: textLines(el) }));
-  const next = [...document.querySelectorAll('button')].find(
-    (button) => (button.getAttribute('aria-label') || button.textContent || '').trim() === 'Next',
-  );
+  const next = [...document.querySelectorAll('button')].find((button) => {
+    const label = (button.getAttribute('aria-label') || button.textContent || '').trim();
+    return label === 'Next' || label === 'View next page';
+  });
   const hasNext = !!next && !next.disabled && next.getAttribute('aria-disabled') !== 'true';
   return { blocked: false, cards, hasNext };
 }
@@ -69,7 +71,8 @@ export async function readLinkedInJobPage(): Promise<unknown> {
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const findBox = () =>
     document.querySelector('[componentkey*="AboutTheJob"] [data-testid="expandable-text-box"]') ??
-    document.querySelector('[data-testid="expandable-text-box"]');
+    document.querySelector('[data-testid="expandable-text-box"]') ??
+    document.querySelector('#job-details');
   const deadline = Date.now() + 15_000;
   while (!findBox() && Date.now() < deadline) await sleep(250);
 
@@ -83,9 +86,9 @@ export async function readLinkedInJobPage(): Promise<unknown> {
     const heading = [...document.querySelectorAll('h2, h3')].find((h) => h.textContent?.trim() === 'About the job');
     let container = heading?.parentElement ?? null;
     while (container && textOf(container).length < 400 && container.parentElement) container = container.parentElement;
-    description = container ? textOf(container).replace(/^About the job\s*/, '') : '';
+    description = container ? textOf(container) : '';
   }
-  description = description.replace(/\s*…\s*more\s*$/i, '').trim();
+  description = description.replace(/^About the job\s*/, '').replace(/\s*…\s*more\s*$/i, '').trim();
 
   const applyLink = [...document.querySelectorAll('a[href*="/safety/go"]')].find((a) =>
     /apply/i.test(a.getAttribute('aria-label') || a.textContent || ''),
@@ -99,43 +102,79 @@ export async function readLinkedInJobPage(): Promise<unknown> {
     }
   }
   const easyApply = [...document.querySelectorAll('button, a')].some((el) =>
-    /^Easy Apply\b/i.test((el.getAttribute('aria-label') || el.textContent || '').trim()),
+    /^Easy Apply to\b/i.test((el.getAttribute('aria-label') ?? '').trim()),
   );
-  return { blocked: false, description, applyUrl, easyApply };
+  const postedAgo = /\d+\s+(minute|hour|day|week|month)s?\s+ago/i.exec(document.querySelector('main')?.textContent ?? '')?.[0] ?? null;
+  return { blocked: false, description, applyUrl, easyApply, postedAgo };
 }
 
 export async function readLinkedInSelectedJob(listingId: string): Promise<unknown> {
   if (/^\/(checkpoint|authwall|login|uas|signup)(\/|$)/.test(location.pathname)) return { blocked: true };
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const jobId = listingId.replace(/^linkedin:/, '');
-  const card =
-    document.querySelector(`div[role="button"][componentkey="job-card-component-ref-${jobId}"]`) ??
-    document.querySelector(`[componentkey="job-card-component-ref-${jobId}"]`);
-  if (!card) return { missing: true };
-
-  const descriptionSelector = `[componentkey="JobDetails_AboutTheJob_${jobId}"] [data-testid="expandable-text-box"]`;
-  if (!document.querySelector(descriptionSelector)) {
-    (card as HTMLElement).click();
-    const deadline = Date.now() + 15_000;
-    while (!document.querySelector(descriptionSelector) && Date.now() < deadline) await sleep(250);
-  }
-  const box = document.querySelector(descriptionSelector);
-  if (!box) return { missing: true };
-
+  const textOf = (el: Element): string => {
+    const inner = (el as HTMLElement).innerText;
+    return (typeof inner === 'string' && inner.trim() ? inner : (el.textContent ?? '')).trim();
+  };
   const applyLink = () =>
     [...document.querySelectorAll('a[href*="/safety/go"]')].find((a) =>
       /apply/i.test(a.getAttribute('aria-label') || a.textContent || ''),
     );
   const easyApplyButton = () =>
     [...document.querySelectorAll('button, a')].find((el) =>
-      /^Easy Apply\b/i.test((el.getAttribute('aria-label') || el.textContent || '').trim()),
+      /^Easy Apply to\b/i.test((el.getAttribute('aria-label') ?? '').trim()),
     );
-  const buttonsDeadline = Date.now() + 3_000;
-  while (!applyLink() && !easyApplyButton() && Date.now() < buttonsDeadline) await sleep(200);
 
-  const inner = (box as HTMLElement).innerText;
-  const text = typeof inner === 'string' && inner.trim() ? inner : (box.textContent ?? '');
-  const description = text.replace(/\s*…\s*more\s*$/i, '').trim();
+  const newCard =
+    document.querySelector(`div[role="button"][componentkey="job-card-component-ref-${jobId}"]`) ??
+    document.querySelector(`[componentkey="job-card-component-ref-${jobId}"]`);
+  const classicCard = document.querySelector(`li[data-occludable-job-id="${jobId}"]`);
+  if (!newCard && !classicCard) return { missing: true };
+
+  let box: Element | null = null;
+  if (newCard) {
+    const selector = `[componentkey="JobDetails_AboutTheJob_${jobId}"] [data-testid="expandable-text-box"]`;
+    if (!document.querySelector(selector)) {
+      (newCard as HTMLElement).click();
+      const deadline = Date.now() + 15_000;
+      while (!document.querySelector(selector) && Date.now() < deadline) await sleep(250);
+    }
+    box = document.querySelector(selector);
+  } else if (classicCard) {
+    const paneShowsJob = () =>
+      !!document.querySelector(`.jobs-search__job-details--wrapper a[href*="/jobs/view/${jobId}"]`);
+    const details = () =>
+      document.querySelector('.jobs-search__job-details--wrapper #job-details') ?? document.querySelector('#job-details');
+    if (!paneShowsJob()) {
+      const previous = details();
+      const before = previous ? textOf(previous) : '';
+      classicCard.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      const link = classicCard.querySelector(`a[href*="/jobs/view/${jobId}"]`) ?? classicCard.querySelector('a[href*="/jobs/view/"]');
+      ((link ?? classicCard) as HTMLElement).click();
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline) {
+        const current = details();
+        if (paneShowsJob() && current && textOf(current) && textOf(current) !== before) break;
+        await sleep(250);
+      }
+    }
+    box = paneShowsJob() ? details() : null;
+  }
+  if (!box) return { missing: true };
+
+  const buttonsDeadline = Date.now() + 3_000;
+  while (!applyLink() && !easyApplyButton() && !document.querySelector('.jobs-apply-button') && Date.now() < buttonsDeadline) {
+    await sleep(200);
+  }
+  const description = textOf(box).replace(/^About the job\s*/, '').replace(/\s*…\s*more\s*$/i, '').trim();
+  let postedAgo: string | null = null;
+  let around: Element | null =
+    document.querySelector(`.jobs-search__job-details--wrapper a[href*="/jobs/view/${jobId}"]`) ??
+    document.querySelector(`a[href*="/jobs/view/${jobId}"]`);
+  for (let depth = 0; around && depth < 8 && !postedAgo; depth++, around = around.parentElement) {
+    postedAgo = /\d+\s+(minute|hour|day|week|month)s?\s+ago/i.exec(around.textContent ?? '')?.[0] ?? null;
+  }
   let applyUrl: string | null = null;
   const link = applyLink();
   if (link) {
@@ -145,7 +184,7 @@ export async function readLinkedInSelectedJob(listingId: string): Promise<unknow
       applyUrl = null;
     }
   }
-  return { blocked: false, description, applyUrl, easyApply: !!easyApplyButton() };
+  return { blocked: false, description, applyUrl, easyApply: !!easyApplyButton(), postedAgo };
 }
 
 type RawCard = { id: string; lines: string[] };
@@ -215,17 +254,23 @@ export function normalizePay(line: string): string {
 
 function postedAt(lines: readonly string[], now: number): string {
   for (const line of lines) {
-    const match = POSTED_RE.exec(line);
-    if (match) return new Date(now - Number(match[1]) * UNIT_MS[match[2]!.toLowerCase()]!).toISOString();
+    const parsed = agoToIso(line, now);
+    if (parsed) return parsed;
   }
   return new Date(now).toISOString();
 }
 
-export function linkedInDetails(raw: unknown): ListingDetails | null {
+function agoToIso(text: string, now: number): string | null {
+  const match = POSTED_RE.exec(text);
+  return match ? new Date(now - Number(match[1]) * UNIT_MS[match[2]!.toLowerCase()]!).toISOString() : null;
+}
+
+export function linkedInDetails(raw: unknown, now: number = Date.now()): ListingDetails | null {
   if (!isRecord(raw) || raw.blocked === true || raw.missing === true) return null;
   const description = typeof raw.description === 'string' && raw.description.trim() ? raw.description.trim() : null;
   const applyUrl = typeof raw.applyUrl === 'string' && /^https?:\/\//.test(raw.applyUrl) ? raw.applyUrl : null;
-  return { description, applyUrl, easyApply: raw.easyApply === true };
+  const postedAt = typeof raw.postedAgo === 'string' ? agoToIso(raw.postedAgo, now) : null;
+  return { description, applyUrl, easyApply: raw.easyApply === true, postedAt };
 }
 
 export function linkedInSearchPageUrl(searchUrl: string, pageIndex: number): string {
@@ -254,12 +299,10 @@ export const linkedInSource: JobSource = {
   matches: (url) => LINKEDIN_HOSTS.has(url.hostname) && SEARCH_PATH_RE.test(url.pathname),
   postedTodayOnly: false,
   limits: {
-    minGapMs: 3_000,
-    maxGapMs: 8_000,
-    minClickGapMs: 2_000,
-    maxClickGapMs: 5_000,
-    maxSearchPages: 10,
-    maxDetailReads: 60,
+    loadGapMs: { min: 3_000, max: 8_000 },
+    clickGapMs: { min: 2_000, max: 5_000 },
+    searchPages: { min: 7, max: 12 },
+    detailReads: { min: 45, max: 75 },
   },
   searchPageUrl: linkedInSearchPageUrl,
   readPage: readLinkedInSearchPage,
@@ -270,5 +313,5 @@ export const linkedInSource: JobSource = {
     isRecord(raw) && Array.isArray(raw.cards) ? raw.cards.filter((card) => !isRawCard(card) || card.lines.length < 3).length : 0,
   readSelected: readLinkedInSelectedJob,
   readListingPage: readLinkedInJobPage,
-  toDetails: linkedInDetails,
+  toDetails: (raw) => linkedInDetails(raw),
 };
