@@ -8,7 +8,8 @@ import {
   streamClaudeBridge,
 } from '@/ai/providers/claude-bridge';
 import { hasOriginPermission } from '@/lib/permissions';
-import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails, type Range } from '@/jobs/sources';
+import { sourceForUrl, type JobSource, type ListingDetails } from '@/jobs/sources';
+import { createLimiter, createPacer, pickInRange, type Pacer } from '@/jobs/pacing';
 import { localDateKey, selectNewListings, type JudgeCandidate, type SeenListing } from '@/jobs/dedupe';
 import type { CandidateContext } from '@/jobs/candidate';
 import {
@@ -40,17 +41,11 @@ import {
   type JobListing,
   type JudgedJob,
 } from '@/jobs/schema';
+import { backgroundTabSession, type BrowsingSession } from './browsing';
 
-export const TAB_LOAD_TIMEOUT_MS = 30_000;
 export const STOP_GRACE_MS = 2_000;
 
 type Prompt = { system: string; user: string };
-
-export type BrowsingSession = {
-  open: (url: string, read: () => unknown) => Promise<unknown>;
-  run: (func: (listingId: string) => unknown, listingId: string) => Promise<unknown>;
-  close: () => Promise<void>;
-};
 
 export type JobCheckDeps = {
   sourceForUrl: (url: string) => JobSource | null;
@@ -87,8 +82,6 @@ export const defaultJobCheckDeps: JobCheckDeps = {
   now: () => new Date(),
   newId: () => crypto.randomUUID(),
 };
-
-export type Pacer = <T>(kind: 'load' | 'click', task: () => Promise<T>) => Promise<T>;
 
 export class CheckStopped extends Error {
   constructor() {
@@ -473,47 +466,6 @@ function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
   for (const job of judged) counts[job.verdict]++;
 }
 
-export function pickInRange(range: Range, random: () => number): number {
-  return range.min + Math.floor(random() * (range.max - range.min + 1));
-}
-
-export function createPacer(
-  limits: Pick<BrowsingLimits, 'loadGapMs' | 'clickGapMs'>,
-  sleep: (ms: number) => Promise<void>,
-  random: () => number,
-): Pacer {
-  let queue: Promise<unknown> = Promise.resolve();
-  let started = false;
-  return <T>(kind: 'load' | 'click', task: () => Promise<T>): Promise<T> => {
-    const run = queue.then(async () => {
-      if (started) {
-        const { min, max } = kind === 'click' ? limits.clickGapMs : limits.loadGapMs;
-        const gap = Math.round(min + random() * (max - min));
-        if (gap > 0) await sleep(gap);
-      }
-      started = true;
-      return task();
-    });
-    queue = run.catch(() => undefined);
-    return run;
-  };
-}
-
-export function createLimiter(limit: number) {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return async <T>(task: () => Promise<T>): Promise<T> => {
-    if (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
-    active++;
-    try {
-      return await task();
-    } finally {
-      active--;
-      waiting.shift()?.();
-    }
-  };
-}
-
 function serializedWriter(now: () => Date) {
   let queue: Promise<unknown> = Promise.resolve();
   return (change: (feed: JobFeed) => JobFeed): Promise<JobFeed> => {
@@ -537,67 +489,6 @@ export function bridgeEndpoint(settings: Settings): string {
 
 function searchName(search: JobSearch): string {
   return search.label.trim() || new URL(search.url).hostname;
-}
-
-function backgroundTabSession(): BrowsingSession {
-  let tabId: number | null = null;
-  return {
-    async open(url, read) {
-      if (tabId == null) {
-        const tab = await chrome.tabs.create({ url, active: false });
-        if (tab.id == null) throw new Error('Chrome did not open a background tab.');
-        tabId = tab.id;
-        await waitForTabLoad(tabId, () => Promise.resolve(), true);
-      } else {
-        const id = tabId;
-        await waitForTabLoad(id, async () => {
-          await chrome.tabs.update(id, { url });
-        });
-      }
-      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: read });
-      return frame?.result ?? null;
-    },
-    async run(func, listingId) {
-      if (tabId == null) throw new Error('No page is open in the background tab.');
-      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func, args: [listingId] });
-      return frame?.result ?? null;
-    },
-    async close() {
-      if (tabId != null) await chrome.tabs.remove(tabId).catch(() => {});
-      tabId = null;
-    },
-  };
-}
-
-function waitForTabLoad(tabId: number, navigate: () => Promise<void>, alreadyStarted = false): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let sawLoading = alreadyStarted;
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      reject(new Error(`The page took longer than ${TAB_LOAD_TIMEOUT_MS / 1000}s to load.`));
-    }, TAB_LOAD_TIMEOUT_MS);
-    const done = () => {
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      resolve();
-    };
-    const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
-      if (updatedId !== tabId) return;
-      if (info.status === 'loading') sawLoading = true;
-      if (info.status === 'complete' && sawLoading) done();
-    };
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    navigate()
-      .then(() => (alreadyStarted ? chrome.tabs.get(tabId) : null))
-      .then((tab) => {
-        if (tab?.status === 'complete') done();
-      })
-      .catch((err: unknown) => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      });
-  });
 }
 
 async function askBridge(
