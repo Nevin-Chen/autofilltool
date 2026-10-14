@@ -11,8 +11,10 @@ export type ListingDetails = {
 export type BrowsingLimits = {
   minGapMs: number;
   maxGapMs: number;
+  minClickGapMs: number;
+  maxClickGapMs: number;
   maxSearchPages: number;
-  maxListingPages: number;
+  maxDetailReads: number;
 };
 
 export type JobSource = {
@@ -26,6 +28,7 @@ export type JobSource = {
   hasMorePages: (raw: unknown) => boolean;
   isBlocked: (raw: unknown) => boolean;
   unreadCards?: (raw: unknown) => number;
+  readSelected?: (listingId: string) => unknown;
   readListingPage?: () => unknown;
   toDetails?: (raw: unknown) => ListingDetails | null;
 };

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bridgeEndpoint,
-  mapWithConcurrency,
+  createLimiter,
   runJobCheck,
   toScreenedJob,
   type JobCheckDeps,
@@ -108,9 +108,24 @@ function titleOf(user: string): string {
 
 function makeDeps() {
   let n = 0;
+  const readSearchPage = vi.fn<(url: string) => Promise<unknown>>(async () => [listing()]);
+  const readSelected = vi.fn<(listingId: string) => Promise<unknown>>(async () => null);
+  const sessions = { opened: 0, closed: 0 };
   return {
+    readSearchPage,
+    readSelected,
+    sessions,
     sourceForUrl: exampleSourceForUrl,
-    readSearchPage: vi.fn<JobCheckDeps['readSearchPage']>(async () => [listing()]),
+    openSession: vi.fn<JobCheckDeps['openSession']>(() => {
+      sessions.opened++;
+      return {
+        open: (url) => readSearchPage(url),
+        run: (_func, listingId) => readSelected(listingId),
+        close: async () => {
+          sessions.closed++;
+        },
+      };
+    }),
     readListingPage: vi.fn<JobCheckDeps['readListingPage']>(async () => FULL_POSTING),
     screenBatch: vi.fn<JobCheckDeps['screenBatch']>(async ({ user }) => screenReply(user)),
     reviewJob: vi.fn<JobCheckDeps['reviewJob']>(async () => reviewReply()),
@@ -348,16 +363,21 @@ describe('toScreenedJob', () => {
   });
 });
 
-describe('mapWithConcurrency', () => {
+describe('createLimiter', () => {
   it('never runs more than the limit at once', async () => {
+    const limit = createLimiter(3);
     let inFlight = 0;
     let peak = 0;
-    await mapWithConcurrency([1, 2, 3, 4, 5, 6, 7], 3, async () => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      inFlight--;
-    });
+    await Promise.all(
+      [1, 2, 3, 4, 5, 6, 7].map(() =>
+        limit(async () => {
+          inFlight++;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          inFlight--;
+        }),
+      ),
+    );
     expect(peak).toBe(3);
   });
 });
@@ -399,7 +419,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('stops at the board\'s page limit', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, maxSearchPages: 2, maxListingPages: 40 } });
+    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 2, maxDetailReads: 40 } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     deps.readSearchPage.mockResolvedValue({ listings: distinct('x', 1), hasNext: true });
     await runJobCheck(deps);
@@ -408,7 +428,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('waits a random gap between page loads on a board, but not before the first', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 3_000, maxGapMs: 8_000, maxSearchPages: 5, maxListingPages: 40 } });
+    const board = makeExampleBoard({ limits: { minGapMs: 3_000, maxGapMs: 8_000, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 5, maxDetailReads: 40 } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     const events: string[] = [];
     deps.sleep.mockImplementation(async (ms) => {
@@ -423,7 +443,7 @@ describe('runJobCheck on a paginated, paced board', () => {
       return 'You will build payment APIs in TypeScript and React. '.repeat(10);
     });
     await runJobCheck(deps);
-    expect(events).toEqual(['search', 'sleep 5500', 'search', 'sleep 5500', 'job page', 'sleep 5500', 'job page']);
+    expect(events).toEqual(['search', 'sleep 5500', 'job page', 'sleep 5500', 'search', 'sleep 5500', 'job page']);
   });
 
   it('counts result cards the board did not finish drawing', async () => {
@@ -446,7 +466,7 @@ describe('runJobCheck on a paginated, paced board', () => {
 
   it('leaves jobs past the per-check page limit for the next check', async () => {
     await saveSearches();
-    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, maxSearchPages: 5, maxListingPages: 2 } });
+    const board = makeExampleBoard({ limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 5, maxDetailReads: 2 } });
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
     deps.readSearchPage.mockResolvedValue(distinct('d', 5));
     const first = await runJobCheck(deps);
@@ -476,7 +496,7 @@ describe('runJobCheck on a paginated, paced board', () => {
     const check = await runJobCheck(deps);
     expect(deps.readListingPage).toHaveBeenCalledTimes(2);
     expect(check.status).toBe('failed');
-    expect(check.error).toMatch(/stopped opening pages on that board/);
+    expect(check.error).toMatch(/stopped browsing that board/);
     expect(check.counts).toMatchObject({ reviewed: 1, deferred: 3 });
     expect((await getJobFeed()).jobs).toHaveLength(1);
   });
@@ -505,5 +525,90 @@ describe('runJobCheck on a paginated, paced board', () => {
     const check = await runJobCheck(deps);
     expect(deps.reviewJob).not.toHaveBeenCalled();
     expect(check.counts).toMatchObject({ reviewed: 0, unjudged: 1 });
+  });
+});
+
+describe('runJobCheck on a board that loads details in the page', () => {
+  const spaBoard = makeExampleBoard({
+    readSelected: () => null,
+    limits: { minGapMs: 3_000, maxGapMs: 8_000, minClickGapMs: 2_000, maxClickGapMs: 4_000, maxSearchPages: 5, maxDetailReads: 40 },
+  });
+
+  function spaDeps() {
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(spaBoard) };
+    deps.readSelected.mockImplementation(async (listingId) => ({
+      description: `${FULL_POSTING} (${listingId})`,
+      applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
+      easyApply: false,
+    }));
+    return deps;
+  }
+
+  it('clicks each surviving job in the open search tab instead of opening its page', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue(threeListings);
+    const check = await runJobCheck(deps);
+    expect(deps.readSelected).toHaveBeenCalledTimes(3);
+    expect(deps.readListingPage).not.toHaveBeenCalled();
+    expect(check.counts).toMatchObject({ reviewed: 3, summaryOnly: 0 });
+    expect(deps.reviewJob.mock.calls[0]?.[0].user).toContain(`(${deps.readSelected.mock.calls[0]?.[0]})`);
+  });
+
+  it('opens one tab per search and closes it', async () => {
+    await saveSearches([
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform' },
+    ]);
+    const deps = spaDeps();
+    deps.readSearchPage.mockImplementation(async (url) =>
+      url.includes('platform') ? [listing({ id: 'example:platform-1', title: 'Platform Engineer', requirements: 'Kubernetes.' })] : [listing()],
+    );
+    await runJobCheck(deps);
+    expect(deps.sessions).toEqual({ opened: 2, closed: 2 });
+  });
+
+  it('clicks the newest postings first', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue([
+      listing({ id: 'example:older', title: 'Older', requirements: 'a', postedAt: '2026-10-13T12:00:00.000Z' }),
+      listing({ id: 'example:newest', title: 'Newest', requirements: 'b', postedAt: '2026-10-13T17:30:00.000Z' }),
+      listing({ id: 'example:middle', title: 'Middle', requirements: 'c', postedAt: '2026-10-13T15:00:00.000Z' }),
+    ]);
+    await runJobCheck(deps);
+    expect(deps.readSelected.mock.calls.map(([id]) => id)).toEqual(['example:newest', 'example:middle', 'example:older']);
+  });
+
+  it('waits the shorter click gap between clicks and the page gap before the next page', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockImplementation(async (url) =>
+      url.includes('page=2')
+        ? { listings: [listing({ id: 'example:b', title: 'B', requirements: 'b' })], hasNext: false }
+        : { listings: [listing({ id: 'example:a1', title: 'A1', requirements: 'a1' }), listing({ id: 'example:a2', title: 'A2', requirements: 'a2' })], hasNext: true },
+    );
+    await runJobCheck(deps);
+    expect(deps.sleep.mock.calls.map(([ms]) => ms)).toEqual([3_000, 3_000, 5_500, 3_000]);
+  });
+
+  it("opens the job's page when its card can't be found", async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSelected.mockResolvedValue({ missing: true });
+    const check = await runJobCheck(deps);
+    expect(deps.readListingPage).toHaveBeenCalledTimes(1);
+    expect(check.counts).toMatchObject({ reviewed: 1 });
+  });
+
+  it('stops browsing when a click lands on a security check', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue(threeListings);
+    deps.readSelected.mockResolvedValue({ blocked: true });
+    const check = await runJobCheck(deps);
+    expect(deps.readSelected).toHaveBeenCalledTimes(1);
+    expect(check.status).toBe('failed');
+    expect(check.counts).toMatchObject({ deferred: 3, reviewed: 0 });
   });
 });

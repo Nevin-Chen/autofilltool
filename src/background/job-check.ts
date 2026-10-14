@@ -9,7 +9,7 @@ import {
 } from '@/ai/providers/claude-bridge';
 import { hasOriginPermission } from '@/lib/permissions';
 import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails } from '@/jobs/sources';
-import { localDateKey, selectNewListings, type JudgeCandidate } from '@/jobs/dedupe';
+import { localDateKey, selectNewListings, type JudgeCandidate, type SeenListing } from '@/jobs/dedupe';
 import type { CandidateContext } from '@/jobs/candidate';
 import {
   JOB_SCREEN_BATCH_SIZE,
@@ -44,9 +44,15 @@ export const TAB_LOAD_TIMEOUT_MS = 30_000;
 
 type Prompt = { system: string; user: string };
 
+export type BrowsingSession = {
+  open: (url: string, read: () => unknown) => Promise<unknown>;
+  run: (func: (listingId: string) => unknown, listingId: string) => Promise<unknown>;
+  close: () => Promise<void>;
+};
+
 export type JobCheckDeps = {
   sourceForUrl: (url: string) => JobSource | null;
-  readSearchPage: (url: string, source: JobSource) => Promise<unknown>;
+  openSession: () => BrowsingSession;
   readListingPage: (url: string, source: JobSource) => Promise<unknown>;
   screenBatch: (prompt: Prompt, endpoint: string) => Promise<string>;
   reviewJob: (prompt: Prompt, endpoint: string) => Promise<string>;
@@ -60,9 +66,16 @@ export type JobCheckDeps = {
 
 export const defaultJobCheckDeps: JobCheckDeps = {
   sourceForUrl,
-  readSearchPage: (url, source) => readInBackgroundTab(url, source.readPage),
-  readListingPage: (url, source) =>
-    source.readListingPage ? readInBackgroundTab(url, source.readListingPage) : Promise.resolve(null),
+  openSession: backgroundTabSession,
+  readListingPage: async (url, source) => {
+    if (!source.readListingPage) return null;
+    const session = backgroundTabSession();
+    try {
+      return await session.open(url, source.readListingPage);
+    } finally {
+      await session.close();
+    }
+  },
   screenBatch: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS),
   reviewJob: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS),
   canReachBridge: (endpoint) => hasOriginPermission(endpoint),
@@ -73,10 +86,7 @@ export const defaultJobCheckDeps: JobCheckDeps = {
   newId: () => crypto.randomUUID(),
 };
 
-type Pacer = <T>(task: () => Promise<T>) => Promise<T>;
-type Advanced = { candidate: JudgeCandidate; source: JobSource };
-
-const BLOCKED_ELSEWHERE = Symbol('blocked-elsewhere');
+export type Pacer = <T>(kind: 'load' | 'click', task: () => Promise<T>) => Promise<T>;
 
 export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Promise<JobCheck> {
   const checkId = deps.newId();
@@ -116,12 +126,15 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
   };
 
   const counts = emptyJobCounts();
+  const reviews: Promise<void>[] = [];
+  let lastReviewError: unknown = null;
   try {
-    const [settings, profile, library, feedback] = await Promise.all([
+    const [settings, profile, library, feedback, feed] = await Promise.all([
       getSettings(),
       getProfile(),
       getResumeLibrary(),
       getJobFeedback(),
+      getJobFeed(),
     ]);
     const searches = settings.jobs.searches;
     if (searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
@@ -130,27 +143,6 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       throw new Error(`No permission to reach the Claude bridge at ${endpoint}. Grant it in Options > AI.`);
     }
 
-    const listings: Array<{ listing: JobListing; source: JobSource }> = [];
-    for (const search of searches) {
-      const source = deps.sourceForUrl(search.url);
-      if (!source) throw new Error(`${searchName(search)} isn't on a supported job board yet.`);
-      const found = await readSearchResults(search, source, paceFor(source), deps, counts, (phase) =>
-        patchCheck({ phase }),
-      );
-      listings.push(...found.map((listing) => ({ listing, source })));
-    }
-    const sourceById = new Map(listings.map(({ listing, source }) => [listing.id, source]));
-
-    const selection = selectNewListings(
-      listings.map(({ listing }) => listing),
-      (await getJobFeed()).jobs,
-      localDateKey(deps.now()),
-      (listing) => sourceById.get(listing.id)?.postedTodayOnly ?? true,
-    );
-    counts.postedToday = selection.postedToday;
-    counts.alreadySeen = selection.alreadySeen;
-    counts.identicalRepeats = selection.identicalRepeats;
-
     const resume = defaultVariant(library);
     const context: CandidateContext = {
       profileSummary: summarizeProfileForClassifier(profile),
@@ -158,137 +150,165 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       criteria: settings.jobs.criteria,
       disagreements: recentDisagreements(feedback),
     };
+    const today = localDateKey(deps.now());
+    const seen: SeenListing[] = [...feed.jobs];
+    const detailReadsLeft = new Map<string, number>();
+    const reviewSlots = createLimiter(JOB_REVIEW_CONCURRENCY);
 
-    const { candidates } = selection;
-    const advanced: Advanced[] = [];
-    for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
-      const batch = candidates.slice(start, start + JOB_SCREEN_BATCH_SIZE);
-      await patchCheck({
-        phase: `Screening ${start + 1}-${start + batch.length} of ${candidates.length}`,
-      });
-      const results = parseScreenResponse(await deps.screenBatch(buildScreenPrompt(batch, context), endpoint));
-      const judgedAt = deps.now().toISOString();
-      const settled: JudgedJob[] = [];
-      for (const candidate of batch) {
-        const result = results.get(candidate.listing.id);
-        const source = sourceById.get(candidate.listing.id);
-        if (!result || !source) {
-          counts.unjudged++;
-        } else if (result.verdict === 'review') {
-          advanced.push({ candidate, source });
-        } else {
-          settled.push(toScreenedJob(candidate, result, checkId, judgedAt));
+    const queueReview = (candidate: JudgeCandidate, details: ListingDetails | null) => {
+      reviews.push(
+        reviewSlots(async () => {
+          try {
+            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps);
+            if (!job) {
+              counts.unjudged++;
+              return;
+            }
+            tally(counts, [job]);
+            counts.reviewed++;
+            if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
+            await storeJobs([job]);
+          } catch (err) {
+            counts.unjudged++;
+            lastReviewError = err;
+          }
+        }),
+      );
+    };
+
+    const screenCandidates = async (
+      candidates: JudgeCandidate[],
+      where: string,
+    ): Promise<JudgeCandidate[]> => {
+      const advanced: JudgeCandidate[] = [];
+      for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
+        const batch = candidates.slice(start, start + JOB_SCREEN_BATCH_SIZE);
+        await patchCheck({ phase: `Screening ${batch.length} new listings from ${where}` });
+        const results = parseScreenResponse(await deps.screenBatch(buildScreenPrompt(batch, context), endpoint));
+        const judgedAt = deps.now().toISOString();
+        const settled: JudgedJob[] = [];
+        for (const candidate of batch) {
+          const result = results.get(candidate.listing.id);
+          if (!result) counts.unjudged++;
+          else if (result.verdict === 'review') advanced.push(candidate);
+          else settled.push(toScreenedJob(candidate, result, checkId, judgedAt));
         }
+        tally(counts, settled);
+        await storeJobs(settled);
       }
-      tally(counts, settled);
-      await storeJobs(settled);
-    }
+      return advanced;
+    };
 
-    const listingPagesLeft = new Map<string, number>();
-    const blockedSources = new Set<string>();
-    let blockedMessage: string | null = null;
+    const readDetailsInOrder = async (
+      advanced: JudgeCandidate[],
+      source: JobSource,
+      session: BrowsingSession,
+      pace: Pacer,
+      where: string,
+    ): Promise<void> => {
+      const newestFirst = [...advanced].sort((a, b) => Date.parse(b.listing.postedAt) - Date.parse(a.listing.postedAt));
+      for (const [index, candidate] of newestFirst.entries()) {
+        const left = detailReadsLeft.get(source.id) ?? source.limits.maxDetailReads;
+        const needsPage = !!(source.readSelected || source.readListingPage) && !!source.toDetails;
+        if (needsPage && left <= 0) {
+          counts.deferred += newestFirst.length - index;
+          return;
+        }
+        if (needsPage) {
+          detailReadsLeft.set(source.id, left - 1);
+          await patchCheck({ phase: `Opening job ${index + 1} of ${newestFirst.length} on ${where}` });
+        }
+        const details = await readDetails(candidate.listing, source, session, pace);
+        if (details === 'blocked') {
+          counts.deferred += newestFirst.length - index;
+          throw new Error(
+            'A job showed a security check or sign-in page, so the check stopped browsing that board. Open it in a tab yourself and deal with it there, then check again.',
+          );
+        }
+        queueReview(candidate, details);
+      }
+    };
+
     const readDetails = async (
       listing: JobListing,
       source: JobSource,
-    ): Promise<ListingDetails | null | 'deferred'> => {
-      if (!source.readListingPage || !source.toDetails || !listing.listingUrl) return null;
-      if (blockedSources.has(source.id)) return 'deferred';
-      const left = listingPagesLeft.get(source.id) ?? source.limits.maxListingPages;
-      if (left <= 0) return 'deferred';
-      listingPagesLeft.set(source.id, left - 1);
-      const raw = await paceFor(source)(async () =>
-        blockedSources.has(source.id)
-          ? BLOCKED_ELSEWHERE
-          : deps.readListingPage(listing.listingUrl, source).catch(() => null),
-      );
-      if (raw === BLOCKED_ELSEWHERE) return 'deferred';
-      if (source.isBlocked(raw)) {
-        blockedSources.add(source.id);
-        blockedMessage ??=
-          'A job page showed a security check or sign-in page, so the check stopped opening pages on that board. Open it in a tab yourself and deal with it there, then check again.';
-        return 'deferred';
+      session: BrowsingSession,
+      pace: Pacer,
+    ): Promise<ListingDetails | null | 'blocked'> => {
+      if (!source.toDetails) return null;
+      if (source.readSelected) {
+        const select = source.readSelected;
+        const raw = await pace('click', () => session.run(select, listing.id).catch(() => null));
+        if (source.isBlocked(raw)) return 'blocked';
+        const details = source.toDetails(raw);
+        if (details) return details;
       }
+      if (!source.readListingPage || !listing.listingUrl) return null;
+      const raw = await pace('load', () => deps.readListingPage(listing.listingUrl, source).catch(() => null));
+      if (source.isBlocked(raw)) return 'blocked';
       return source.toDetails(raw);
     };
 
-    let finishedReviews = 0;
-    let lastReviewError: unknown = null;
-    const reportProgress = () =>
-      patchCheck({ phase: `Claude is reviewing full postings: ${finishedReviews} of ${advanced.length} done` });
-    if (advanced.length > 0) await reportProgress();
-    await mapWithConcurrency(advanced, JOB_REVIEW_CONCURRENCY, async ({ candidate, source }) => {
+    for (const search of searches) {
+      const source = deps.sourceForUrl(search.url);
+      if (!source) throw new Error(`${searchName(search)} isn't on a supported job board yet.`);
+      const pace = paceFor(source);
+      const session = deps.openSession();
       try {
-        const details = await readDetails(candidate.listing, source);
-        if (details === 'deferred') {
-          counts.deferred++;
-          return;
-        }
-        const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps);
-        if (job) {
-          tally(counts, [job]);
-          counts.reviewed++;
-          if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
-          await storeJobs([job]);
-        } else {
-          counts.unjudged++;
-        }
-      } catch (err) {
-        counts.unjudged++;
-        lastReviewError = err;
-      } finally {
-        finishedReviews++;
-        if (finishedReviews < advanced.length) await reportProgress();
-      }
-    });
-    if (blockedMessage) throw new Error(blockedMessage);
-    if (advanced.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
+        for (let page = 0; page < source.limits.maxSearchPages; page++) {
+          const where = page === 0 ? searchName(search) : `${searchName(search)}, page ${page + 1}`;
+          await patchCheck({ phase: `Reading ${where}` });
+          const raw = await pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage));
+          if (source.isBlocked(raw)) {
+            throw new Error(
+              `${searchName(search)} showed a security check or sign-in page. Open it in a tab yourself and deal with it there, then check again.`,
+            );
+          }
+          const found = source.toListings(raw);
+          if (!found) {
+            if (page === 0) {
+              throw new Error(
+                `Couldn't read ${searchName(search)}. If the job board is showing a bot check, open the search in a tab yourself, then check again.`,
+              );
+            }
+            break;
+          }
+          counts.unreadCards += source.unreadCards?.(raw) ?? 0;
 
-    const feed = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
+          const selection = selectNewListings(found, seen, today, () => source.postedTodayOnly);
+          counts.postedToday += selection.postedToday;
+          counts.alreadySeen += selection.alreadySeen;
+          counts.identicalRepeats += selection.identicalRepeats;
+          seen.push(...selection.candidates.map(({ listing, fingerprint }) => ({ ...listing, fingerprint })));
+
+          const advanced = await screenCandidates(selection.candidates, where);
+          await readDetailsInOrder(advanced, source, session, pace, where);
+
+          if (found.length === 0 || !source.hasMorePages(raw)) break;
+        }
+      } finally {
+        await session.close();
+      }
+    }
+
+    if (reviews.length > 0) await patchCheck({ phase: `Claude is finishing ${reviews.length} reviews` });
+    await Promise.all(reviews);
+    if (reviews.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
+
+    const done = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
     await deps.setBadge(counts.strong + counts.maybe);
-    return checkById(feed, checkId);
+    return checkById(done, checkId);
   } catch (err) {
-    const feed = await patchCheck({
+    await Promise.all(reviews);
+    const failed = await patchCheck({
       status: 'failed',
       phase: '',
       finishedAt: deps.now().toISOString(),
       error: err instanceof Error ? err.message : String(err),
       counts,
     });
-    return checkById(feed, checkId);
+    return checkById(failed, checkId);
   }
-}
-
-async function readSearchResults(
-  search: JobSearch,
-  source: JobSource,
-  pace: Pacer,
-  deps: JobCheckDeps,
-  counts: JobCheckCounts,
-  report: (phase: string) => Promise<unknown>,
-): Promise<JobListing[]> {
-  const listings: JobListing[] = [];
-  for (let page = 0; page < source.limits.maxSearchPages; page++) {
-    await report(page === 0 ? `Reading ${searchName(search)}` : `Reading ${searchName(search)}, page ${page + 1}`);
-    const raw = await pace(() => deps.readSearchPage(source.searchPageUrl(search.url, page), source));
-    if (source.isBlocked(raw)) {
-      throw new Error(
-        `${searchName(search)} showed a security check or sign-in page. Open it in a tab yourself and deal with it there, then check again.`,
-      );
-    }
-    const found = source.toListings(raw);
-    if (!found) {
-      if (page === 0) {
-        throw new Error(
-          `Couldn't read ${searchName(search)}. If the job board is showing a bot check, open the search in a tab yourself, then check again.`,
-        );
-      }
-      break;
-    }
-    listings.push(...found);
-    counts.unreadCards += source.unreadCards?.(raw) ?? 0;
-    if (found.length === 0 || !source.hasMorePages(raw)) break;
-  }
-  return listings;
 }
 
 async function reviewCandidate(
@@ -355,16 +375,17 @@ function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
 }
 
 export function createPacer(
-  limits: Pick<BrowsingLimits, 'minGapMs' | 'maxGapMs'>,
+  limits: Pick<BrowsingLimits, 'minGapMs' | 'maxGapMs' | 'minClickGapMs' | 'maxClickGapMs'>,
   sleep: (ms: number) => Promise<void>,
   random: () => number,
 ): Pacer {
   let queue: Promise<unknown> = Promise.resolve();
   let started = false;
-  return <T>(task: () => Promise<T>): Promise<T> => {
+  return <T>(kind: 'load' | 'click', task: () => Promise<T>): Promise<T> => {
     const run = queue.then(async () => {
       if (started) {
-        const gap = Math.round(limits.minGapMs + random() * (limits.maxGapMs - limits.minGapMs));
+        const [min, max] = kind === 'click' ? [limits.minClickGapMs, limits.maxClickGapMs] : [limits.minGapMs, limits.maxGapMs];
+        const gap = Math.round(min + random() * (max - min));
         if (gap > 0) await sleep(gap);
       }
       started = true;
@@ -375,6 +396,21 @@ export function createPacer(
   };
 }
 
+export function createLimiter(limit: number) {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      return await task();
+    } finally {
+      active--;
+      waiting.shift()?.();
+    }
+  };
+}
+
 function serializedWriter(now: () => Date) {
   let queue: Promise<unknown> = Promise.resolve();
   return (change: (feed: JobFeed) => JobFeed): Promise<JobFeed> => {
@@ -382,21 +418,6 @@ function serializedWriter(now: () => Date) {
     queue = next.catch(() => undefined);
     return next;
   };
-}
-
-export async function mapWithConcurrency<T>(
-  items: readonly T[],
-  limit: number,
-  run: (item: T) => Promise<void>,
-): Promise<void> {
-  let index = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (index < items.length) {
-      const item = items[index++]!;
-      await run(item);
-    }
-  });
-  await Promise.all(workers);
 }
 
 function checkById(feed: JobFeed, id: string): JobCheck {
@@ -415,40 +436,64 @@ function searchName(search: JobSearch): string {
   return search.label.trim() || new URL(search.url).hostname;
 }
 
-async function readInBackgroundTab(url: string, readPage: () => unknown): Promise<unknown> {
-  const tab = await chrome.tabs.create({ url, active: false });
-  const tabId = tab.id;
-  if (tabId == null) throw new Error('Chrome did not open a background tab.');
-  try {
-    await waitForTabLoad(tabId, TAB_LOAD_TIMEOUT_MS);
-    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: readPage });
-    return frame?.result ?? null;
-  } finally {
-    await chrome.tabs.remove(tabId).catch(() => {});
-  }
+function backgroundTabSession(): BrowsingSession {
+  let tabId: number | null = null;
+  return {
+    async open(url, read) {
+      if (tabId == null) {
+        const tab = await chrome.tabs.create({ url, active: false });
+        if (tab.id == null) throw new Error('Chrome did not open a background tab.');
+        tabId = tab.id;
+        await waitForTabLoad(tabId, () => Promise.resolve(), true);
+      } else {
+        const id = tabId;
+        await waitForTabLoad(id, async () => {
+          await chrome.tabs.update(id, { url });
+        });
+      }
+      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: read });
+      return frame?.result ?? null;
+    },
+    async run(func, listingId) {
+      if (tabId == null) throw new Error('No page is open in the background tab.');
+      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func, args: [listingId] });
+      return frame?.result ?? null;
+    },
+    async close() {
+      if (tabId != null) await chrome.tabs.remove(tabId).catch(() => {});
+      tabId = null;
+    },
+  };
 }
 
-function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+function waitForTabLoad(tabId: number, navigate: () => Promise<void>, alreadyStarted = false): Promise<void> {
   return new Promise((resolve, reject) => {
+    let sawLoading = alreadyStarted;
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
-      reject(new Error(`The page took longer than ${timeoutMs / 1000}s to load.`));
-    }, timeoutMs);
+      reject(new Error(`The page took longer than ${TAB_LOAD_TIMEOUT_MS / 1000}s to load.`));
+    }, TAB_LOAD_TIMEOUT_MS);
     const done = () => {
       clearTimeout(timer);
       chrome.tabs.onUpdated.removeListener(onUpdated);
       resolve();
     };
     const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
-      if (updatedId === tabId && info.status === 'complete') done();
+      if (updatedId !== tabId) return;
+      if (info.status === 'loading') sawLoading = true;
+      if (info.status === 'complete' && sawLoading) done();
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs
-      .get(tabId)
+    navigate()
+      .then(() => (alreadyStarted ? chrome.tabs.get(tabId) : null))
       .then((tab) => {
-        if (tab.status === 'complete') done();
+        if (tab?.status === 'complete') done();
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
   });
 }
 

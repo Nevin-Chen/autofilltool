@@ -19,7 +19,7 @@ export function makeExampleBoard(overrides: Partial<JobSource> = {}): JobSource 
     id: 'example',
     matches: (url) => url.hostname === 'jobs.example.com',
     postedTodayOnly: true,
-    limits: { minGapMs: 0, maxGapMs: 0, maxSearchPages: 5, maxListingPages: 40 },
+    limits: { minGapMs: 0, maxGapMs: 0, minClickGapMs: 0, maxClickGapMs: 0, maxSearchPages: 5, maxDetailReads: 40 },
     searchPageUrl: (searchUrl, pageIndex) => (pageIndex === 0 ? searchUrl : `${searchUrl}&page=${pageIndex + 1}`),
     readPage: () => null,
     toListings: (raw) => {
@@ -32,7 +32,7 @@ export function makeExampleBoard(overrides: Partial<JobSource> = {}): JobSource 
     readListingPage: () => null,
     toDetails: (raw): ListingDetails | null => {
       if (typeof raw === 'string' && raw.trim()) return { description: raw.trim(), applyUrl: null, easyApply: false };
-      if (isRecord(raw) && !raw.blocked) {
+      if (isRecord(raw) && !raw.blocked && !raw.missing) {
         return {
           description: typeof raw.description === 'string' ? raw.description : null,
           applyUrl: typeof raw.applyUrl === 'string' ? raw.applyUrl : null,
