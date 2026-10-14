@@ -43,7 +43,9 @@ import {
 import { hasOriginPermission } from '@/lib/permissions';
 import { startKeepAlive } from './keepalive';
 import { runJobCheck } from './job-check';
-import { getJobFeed, runningCheck } from '@/jobs/store';
+import { getJobFeed, markRunningCheckStopped, runningCheck, updateJobFeed } from '@/jobs/store';
+
+let activeJobCheck: AbortController | null = null;
 
 async function resumeForSender(
   sender: chrome.runtime.MessageSender | undefined,
@@ -218,11 +220,27 @@ async function handle(
       if (runningCheck(await getJobFeed(), new Date())) {
         return { ok: false, error: 'A check is already running.' };
       }
+      const controller = new AbortController();
+      activeJobCheck = controller;
       const stopKeepAlive = startKeepAlive();
-      void runJobCheck()
+      void runJobCheck(undefined, controller.signal)
         .catch((err: unknown) => log.warn('job check crashed', err))
-        .finally(stopKeepAlive);
+        .finally(() => {
+          if (activeJobCheck === controller) activeJobCheck = null;
+          stopKeepAlive();
+        });
       return { ok: true, value: { started: true } };
+    }
+
+    case 'STOP_JOBS': {
+      if (activeJobCheck) {
+        activeJobCheck.abort();
+        return { ok: true, value: { stopped: true } };
+      }
+      const now = new Date();
+      const hadRecord = (await getJobFeed()).checks.some((check) => check.status === 'running');
+      if (hadRecord) await updateJobFeed((feed) => markRunningCheckStopped(feed, now), now);
+      return { ok: true, value: { stopped: hadRecord } };
     }
 
     default: {

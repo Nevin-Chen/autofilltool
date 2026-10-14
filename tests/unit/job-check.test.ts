@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bridgeEndpoint,
+  CheckStopped,
   createLimiter,
   pickInRange,
+  untilStopped,
   runJobCheck,
   toScreenedJob,
   type JobCheckDeps,
@@ -742,5 +744,109 @@ describe('progressFractions', () => {
       browsing: 0,
       reviews: null,
     });
+  });
+});
+
+describe('stopping a check', () => {
+  function rejectOnAbort(signal: AbortSignal | undefined) {
+    return new Promise<never>((_, reject) => {
+      const abort = () => reject(new DOMException('Aborted', 'AbortError'));
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  it('stops mid-browse, keeps what was judged, and closes the tab', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5 }]);
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.readSearchPage.mockImplementation(async (url) => {
+      if (url.includes('page=2')) {
+        controller.abort();
+        return new Promise(() => {});
+      }
+      return { listings: [listing()], hasNext: true };
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(check.error).toBeNull();
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+    expect(deps.sessions).toEqual({ opened: 1, closed: 1 });
+    expect((await getJobFeed()).jobs.map((job) => job.id)).toEqual(['example:k2stripe0001']);
+    expect(deps.setBadge).toHaveBeenCalledWith(1);
+  });
+
+  it('cancels a screening request that is in flight', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.screenBatch.mockImplementation(async (_prompt, _endpoint, signal) => {
+      setTimeout(() => controller.abort(), 5);
+      return rejectOnAbort(signal);
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.screenBatch.mock.calls[0]?.[2]).toBe(controller.signal);
+    expect(deps.reviewJob).not.toHaveBeenCalled();
+    expect((await getJobFeed()).jobs).toEqual([]);
+  });
+
+  it('skips reviews that have not started once stopped', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => listing({ id: `example:s-${i}`, title: `Role ${i}`, requirements: `Set ${i}.` })),
+    );
+    deps.reviewJob.mockImplementation(async (_prompt, _endpoint, signal) => {
+      controller.abort();
+      return rejectOnAbort(signal);
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.reviewJob.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(check.counts).toMatchObject({ reviewed: 0, unjudged: 0 });
+  });
+
+  it('does not wait on a review that ignores the stop', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.reviewJob.mockImplementation(async () => {
+      controller.abort();
+      return new Promise<string>(() => {});
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.sleep).toHaveBeenCalledWith(2_000);
+  });
+
+  it('reports a stop, not a failure, when stopped before anything ran', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    controller.abort();
+    const deps = makeDeps();
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.readSearchPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('untilStopped', () => {
+  it('passes the result through when nothing stops it', async () => {
+    await expect(untilStopped(Promise.resolve(7), new AbortController().signal)).resolves.toBe(7);
+  });
+
+  it('rejects as soon as the signal fires, without waiting for the work', async () => {
+    const controller = new AbortController();
+    const pending = untilStopped(new Promise(() => {}), controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(CheckStopped);
+  });
+
+  it('rejects right away when already stopped', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(untilStopped(Promise.resolve(1), controller.signal)).rejects.toBeInstanceOf(CheckStopped);
   });
 });

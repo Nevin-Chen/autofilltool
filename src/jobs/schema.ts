@@ -88,7 +88,7 @@ export const JobCheckSchema = z.object({
   id: z.string(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
-  status: z.enum(['running', 'ok', 'failed']),
+  status: z.enum(['running', 'ok', 'failed', 'stopped']),
   phase: z.string().default(''),
   error: z.string().nullable(),
   counts: JobCheckCountsSchema.nullable(),

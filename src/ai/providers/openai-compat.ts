@@ -15,6 +15,7 @@ export type ChatCompatParams = {
   user: string;
   maxTokens: number;
   temperature?: number;
+  signal?: AbortSignal;
   fetchImpl?: typeof fetch;
 };
 
@@ -39,6 +40,7 @@ export async function* streamChatCompletions(
       Authorization: `Bearer ${params.apiKey}`,
     },
     body: JSON.stringify(body),
+    ...(params.signal ? { signal: params.signal } : {}),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

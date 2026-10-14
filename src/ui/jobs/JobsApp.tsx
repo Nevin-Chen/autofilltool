@@ -68,11 +68,26 @@ export function JobsApp() {
 
   const running = runningCheck(feed, now);
   const check = latestCheck(feed);
+  const [stopping, setStopping] = useState(false);
+  const stoppable = check?.status === 'running';
+
+  useEffect(() => {
+    if (!stoppable) setStopping(false);
+  }, [stoppable]);
 
   const onCheck = async () => {
     setStartError(null);
     const response = await sendToBackground({ type: 'CHECK_JOBS' });
     if (!response.ok) setStartError(response.error);
+  };
+
+  const onStop = async () => {
+    setStopping(true);
+    const response = await sendToBackground({ type: 'STOP_JOBS' });
+    if (!response.ok) {
+      setStopping(false);
+      setStartError(response.error);
+    }
   };
 
   const onClear = async () => {
@@ -89,14 +104,26 @@ export function JobsApp() {
             New postings from today on your saved searches, sorted by Claude against your résumé.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void onCheck()}
-          disabled={running !== null || !jobSettings?.searches.length}
-          className="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-900"
-        >
-          {running ? 'Checking…' : 'Check now'}
-        </button>
+        <div className="flex shrink-0 gap-2">
+          {stoppable && (
+            <button
+              type="button"
+              onClick={() => void onStop()}
+              disabled={stopping}
+              className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40 dark:focus:ring-offset-slate-900"
+            >
+              {stopping ? 'Stopping…' : 'Stop'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void onCheck()}
+            disabled={running !== null || !jobSettings?.searches.length}
+            className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-900"
+          >
+            {running ? 'Checking…' : 'Check now'}
+          </button>
+        </div>
       </header>
 
       <CheckStatus check={check} now={now} startError={startError} />
@@ -150,7 +177,7 @@ function CheckStatus(props: { check: JobCheck | null; now: Date; startError: str
   const { check, now, startError } = props;
   const failed = check?.status === 'failed';
   const interrupted = check !== null && isStale(check, now);
-  const counts = check?.status === 'ok' ? check.counts : null;
+  const counts = check?.status === 'ok' || check?.status === 'stopped' ? check.counts : null;
   return (
     <div className="space-y-2">
       <p className="text-sm text-slate-600 dark:text-slate-300" aria-live="polite">
