@@ -52,7 +52,7 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - By default it only touches fields the form marks required (`required`, `aria-required`, or a `*` or `✱` on the label). Optional fields show up as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Job Feed**
-- Save the URL of a search you already filtered on a job board. Tick the searches you want under **Searches to check**; only those run. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
+- Save the URL of a search you already filtered on a job board. Each saved search has a switch next to it; only searches that are on run, and flipping one saves right away. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
 - Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a hard requirement like a clearance) and sends everything plausible on
 - Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé and profile. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
 - Every résumé line Claude quotes is checked against your actual résumé text. A strong verdict that leans on a quote that isn't there drops to maybe, and the quote is marked on the card
