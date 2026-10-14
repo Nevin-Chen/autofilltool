@@ -118,13 +118,17 @@ export function JobsApp() {
           <button
             type="button"
             onClick={() => void onCheck()}
-            disabled={running !== null || !jobSettings?.searches.length}
+            disabled={running !== null || !jobSettings?.searches.some((search) => search.active)}
             className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-900"
           >
             {running ? 'Checking…' : 'Check now'}
           </button>
         </div>
       </header>
+
+      {jobSettings && jobSettings.searches.length > 0 && (
+        <ActiveSearches settings={jobSettings} onChange={setJobSettings} checkRunning={running !== null} />
+      )}
 
       <CheckStatus check={check} now={now} startError={startError} />
       <AgreementLine feedback={feedback} />
@@ -243,6 +247,56 @@ function readsSeveralPages(source: JobSource | null): source is JobSource {
   return !!source && source.limits.searchPages.max > 1;
 }
 
+function ActiveSearches(props: {
+  settings: JobFeedSettings;
+  onChange: (settings: JobFeedSettings) => void;
+  checkRunning: boolean;
+}) {
+  const toggle = async (id: string, active: boolean) => {
+    const fresh = await getSettings();
+    const jobs: JobFeedSettings = {
+      ...fresh.jobs,
+      searches: fresh.jobs.searches.map((search) => (search.id === id ? { ...search, active } : search)),
+    };
+    await setSettings({ ...fresh, jobs });
+    props.onChange(jobs);
+  };
+
+  return (
+    <fieldset className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+      <legend className="px-1 text-xs font-medium text-slate-600 dark:text-slate-300">Searches to check</legend>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {props.settings.searches.map((search) => (
+          <label key={search.id} className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
+            <input
+              type="checkbox"
+              checked={search.active}
+              onChange={(e) => void toggle(search.id, e.target.checked)}
+            />
+            <span>{search.label || searchHost(search.url)}</span>
+            {search.maxPages && (
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {search.maxPages} page{search.maxPages === 1 ? '' : 's'}
+              </span>
+            )}
+          </label>
+        ))}
+      </div>
+      {props.checkRunning && (
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Changes apply to the next check.</p>
+      )}
+    </fieldset>
+  );
+}
+
+function searchHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 function SearchSettings(props: {
   initial: JobFeedSettings;
   onSaved: (settings: JobFeedSettings) => void;
@@ -251,7 +305,6 @@ function SearchSettings(props: {
   const [searches, setSearches] = useState<SearchDraft[]>(() =>
     props.initial.searches.map((search) => ({ ...search, pagesInput: search.maxPages ? String(search.maxPages) : '' })),
   );
-  const [criteria, setCriteria] = useState(props.initial.criteria);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -259,6 +312,8 @@ function SearchSettings(props: {
     setSearches((current) => current.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
   const onSave = async () => {
+    const fresh = await getSettings();
+    const activeById = new Map(fresh.jobs.searches.map((search) => [search.id, search.active]));
     const nextErrors: Record<string, string> = {};
     const valid: JobSearch[] = [];
     for (const search of searches) {
@@ -279,15 +334,14 @@ function SearchSettings(props: {
         }
         maxPages = pages;
       }
-      valid.push({ id: search.id, label: search.label.trim(), url, maxPages });
+      valid.push({ id: search.id, label: search.label.trim(), url, maxPages, active: activeById.get(search.id) ?? true });
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       setSaveState('error');
       return;
     }
-    const jobs: JobFeedSettings = { searches: valid, criteria };
-    const fresh = await getSettings();
+    const jobs: JobFeedSettings = { ...fresh.jobs, searches: valid };
     await setSettings({ ...fresh, jobs });
     setSearches(valid.map((search) => ({ ...search, pagesInput: search.maxPages ? String(search.maxPages) : '' })));
     props.onSaved(jobs);
@@ -298,8 +352,8 @@ function SearchSettings(props: {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
       <Section
-        title="Searches and criteria"
-        hint="Paste the URL of a LinkedIn search with your filters already set: keywords, location, date posted, salary."
+        title="Saved searches"
+        hint="Paste the URL of a LinkedIn search with your filters already set: keywords, location, date posted, salary. Claude judges each job against your profile and default résumé from Settings, and follows the notes you leave when you disagree with a verdict."
         collapsible
         defaultCollapsed={props.defaultCollapsed}
       >
@@ -373,19 +427,6 @@ function SearchSettings(props: {
             Add search
           </button>
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-700 dark:text-slate-200">What makes a job a fit</span>
-            <textarea
-              value={criteria}
-              onChange={(e) => setCriteria(e.target.value)}
-              rows={5}
-              placeholder="For example: TypeScript or Ruby web roles asking 0 to 3 years. Remote or NYC preferred. Skip non-software roles like QA, IT support or field engineering."
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            />
-            <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-              Claude also reads your profile and your default résumé from Settings.
-            </span>
-          </label>
 
           <div className="flex items-center gap-3">
             <button

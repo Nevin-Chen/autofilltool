@@ -71,10 +71,9 @@ beforeEach(async () => {
 });
 
 async function saveSearches(
-  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null }],
-  criteria = 'Skip QA and field engineering roles.',
+  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true }],
 ) {
-  await setSettings({ ...defaultSettings(), jobs: { searches, criteria } });
+  await setSettings({ ...defaultSettings(), jobs: { searches } });
 }
 
 function listingIds(user: string): string[] {
@@ -173,8 +172,8 @@ describe('runJobCheck', () => {
     expect(jobs.get('example:k2stripe0001')?.review?.requirements[0]?.verified).toBe(true);
   });
 
-  it('passes the criteria and past disagreements to both passes', async () => {
-    await saveSearches(undefined, 'Remote or NYC only.');
+  it('passes past disagreements to both passes', async () => {
+    await saveSearches();
     store[JOB_FEEDBACK_KEY] = [
       {
         jobId: 'example:old',
@@ -189,7 +188,6 @@ describe('runJobCheck', () => {
     const deps = makeDeps();
     await runJobCheck(deps);
     for (const call of [deps.screenBatch.mock.calls[0], deps.reviewJob.mock.calls[0]]) {
-      expect(call?.[0].user).toContain('Remote or NYC only.');
       expect(call?.[0].user).toContain('Java-only shops are a skip.');
     }
   });
@@ -314,7 +312,7 @@ describe('runJobCheck', () => {
   });
 
   it('fails on a board without a source', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software', maxPages: null }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software', maxPages: null, active: true }]);
     const check = await runJobCheck(makeDeps());
     expect(check.error).toBe("LinkedIn isn't on a supported job board yet.");
   });
@@ -569,8 +567,8 @@ describe('runJobCheck on a board that loads details in the page', () => {
 
   it('opens one tab per search and closes it', async () => {
     await saveSearches([
-      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null },
-      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform', maxPages: null },
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform', maxPages: null, active: true },
     ]);
     const deps = spaDeps();
     deps.readSearchPage.mockImplementation(async (url) =>
@@ -684,7 +682,7 @@ describe('page limits and progress', () => {
   }
 
   it("reads only the search's own page count when one is set", async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 2 }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 2, active: true }]);
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
     endlessPages(deps);
     await runJobCheck(deps);
@@ -700,7 +698,7 @@ describe('page limits and progress', () => {
   });
 
   it('records pages and reviews as the check goes', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 3 }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 3, active: true }]);
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
     endlessPages(deps, 2);
     const check = await runJobCheck(deps);
@@ -708,7 +706,7 @@ describe('page limits and progress', () => {
   });
 
   it('shrinks the planned page count when the results run out early', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 10 }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 10, active: true }]);
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
     deps.readSearchPage.mockImplementation(async (url) => ({
       listings: [listing({ id: `example:${encodeURIComponent(url)}`, title: `Role ${url}`, requirements: url })],
@@ -719,7 +717,7 @@ describe('page limits and progress', () => {
   });
 
   it('stops reading pages once the click limit is used up', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5 }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5, active: true }]);
     const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5, 3)) };
     endlessPages(deps, 2);
     const check = await runJobCheck(deps);
@@ -757,7 +755,7 @@ describe('stopping a check', () => {
   }
 
   it('stops mid-browse, keeps what was judged, and closes the tab', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5 }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5, active: true }]);
     const controller = new AbortController();
     const deps = makeDeps();
     deps.readSearchPage.mockImplementation(async (url) => {
@@ -848,5 +846,41 @@ describe('untilStopped', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(untilStopped(Promise.resolve(1), controller.signal)).rejects.toBeInstanceOf(CheckStopped);
+  });
+});
+
+describe('active searches', () => {
+  const second = { id: 's2', label: 'Platform', url: 'https://jobs.example.com/search?q=platform', maxPages: null, active: false };
+
+  it('only runs searches that are turned on', async () => {
+    await saveSearches([{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true }, second]);
+    const deps = makeDeps();
+    await runJobCheck(deps);
+    expect(deps.readSearchPage.mock.calls.map(([url]) => url)).toEqual([SEARCH_URL]);
+  });
+
+  it('says so when every saved search is off', async () => {
+    await saveSearches([{ ...second, active: false }]);
+    const check = await runJobCheck(makeDeps());
+    expect(check.error).toMatch(/turned off/);
+  });
+
+  it('plans pages for active searches only', async () => {
+    await saveSearches([
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: 2, active: true },
+      { ...second, maxPages: 9 },
+    ]);
+    const deps = makeDeps();
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: [listing({ id: `example:${encodeURIComponent(url)}`, title: `Role ${url}`, requirements: url })],
+      hasNext: true,
+    }));
+    const check = await runJobCheck(deps);
+    expect(check.progress?.pagesPlanned).toBe(2);
+  });
+
+  it('loads settings saved with the old fit note, with every search on', () => {
+    const parsed = SettingsSchema.parse({ jobs: { criteria: 'Remote only.', searches: [{ id: 's1', label: '', url: SEARCH_URL }] } });
+    expect(parsed.jobs).toEqual({ searches: [{ id: 's1', label: '', url: SEARCH_URL, maxPages: null, active: true }] });
   });
 });

@@ -182,12 +182,12 @@ export const JobSearchSchema = z.object({
   label: z.string().default(''),
   url: z.string().url(),
   maxPages: z.number().int().min(1).max(MAX_JOB_SEARCH_PAGES).nullable().default(null),
+  active: z.boolean().default(true),
 });
 export type JobSearch = z.infer<typeof JobSearchSchema>;
 
 export const JobFeedSettingsSchema = z.object({
   searches: z.array(JobSearchSchema).default([]),
-  criteria: z.string().default(''),
 });
 export type JobFeedSettings = z.infer<typeof JobFeedSettingsSchema>;
 

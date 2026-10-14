@@ -52,9 +52,9 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - By default it only touches fields the form marks required (`required`, `aria-required`, or a `*` or `✱` on the label). Optional fields show up as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Job Feed**
-- Save the URL of a search you already filtered on a job board, plus a short note on what makes a job a fit. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
-- Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a dealbreaker from your note) and sends everything plausible on
-- Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé, profile, and note. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
+- Save the URL of a search you already filtered on a job board. Tick the searches you want under **Searches to check**; only those run. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
+- Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a hard requirement like a clearance) and sends everything plausible on
+- Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé and profile. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
 - Every résumé line Claude quotes is checked against your actual résumé text. A strong verdict that leans on a quote that isn't there drops to maybe, and the quote is marked on the card
 - **Agree** or **Disagree** on any verdict. Disagreements, with your note on what Claude got wrong, go into every later check
 - The same posting on another job board (identical title, company, city, and requirements summary) is dropped. When only the title and company match, Claude compares the two descriptions: a reworded copy goes under Repeats, a different role gets judged
@@ -194,7 +194,7 @@ Then pick **Claude Code (local bridge)** in Options. The endpoint and model fill
 - Your résumé text (up to 6,000 characters)
 
 **Job feed** (always the Claude Code bridge):
-- Every request: a profile summary (the same one AI fill uses), your default résumé text (up to 6,000 characters), your "what makes a job a fit" note, and up to 10 of your recent disagreements with their notes
+- Every request: a profile summary (the same one AI fill uses), your default résumé text (up to 6,000 characters), and up to 10 of your recent disagreements with their notes
 - Screen (`sonnet`, 20 listings per request): each new listing's title, company, city, workplace type, pay, years asked, the board's requirements summary, and its tools
 - Review (`opus`, one listing per request, 3 at a time): the same fields plus the full posting text (up to 12,000 characters)
 
