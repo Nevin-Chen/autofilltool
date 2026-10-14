@@ -15,6 +15,7 @@ export const JobListingSchema = z.object({
   tools: z.array(z.string()),
   listingUrl: z.string(),
   applyUrl: z.string().nullable(),
+  easyApply: z.boolean().default(false),
 });
 export type JobListing = z.infer<typeof JobListingSchema>;
 
@@ -68,6 +69,8 @@ export const JobCheckCountsSchema = z.object({
   repeat: z.number(),
   reviewed: z.number().default(0),
   summaryOnly: z.number().default(0),
+  deferred: z.number().default(0),
+  unreadCards: z.number().default(0),
 });
 export type JobCheckCounts = z.infer<typeof JobCheckCountsSchema>;
 
@@ -101,6 +104,8 @@ export function emptyJobCounts(): JobCheckCounts {
     repeat: 0,
     reviewed: 0,
     summaryOnly: 0,
+    deferred: 0,
+    unreadCards: 0,
   };
 }
 

@@ -1,5 +1,5 @@
 import type { JobListing, JudgedJob } from '@/jobs/schema';
-import type { JobSource } from '@/jobs/sources';
+import type { JobSource, ListingDetails } from '@/jobs/sources';
 import { listingFingerprint } from '@/jobs/dedupe';
 
 export const POSTED_TODAY = '2026-10-13T16:27:00.000Z';
@@ -8,22 +8,56 @@ export const NOW = new Date('2026-10-13T18:00:00.000Z');
 
 export const SEARCH_URL = 'https://jobs.example.com/search?q=software+engineer&posted=today';
 
-export const exampleBoard: JobSource = {
-  id: 'example',
-  matches: (url) => url.hostname === 'jobs.example.com',
-  readPage: () => null,
-  toListings: (raw) => (Array.isArray(raw) ? (raw as JobListing[]) : null),
-  readListingPage: () => null,
-  toDescription: (raw) => (typeof raw === 'string' && raw.trim() ? raw.trim() : null),
-};
+type ExamplePage = { listings?: JobListing[]; hasNext?: boolean; blocked?: boolean };
 
-export function exampleSourceForUrl(raw: string): JobSource | null {
-  try {
-    return exampleBoard.matches(new URL(raw)) ? exampleBoard : null;
-  } catch {
-    return null;
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
+
+export function makeExampleBoard(overrides: Partial<JobSource> = {}): JobSource {
+  return {
+    id: 'example',
+    matches: (url) => url.hostname === 'jobs.example.com',
+    postedTodayOnly: true,
+    limits: { minGapMs: 0, maxGapMs: 0, maxSearchPages: 5, maxListingPages: 40 },
+    searchPageUrl: (searchUrl, pageIndex) => (pageIndex === 0 ? searchUrl : `${searchUrl}&page=${pageIndex + 1}`),
+    readPage: () => null,
+    toListings: (raw) => {
+      if (Array.isArray(raw)) return raw as JobListing[];
+      if (isRecord(raw) && Array.isArray(raw.listings)) return (raw as ExamplePage).listings ?? [];
+      return null;
+    },
+    hasMorePages: (raw) => isRecord(raw) && raw.hasNext === true,
+    isBlocked: (raw) => isRecord(raw) && raw.blocked === true,
+    readListingPage: () => null,
+    toDetails: (raw): ListingDetails | null => {
+      if (typeof raw === 'string' && raw.trim()) return { description: raw.trim(), applyUrl: null, easyApply: false };
+      if (isRecord(raw) && !raw.blocked) {
+        return {
+          description: typeof raw.description === 'string' ? raw.description : null,
+          applyUrl: typeof raw.applyUrl === 'string' ? raw.applyUrl : null,
+          easyApply: raw.easyApply === true,
+        };
+      }
+      return null;
+    },
+    ...overrides,
+  };
+}
+
+export const exampleBoard = makeExampleBoard();
+
+export function sourceLookup(board: JobSource) {
+  return (raw: string): JobSource | null => {
+    try {
+      return board.matches(new URL(raw)) ? board : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+export const exampleSourceForUrl = sourceLookup(exampleBoard);
 
 export function listing(overrides: Partial<JobListing> = {}): JobListing {
   const id = overrides.id ?? 'example:k2stripe0001';
@@ -42,6 +76,7 @@ export function listing(overrides: Partial<JobListing> = {}): JobListing {
     tools: ['TypeScript', 'Ruby', 'PostgreSQL'],
     listingUrl: `https://jobs.example.com/listings/${id.replace(/^example:/, '')}`,
     applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001?gh_jid=7000001',
+    easyApply: false,
     ...overrides,
   };
 }
