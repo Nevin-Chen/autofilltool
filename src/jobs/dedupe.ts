@@ -1,10 +1,12 @@
-import type { JobListing, JudgedJob } from './schema';
+import type { JobListing } from './schema';
 
 export type JudgeCandidate = {
   listing: JobListing;
   fingerprint: string;
   sameTitleAs: JobListing | null;
 };
+
+export type SeenListing = JobListing & { fingerprint: string };
 
 export type ListingSelection = {
   candidates: JudgeCandidate[];
@@ -44,8 +46,9 @@ function fnv1a(input: string): string {
 
 export function selectNewListings(
   listings: readonly JobListing[],
-  judged: readonly JudgedJob[],
+  judged: readonly SeenListing[],
   today: string,
+  todayOnly: (listing: JobListing) => boolean = () => true,
 ): ListingSelection {
   const judgedIds = new Set(judged.map((job) => job.id));
   const knownFingerprints = new Set(judged.map((job) => job.fingerprint));
@@ -59,7 +62,7 @@ export function selectNewListings(
   const postedToday = listings.filter((listing) => {
     if (listingIds.has(listing.id)) return false;
     listingIds.add(listing.id);
-    return localDateKey(listing.postedAt) === today;
+    return !todayOnly(listing) || localDateKey(listing.postedAt) === today;
   });
 
   let alreadySeen = 0;

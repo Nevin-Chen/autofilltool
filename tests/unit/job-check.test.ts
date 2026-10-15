@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bridgeEndpoint,
-  mapWithConcurrency,
+  createLimiter,
+  pickInRange,
   runJobCheck,
   toScreenedJob,
   type JobCheckDeps,
@@ -12,7 +13,16 @@ import { defaultSettings, type JobSearch } from '@/profile/schema';
 import { getJobFeed } from '@/jobs/store';
 import { JOB_FEEDBACK_KEY } from '@/jobs/feedback';
 import { listingFingerprint } from '@/jobs/dedupe';
-import { NOW, SEARCH_URL, exampleSourceForUrl, judged, listing } from './job-fixtures';
+import {
+  NOW,
+  POSTED_YESTERDAY,
+  SEARCH_URL,
+  exampleSourceForUrl,
+  judged,
+  listing,
+  makeExampleBoard,
+  sourceLookup,
+} from './job-fixtures';
 
 const RESUME_TEXT = [
   'Software Engineer, Recursion Pharma (remote)',
@@ -99,14 +109,31 @@ function titleOf(user: string): string {
 
 function makeDeps() {
   let n = 0;
+  const readSearchPage = vi.fn<(url: string) => Promise<unknown>>(async () => [listing()]);
+  const readSelected = vi.fn<(listingId: string) => Promise<unknown>>(async () => null);
+  const sessions = { opened: 0, closed: 0 };
   return {
+    readSearchPage,
+    readSelected,
+    sessions,
     sourceForUrl: exampleSourceForUrl,
-    readSearchPage: vi.fn<JobCheckDeps['readSearchPage']>(async () => [listing()]),
+    openSession: vi.fn<JobCheckDeps['openSession']>(() => {
+      sessions.opened++;
+      return {
+        open: (url) => readSearchPage(url),
+        run: (_func, listingId) => readSelected(listingId),
+        close: async () => {
+          sessions.closed++;
+        },
+      };
+    }),
     readListingPage: vi.fn<JobCheckDeps['readListingPage']>(async () => FULL_POSTING),
     screenBatch: vi.fn<JobCheckDeps['screenBatch']>(async ({ user }) => screenReply(user)),
     reviewJob: vi.fn<JobCheckDeps['reviewJob']>(async () => reviewReply()),
     canReachBridge: vi.fn<JobCheckDeps['canReachBridge']>(async () => true),
     setBadge: vi.fn<JobCheckDeps['setBadge']>(async () => {}),
+    sleep: vi.fn<JobCheckDeps['sleep']>(async () => {}),
+    random: () => 0.5,
     now: () => NOW,
     newId: () => `check-${++n}`,
   };
@@ -337,16 +364,21 @@ describe('toScreenedJob', () => {
   });
 });
 
-describe('mapWithConcurrency', () => {
+describe('createLimiter', () => {
   it('never runs more than the limit at once', async () => {
+    const limit = createLimiter(3);
     let inFlight = 0;
     let peak = 0;
-    await mapWithConcurrency([1, 2, 3, 4, 5, 6, 7], 3, async () => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      inFlight--;
-    });
+    await Promise.all(
+      [1, 2, 3, 4, 5, 6, 7].map(() =>
+        limit(async () => {
+          inFlight++;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          inFlight--;
+        }),
+      ),
+    );
     expect(peak).toBe(3);
   });
 });
@@ -362,5 +394,267 @@ describe('bridgeEndpoint', () => {
     const settings = defaultSettings();
     settings.ai = { ...settings.ai, provider: 'ollama', endpoint: 'http://localhost:11434' };
     expect(bridgeEndpoint(settings)).toBe('http://localhost:11435');
+  });
+});
+
+describe('runJobCheck on a paginated, paced board', () => {
+  function pages(...groups: Array<Array<ReturnType<typeof listing>>>) {
+    return groups.map((listings, i) => ({ listings, hasNext: i < groups.length - 1 }));
+  }
+
+  function distinct(prefix: string, count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      listing({ id: `example:${prefix}-${i}`, title: `Software Engineer ${prefix} ${i}`, requirements: `Set ${prefix} ${i}.` }),
+    );
+  }
+
+  it('reads every results page until the board has no next page', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    const results = pages(distinct('a', 2), distinct('b', 2), distinct('c', 1));
+    deps.readSearchPage.mockImplementation(async (url) => results[Number(/page=(\d+)/.exec(url)?.[1] ?? 1) - 1]);
+    const check = await runJobCheck(deps);
+    expect(deps.readSearchPage.mock.calls.map(([url]) => url)).toEqual([SEARCH_URL, `${SEARCH_URL}&page=2`, `${SEARCH_URL}&page=3`]);
+    expect(check.counts).toMatchObject({ postedToday: 5, reviewed: 5 });
+  });
+
+  it('stops at the board\'s page limit', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 2, max: 2 }, detailReads: { min: 40, max: 40 } } });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
+    deps.readSearchPage.mockResolvedValue({ listings: distinct('x', 1), hasNext: true });
+    await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits a random gap between page loads on a board, but not before the first', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 3_000, max: 8_000 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 40, max: 40 } } });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
+    const events: string[] = [];
+    deps.sleep.mockImplementation(async (ms) => {
+      events.push(`sleep ${ms}`);
+    });
+    deps.readSearchPage.mockImplementation(async (url) => {
+      events.push('search');
+      return url.includes('page=2') ? { listings: distinct('b', 1), hasNext: false } : { listings: distinct('a', 1), hasNext: true };
+    });
+    deps.readListingPage.mockImplementation(async () => {
+      events.push('job page');
+      return 'You will build payment APIs in TypeScript and React. '.repeat(10);
+    });
+    await runJobCheck(deps);
+    expect(events).toEqual(['search', 'sleep 5500', 'job page', 'sleep 5500', 'search', 'sleep 5500', 'job page']);
+  });
+
+  it('counts result cards the board did not finish drawing', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({ unreadCards: (raw) => ((raw as { unread?: number }).unread ?? 0) });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
+    deps.readSearchPage.mockResolvedValue({ listings: distinct('u', 1), unread: 3 });
+    const check = await runJobCheck(deps);
+    expect(check.counts).toMatchObject({ unreadCards: 3, reviewed: 1 });
+  });
+
+  it('judges older results from a board without the posted-today rule', async () => {
+    await saveSearches();
+    const rolling = makeExampleBoard({ postedTodayOnly: false });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(rolling) };
+    deps.readSearchPage.mockResolvedValue([listing({ postedAt: POSTED_YESTERDAY })]);
+    const check = await runJobCheck(deps);
+    expect(check.counts).toMatchObject({ postedToday: 1, reviewed: 1 });
+  });
+
+  it('leaves jobs past the per-check page limit for the next check', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({ limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 2, max: 2 } } });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board) };
+    deps.readSearchPage.mockResolvedValue(distinct('d', 5));
+    const first = await runJobCheck(deps);
+    expect(deps.readListingPage).toHaveBeenCalledTimes(2);
+    expect(first.counts).toMatchObject({ reviewed: 2, deferred: 3 });
+
+    const second = await runJobCheck(deps);
+    expect(second.counts).toMatchObject({ alreadySeen: 2, reviewed: 2, deferred: 1 });
+  });
+
+  it('stops before screening when a results page is a security check', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue({ blocked: true });
+    const check = await runJobCheck(deps);
+    expect(check.status).toBe('failed');
+    expect(check.error).toMatch(/showed a security check or sign-in page/);
+    expect(deps.screenBatch).not.toHaveBeenCalled();
+  });
+
+  it('stops opening job pages after a security check, keeping finished reviews', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue(distinct('e', 4));
+    let reads = 0;
+    deps.readListingPage.mockImplementation(async () => (++reads === 2 ? { blocked: true } : FULL_POSTING));
+    const check = await runJobCheck(deps);
+    expect(deps.readListingPage).toHaveBeenCalledTimes(2);
+    expect(check.status).toBe('failed');
+    expect(check.error).toMatch(/stopped browsing that board/);
+    expect(check.counts).toMatchObject({ reviewed: 1, deferred: 3 });
+    expect((await getJobFeed()).jobs).toHaveLength(1);
+  });
+
+  it('uses the posting time from the job page over the one on the card', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readListingPage.mockResolvedValue({ description: FULL_POSTING, postedAt: '2026-10-13T17:50:00.000Z' });
+    await runJobCheck(deps);
+    expect((await getJobFeed()).jobs[0]?.postedAt).toBe('2026-10-13T17:50:00.000Z');
+  });
+
+  it('stores the apply link and Easy Apply flag read from the job page', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue([listing({ applyUrl: null })]);
+    deps.readListingPage.mockResolvedValue({
+      description: FULL_POSTING,
+      applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
+      easyApply: true,
+    });
+    await runJobCheck(deps);
+    expect((await getJobFeed()).jobs[0]).toMatchObject({
+      applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
+      easyApply: true,
+    });
+  });
+
+  it('does not review a job with neither a readable posting nor a summary', async () => {
+    await saveSearches();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue([listing({ requirements: '' })]);
+    deps.readListingPage.mockResolvedValue(null);
+    const check = await runJobCheck(deps);
+    expect(deps.reviewJob).not.toHaveBeenCalled();
+    expect(check.counts).toMatchObject({ reviewed: 0, unjudged: 1 });
+  });
+});
+
+describe('runJobCheck on a board that loads details in the page', () => {
+  const spaBoard = makeExampleBoard({
+    readSelected: () => null,
+    limits: { loadGapMs: { min: 3_000, max: 8_000 }, clickGapMs: { min: 2_000, max: 4_000 }, searchPages: { min: 5, max: 5 }, detailReads: { min: 40, max: 40 } },
+  });
+
+  function spaDeps() {
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(spaBoard) };
+    deps.readSelected.mockImplementation(async (listingId) => ({
+      description: `${FULL_POSTING} (${listingId})`,
+      applyUrl: 'https://job-boards.greenhouse.io/stripe/jobs/7000001',
+      easyApply: false,
+    }));
+    return deps;
+  }
+
+  it('clicks each surviving job in the open search tab instead of opening its page', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue(threeListings);
+    const check = await runJobCheck(deps);
+    expect(deps.readSelected).toHaveBeenCalledTimes(3);
+    expect(deps.readListingPage).not.toHaveBeenCalled();
+    expect(check.counts).toMatchObject({ reviewed: 3, summaryOnly: 0 });
+    expect(deps.reviewJob.mock.calls[0]?.[0].user).toContain(`(${deps.readSelected.mock.calls[0]?.[0]})`);
+  });
+
+  it('opens one tab per search and closes it', async () => {
+    await saveSearches([
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform' },
+    ]);
+    const deps = spaDeps();
+    deps.readSearchPage.mockImplementation(async (url) =>
+      url.includes('platform') ? [listing({ id: 'example:platform-1', title: 'Platform Engineer', requirements: 'Kubernetes.' })] : [listing()],
+    );
+    await runJobCheck(deps);
+    expect(deps.sessions).toEqual({ opened: 2, closed: 2 });
+  });
+
+  it('clicks the newest postings first', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue([
+      listing({ id: 'example:older', title: 'Older', requirements: 'a', postedAt: '2026-10-13T12:00:00.000Z' }),
+      listing({ id: 'example:newest', title: 'Newest', requirements: 'b', postedAt: '2026-10-13T17:30:00.000Z' }),
+      listing({ id: 'example:middle', title: 'Middle', requirements: 'c', postedAt: '2026-10-13T15:00:00.000Z' }),
+    ]);
+    await runJobCheck(deps);
+    expect(deps.readSelected.mock.calls.map(([id]) => id)).toEqual(['example:newest', 'example:middle', 'example:older']);
+  });
+
+  it('waits the shorter click gap between clicks and the page gap before the next page', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockImplementation(async (url) =>
+      url.includes('page=2')
+        ? { listings: [listing({ id: 'example:b', title: 'B', requirements: 'b' })], hasNext: false }
+        : { listings: [listing({ id: 'example:a1', title: 'A1', requirements: 'a1' }), listing({ id: 'example:a2', title: 'A2', requirements: 'a2' })], hasNext: true },
+    );
+    await runJobCheck(deps);
+    expect(deps.sleep.mock.calls.map(([ms]) => ms)).toEqual([3_000, 3_000, 5_500, 3_000]);
+  });
+
+  it("opens the job's page when its card can't be found", async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSelected.mockResolvedValue({ missing: true });
+    const check = await runJobCheck(deps);
+    expect(deps.readListingPage).toHaveBeenCalledTimes(1);
+    expect(check.counts).toMatchObject({ reviewed: 1 });
+  });
+
+  it('stops browsing when a click lands on a security check', async () => {
+    await saveSearches();
+    const deps = spaDeps();
+    deps.readSearchPage.mockResolvedValue(threeListings);
+    deps.readSelected.mockResolvedValue({ blocked: true });
+    const check = await runJobCheck(deps);
+    expect(deps.readSelected).toHaveBeenCalledTimes(1);
+    expect(check.status).toBe('failed');
+    expect(check.counts).toMatchObject({ deferred: 3, reviewed: 0 });
+  });
+});
+
+describe('randomized browsing limits', () => {
+  it('picks a whole number anywhere in the range, ends included', () => {
+    expect(pickInRange({ min: 7, max: 12 }, () => 0)).toBe(7);
+    expect(pickInRange({ min: 7, max: 12 }, () => 0.9999)).toBe(12);
+    expect(pickInRange({ min: 45, max: 75 }, () => 0.5)).toBe(60);
+  });
+
+  it('reads a different number of pages depending on the roll', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({
+      limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 2, max: 6 }, detailReads: { min: 40, max: 40 } },
+    });
+    for (const [roll, pages] of [[0, 2], [0.9999, 6]] as const) {
+      const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board), random: () => roll };
+      deps.readSearchPage.mockImplementation(async (url) => ({
+        listings: [listing({ id: `example:${roll}-${url.length}`, title: `Role ${url}`, requirements: url })],
+        hasNext: true,
+      }));
+      await runJobCheck(deps);
+      expect(deps.readSearchPage).toHaveBeenCalledTimes(pages);
+    }
+  });
+
+  it('clicks a different number of jobs depending on the roll', async () => {
+    await saveSearches();
+    const board = makeExampleBoard({
+      limits: { loadGapMs: { min: 0, max: 0 }, clickGapMs: { min: 0, max: 0 }, searchPages: { min: 1, max: 1 }, detailReads: { min: 1, max: 3 } },
+    });
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(board), random: () => 0 };
+    deps.readSearchPage.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => listing({ id: `example:r-${i}`, title: `Role ${i}`, requirements: `Set ${i}.` })),
+    );
+    const check = await runJobCheck(deps);
+    expect(check.counts).toMatchObject({ reviewed: 1, deferred: 4 });
   });
 });

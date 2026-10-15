@@ -1,5 +1,5 @@
 import type { JobListing } from '../schema';
-import type { JobSource } from './index';
+import type { JobSource, ListingDetails } from './index';
 
 const HIRING_CAFE_HOSTS = new Set(['hiringcafe.com', 'www.hiringcafe.com', 'hiring.cafe', 'www.hiring.cafe']);
 
@@ -54,8 +54,9 @@ export function readHiringCafeJobPage(): unknown {
   return fromPage.length >= 400 ? fromPage : null;
 }
 
-export function hiringCafeDescription(raw: unknown): string | null {
-  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
+export function hiringCafeDetails(raw: unknown): ListingDetails | null {
+  const description = typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
+  return description ? { description, applyUrl: null, easyApply: false, postedAt: null } : null;
 }
 
 export function hiringCafeListings(raw: unknown): JobListing[] | null {
@@ -96,6 +97,7 @@ function toListing(hit: Record<string, unknown>): JobListing | null {
     tools: Array.isArray(job.technical_tools) ? job.technical_tools.filter((t): t is string => typeof t === 'string') : [],
     listingUrl: requisitionId ? `https://hiringcafe.com/job/${requisitionId}` : (applyUrl ?? ''),
     applyUrl,
+    easyApply: false,
   };
 }
 
@@ -137,8 +139,18 @@ function numberOrNull(value: unknown): number | null {
 export const hiringCafeSource: JobSource = {
   id: 'hiringcafe',
   matches: (url) => HIRING_CAFE_HOSTS.has(url.hostname),
+  postedTodayOnly: true,
+  limits: {
+    loadGapMs: { min: 0, max: 0 },
+    clickGapMs: { min: 0, max: 0 },
+    searchPages: { min: 1, max: 1 },
+    detailReads: { min: 60, max: 60 },
+  },
+  searchPageUrl: (searchUrl) => searchUrl,
   readPage: readHiringCafePage,
   toListings: hiringCafeListings,
+  hasMorePages: () => false,
+  isBlocked: () => false,
   readListingPage: readHiringCafeJobPage,
-  toDescription: hiringCafeDescription,
+  toDetails: hiringCafeDetails,
 };
