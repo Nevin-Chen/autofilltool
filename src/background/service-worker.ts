@@ -42,6 +42,8 @@ import {
 } from '@/types/ai-port';
 import { hasOriginPermission } from '@/lib/permissions';
 import { startKeepAlive } from './keepalive';
+import { runJobCheck } from './job-check';
+import { getJobFeed, runningCheck } from '@/jobs/store';
 
 async function resumeForSender(
   sender: chrome.runtime.MessageSender | undefined,
@@ -210,6 +212,17 @@ async function handle(
           error: err instanceof Error ? err.message : String(err),
         };
       }
+    }
+
+    case 'CHECK_JOBS': {
+      if (runningCheck(await getJobFeed(), new Date())) {
+        return { ok: false, error: 'A check is already running.' };
+      }
+      const stopKeepAlive = startKeepAlive();
+      void runJobCheck()
+        .catch((err: unknown) => log.warn('job check crashed', err))
+        .finally(stopKeepAlive);
+      return { ok: true, value: { started: true } };
     }
 
     default: {

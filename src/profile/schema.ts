@@ -175,6 +175,19 @@ export const ResumeSettingsSchema = z.object({
 });
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
 
+export const JobSearchSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().default(''),
+  url: z.string().url(),
+});
+export type JobSearch = z.infer<typeof JobSearchSchema>;
+
+export const JobFeedSettingsSchema = z.object({
+  searches: z.array(JobSearchSchema).default([]),
+  criteria: z.string().default(''),
+});
+export type JobFeedSettings = z.infer<typeof JobFeedSettingsSchema>;
+
 export const SettingsSchema = z.object({
   enabledAdapters: z.array(AdapterIdSchema).default([
     'greenhouse',
@@ -195,6 +208,7 @@ export const SettingsSchema = z.object({
   tracking: TrackingSettingsSchema.default({}),
   ui: UiSettingsSchema.default({}),
   resume: ResumeSettingsSchema.default({}),
+  jobs: JobFeedSettingsSchema.default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

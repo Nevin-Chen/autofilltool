@@ -51,6 +51,16 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - **Use AI for skipped fields** lets the model answer what your profile couldn't. It sees your saved jobs, your schools, and the role you're applying for, so "have you worked here before" or "do you meet the experience requirement" is answered from your history
 - By default it only touches fields the form marks required (`required`, `aria-required`, or a `*` or `✱` on the label). Optional fields show up as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
+#### **Job Feed**
+- Save the URL of a search you already filtered on a job board, plus a short note on what makes a job a fit. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
+- Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a dealbreaker from your note) and sends everything plausible on
+- Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé, profile, and note. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
+- Every résumé line Claude quotes is checked against your actual résumé text. A strong verdict that leans on a quote that isn't there drops to maybe, and the quote is marked on the card
+- **Agree** or **Disagree** on any verdict. Disagreements, with your note on what Claude got wrong, go into every later check
+- The same posting on another job board (identical title, company, city, and requirements summary) is dropped. When only the title and company match, Claude compares the two descriptions: a reworded copy goes under Repeats, a different role gets judged
+- Results show on the Jobs page with a **Why** list for each match, the job page and direct apply links, and how often you've agreed with Claude. The count of strong and maybe matches shows on the extension icon. Results are kept for 7 days
+- Each job board needs its own reader, added one board at a time. LinkedIn and Indeed are next
+
 #### **Voluntary Self-Identification**
 - Save gender, pronouns, Hispanic/Latino, race, sexual orientation, transgender identity, veteran status, and disability status once, in Options
 - Forms word these their own way ("Male" in your profile against Man / Woman / Non-binary on the form), so the saved answer is matched to whichever option the form offers instead of being typed in as-is
@@ -177,6 +187,11 @@ Then pick **Claude Code (local bridge)** in Options. The endpoint and model fill
 - The job description from the page (up to 3,000 characters)
 - Your résumé text (up to 6,000 characters)
 
+**Job feed** (always the Claude Code bridge):
+- Every request: a profile summary (the same one AI fill uses), your default résumé text (up to 6,000 characters), your "what makes a job a fit" note, and up to 10 of your recent disagreements with their notes
+- Screen (`sonnet`, 20 listings per request): each new listing's title, company, city, workplace type, pay, years asked, the board's requirements summary, and its tools
+- Review (`opus`, one listing per request, 3 at a time): the same fields plus the full posting text (up to 12,000 characters)
+
 **AI fill on short fields:**
 - The question and its options
 - The role and company
@@ -225,7 +240,7 @@ BRIDGE_TIMEOUT_MS=180000            # kill a draft that runs longer than this
 | `activeTab` | Reach the focused tab from the popup |
 | `webNavigation` | Notice an ATS iframe loading inside another page, and route changes inside single-page apply flows |
 | Host: ATS domains | Auto-detect Greenhouse, Lever, Ashby, Workday, JazzHR, Workable, Breezy HR, SmartRecruiters, and Gem forms |
-| Host: `<all_urls>` | Show the Fill pill on a company's careers page when the application is an ATS iframe embedded in it |
+| Host: `<all_urls>` | Show the Fill pill on a company's careers page when the application is an ATS iframe embedded in it, and read a saved job search in a background tab |
 
 **Optional**, asked for when you need them and revocable from Options:
 
@@ -244,6 +259,7 @@ No `tabs` and no `webRequest`. The background only injects into a page outside t
 - API keys, webhook URLs, and résumé bytes live in `chrome.storage.local`, never `chrome.storage.sync`
 - No analytics, no telemetry, no remote error reporting
 - AI requests go straight from your browser to the provider you picked
+- Job feed results, meaning the listings and Claude's verdicts, stay in `chrome.storage.local` for 7 days and then drop off
 - The webhook only POSTs to the URL you paste in
 
 ## Project Layout
@@ -254,16 +270,18 @@ src/
 ├── content/      Injected scripts: filler, AI suggest, submit-watch, overlay
 ├── adapters/     Per-ATS detection (Greenhouse / Lever / Ashby / Workday / JazzHR / Workable / Breezy HR / SmartRecruiters / Gem + generic)
 ├── ai/           Provider dispatch, SSE parser, résumé text extraction
+├── jobs/         Job feed: board sources, repeat detection, Claude judge prompt, storage
 ├── profile/      Zod schemas, chrome.storage.local wrapper, migrations
 ├── tracking/     Sheets webhook client
 ├── lib/          Messaging, events, permissions, logger, history export
 ├── types/        Shared message envelope
-└── ui/           React + Tailwind options page and popup
+└── ui/           React + Tailwind options page, popup, and Jobs page
 bridge/           Local Claude Code subscription bridge (not part of the extension build)
 ```
 
 ## Roadmap
 
+- LinkedIn and Indeed sources for the job feed
 - Per-site allowlist for persistent injection without a click
 - Cache the job description across Workday's multi-page wizard
 - Single-source-of-truth versioning across `package.json`, `manifest.json`, and `package-lock.json`
@@ -272,7 +290,7 @@ bridge/           Local Claude Code subscription bridge (not part of the extensi
 
 Three rules I stuck to:
 
-- **Local-first.** No backend ships with the extension. The only network calls are the page you're on, the AI provider you picked, and your own Apps Script webhook
+- **Local-first.** No backend ships with the extension. The only network calls are the page you're on, the job searches you saved, the AI provider you picked, and your own Apps Script webhook
 - **User-in-the-loop.** The filler never clicks Submit. `SUBMIT_DENY` in `src/content/filler.ts` enforces it
 - **Safe autofill.** Fields with a value are skipped by default. Values go through the native value setter so React registers the change, followed by `input`, `change`, and a blur
 

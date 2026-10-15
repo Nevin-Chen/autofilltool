@@ -14,6 +14,9 @@ import {
   withCompanyChoice,
 } from '@/profile/resume-select';
 import { toCsv, csvFilename } from '@/lib/history-export';
+import { emptyJobFeed, getJobFeed, latestCheck, runningCheck, subscribeJobFeed } from '@/jobs/store';
+import { describeCheck, JOBS_PAGE_PATH } from '@/jobs/summary';
+import type { JobFeed } from '@/jobs/schema';
 
 type TabInfo = {
   id: number;
@@ -31,6 +34,13 @@ export function PopupApp() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [settings, setSettingsState] = useState<Settings | null>(null);
   const [library, setLibrary] = useState<ResumeLibrary>(emptyResumeLibrary());
+  const [jobFeed, setJobFeed] = useState<JobFeed>(emptyJobFeed);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getJobFeed().then(setJobFeed);
+    return subscribeJobFeed(setJobFeed);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -65,6 +75,19 @@ export function PopupApp() {
   const onOpenOptions = () => {
     chrome.runtime.openOptionsPage();
   };
+
+  const onCheckJobs = async () => {
+    setJobsError(null);
+    const r = await sendToBackground({ type: 'CHECK_JOBS' });
+    if (!r.ok) setJobsError(r.error);
+  };
+
+  const onOpenJobs = () => {
+    void chrome.tabs.create({ url: chrome.runtime.getURL(JOBS_PAGE_PATH) });
+  };
+
+  const hasJobSearches = (settings?.jobs.searches.length ?? 0) > 0;
+  const jobsRunning = runningCheck(jobFeed, new Date()) !== null;
 
   const onClear = async () => {
     const r = await sendToBackground({ type: 'CLEAR_HISTORY' });
@@ -308,6 +331,39 @@ export function PopupApp() {
               </span>
             </label>
           )}
+        </div>
+      )}
+
+      {settings && (
+        <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-medium text-slate-800 dark:text-slate-100">Job feed</span>
+            <span className="truncate text-[11px] text-slate-500 dark:text-slate-400" aria-live="polite">
+              {hasJobSearches ? describeCheck(latestCheck(jobFeed), new Date()) : 'No saved searches'}
+            </span>
+          </div>
+          {jobsError && (
+            <div className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{jobsError}</div>
+          )}
+          <div className="mt-2 flex gap-2">
+            {hasJobSearches && (
+              <button
+                type="button"
+                onClick={() => void onCheckJobs()}
+                disabled={jobsRunning}
+                className="flex-1 rounded-md bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {jobsRunning ? 'Checking…' : 'Check now'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onOpenJobs}
+              className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {hasJobSearches ? 'Open' : 'Set up'}
+            </button>
+          </div>
         </div>
       )}
 

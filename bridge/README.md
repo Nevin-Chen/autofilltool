@@ -167,6 +167,16 @@ claude -p \
 - Token deltas are streamed straight back to the extension as they arrive.
   Thinking blocks are parsed and discarded.
 
+### The raw route
+
+`POST /v1/raw/chat/completions` runs the same `claude -p` command without the
+output contract and without the voice prompt. The extension's job feed uses it
+to get JSON verdicts back for each listing; a "write a plain-text draft in my
+voice" prompt would fight that. Drafts keep using `/v1/chat/completions`.
+
+If you started the bridge before updating, restart it (`npm run bridge:stop`,
+then `npm run bridge`) or the job feed gets a 404 from the old server.
+
 ## Troubleshooting
 
 | Symptom | Cause |

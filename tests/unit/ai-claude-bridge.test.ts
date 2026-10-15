@@ -4,6 +4,7 @@ import {
   CLAUDE_BRIDGE_DEFAULT_MODEL,
   resolveEndpoint,
   resolveOriginForPermission,
+  resolveRawEndpoint,
   streamClaudeBridge,
 } from '@/ai/providers/claude-bridge';
 import { providerNeedsKey } from '@/profile/schema';
@@ -60,6 +61,18 @@ describe('resolveEndpoint', () => {
   it('keeps an explicit /chat/completions URL untouched', () => {
     expect(resolveEndpoint('http://localhost:9999/v1/chat/completions')).toBe(
       'http://localhost:9999/v1/chat/completions',
+    );
+  });
+});
+
+describe('resolveRawEndpoint', () => {
+  it('points at the raw route on the default bridge port when blank', () => {
+    expect(resolveRawEndpoint('')).toBe(`${CLAUDE_BRIDGE_DEFAULT_BASE}/v1/raw/chat/completions`);
+  });
+
+  it('keeps a custom origin and swaps in the raw route', () => {
+    expect(resolveRawEndpoint('http://127.0.0.1:11500/v1/chat/completions')).toBe(
+      'http://127.0.0.1:11500/v1/raw/chat/completions',
     );
   });
 });
@@ -188,5 +201,23 @@ describe('streamClaudeBridge', () => {
         }),
       ),
     ).rejects.toThrow(/HTTP 503/);
+  });
+
+  it('posts to the raw route when raw is set', async () => {
+    const fetchImpl = vi.fn(async () => sseResponse(['data: [DONE]\n\n']));
+    await collect(
+      streamClaudeBridge({
+        apiKey: '',
+        model: 'sonnet',
+        system: 's',
+        user: 'u',
+        maxTokens: 100,
+        endpoint: 'http://localhost:11435',
+        raw: true,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    );
+    const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe('http://localhost:11435/v1/raw/chat/completions');
   });
 });
