@@ -462,6 +462,36 @@ describe('pickListboxOption', () => {
     ul.innerHTML = `<li role="option">Canada</li>`;
     expect(pickListboxOption(ul, 'France')).toBeNull();
   });
+
+  function listbox(...options: string[]): HTMLUListElement {
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    for (const text of options) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = text;
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  it('maps a saved Hispanic or Latino Yes/No onto Hispanic/Latino options', () => {
+    const ul = listbox('I do not wish to provide this information', 'Hispanic/Latino', 'Not Hispanic/Latino');
+    expect(pickListboxOption(ul, 'Yes')?.textContent).toBe('Hispanic/Latino');
+    expect(pickListboxOption(ul, 'No')?.textContent).toBe('Not Hispanic/Latino');
+  });
+
+  it('still picks the literal Yes in a Yes/No list', () => {
+    expect(pickListboxOption(listbox('Yes', 'No'), 'Yes')?.textContent).toBe('Yes');
+  });
+
+  it('treats "I do not wish to provide this information" as a decline', () => {
+    const ul = listbox('Female', 'I do not wish to provide this information', 'Male');
+    expect(pickListboxOption(ul, 'Decline to self-identify')?.textContent).toBe(
+      'I do not wish to provide this information',
+    );
+    expect(pickListboxOption(ul, 'Male')?.textContent).toBe('Male');
+  });
 });
 
 describe('fillVirtualizedDropdown', () => {

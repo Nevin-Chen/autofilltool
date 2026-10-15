@@ -13,6 +13,7 @@ import {
   fillShadowCombobox,
   fillSearchPrompt,
   fillMenuButton,
+  fillClickListbox,
   fillCheckboxGroup,
   fillButtonGroup,
   harvestComboboxOptions,
@@ -971,6 +972,7 @@ type ComboboxFiller = (
 function comboboxFiller(widget: UnclassifiedField['widget']): ComboboxFiller {
   if (widget === 'searchPrompt') return fillSearchPrompt;
   if (widget === 'menuButton') return fillMenuButton;
+  if (widget === 'clickListbox') return fillClickListbox;
   return widget === 'shadowCombobox' ? fillShadowCombobox : fillVirtualizedDropdown;
 }
 

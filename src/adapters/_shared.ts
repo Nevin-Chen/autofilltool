@@ -331,7 +331,8 @@ export function fromKeywords(haystack: string): Classification | null {
 
 export function isFillable(el: HTMLElement): boolean {
   if (el instanceof HTMLInputElement) {
-    if (el.disabled || el.readOnly) return false;
+    if (el.disabled) return false;
+    if (el.readOnly && el.type !== 'radio' && el.type !== 'checkbox') return false;
     const skip = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'file', 'color']);
     if (skip.has(el.type)) return false;
     return !isVisuallyHidden(el);
@@ -853,7 +854,8 @@ export function unclassifiedFromDetected(field: DetectedField): UnclassifiedFiel
   if (
     field.widget === 'shadowCombobox' ||
     field.widget === 'searchPrompt' ||
-    field.widget === 'menuButton'
+    field.widget === 'menuButton' ||
+    field.widget === 'clickListbox'
   ) {
     return { el, label, fieldType: 'combobox', widget: field.widget };
   }

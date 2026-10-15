@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFillTool",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "A somewhat lazy tool to make the most out of local models and AI subscriptions for customized outputs on job applications",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -26,6 +26,7 @@
     "https://*.breezy.hr/*",
     "https://jobs.smartrecruiters.com/*",
     "https://jobs.gem.com/*",
+    "https://*.eightfold.ai/*",
     "<all_urls>"
   ],
   "optional_host_permissions": [
@@ -75,7 +76,8 @@
         "https://apply.workable.com/*",
         "https://*.breezy.hr/*",
         "https://jobs.smartrecruiters.com/*",
-        "https://jobs.gem.com/*"
+        "https://jobs.gem.com/*",
+        "https://*.eightfold.ai/*"
       ],
       "js": [
         "src/content/index.ts"

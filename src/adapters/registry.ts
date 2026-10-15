@@ -8,6 +8,7 @@ import { workableAdapter } from './workable';
 import { breezyAdapter } from './breezy';
 import { smartRecruitersAdapter } from './smartrecruiters';
 import { gemAdapter } from './gem';
+import { eightfoldAdapter } from './eightfold';
 import { genericAdapter } from './generic';
 
 export const adapters: PlatformAdapter[] = [
@@ -20,5 +21,6 @@ export const adapters: PlatformAdapter[] = [
   workableAdapter,
   breezyAdapter,
   gemAdapter,
+  eightfoldAdapter,
   genericAdapter,
 ];
