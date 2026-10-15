@@ -13,7 +13,7 @@ import { SettingsSchema, defaultSettings, type JobSearch } from '@/profile/schem
 import { getJobFeed } from '@/jobs/store';
 import { JOB_FEEDBACK_KEY } from '@/jobs/feedback';
 import { listingFingerprint } from '@/jobs/dedupe';
-import { progressFractions } from '@/jobs/schema';
+import { JudgedJobSchema, progressFractions } from '@/jobs/schema';
 import {
   NOW,
   POSTED_YESTERDAY,
@@ -168,6 +168,32 @@ describe('runJobCheck', () => {
     expect(jobs.get('example:k2globex0001')).toMatchObject({ verdict: 'skip', review: null, reason: 'Screened example:k2globex0001.' });
     expect(jobs.get('example:k2stripe0001')?.review).toMatchObject({ descriptionSource: 'full', confidence: 'high' });
     expect(jobs.get('example:k2stripe0001')?.review?.requirements[0]?.verified).toBe(true);
+  });
+
+  it('records which saved search found each job, screened or reviewed', async () => {
+    await saveSearches([
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform', maxPages: null, active: true },
+    ]);
+    const deps = makeDeps();
+    deps.readSearchPage.mockImplementation(async (url) =>
+      url.includes('platform') ? [listing({ id: 'example:platform-1', title: 'Platform Engineer', requirements: 'Kubernetes.' })] : [listing()],
+    );
+    deps.screenBatch.mockImplementation(async ({ user }) => screenReply(user, { 'example:platform-1': 'skip' }));
+
+    await runJobCheck(deps);
+
+    const jobs = (await getJobFeed()).jobs.map((job) => [job.id, job.verdict, job.searchId]);
+    expect(jobs).toEqual(
+      expect.arrayContaining([
+        ['example:k2stripe0001', 'strong', 's1'],
+        ['example:platform-1', 'skip', 's2'],
+      ]),
+    );
+  });
+
+  it('loads jobs stored before searches were recorded', () => {
+    expect(JudgedJobSchema.parse({ ...judged(), searchId: undefined }).searchId).toBeNull();
   });
 
   it('passes past disagreements to both passes', async () => {
@@ -353,12 +379,12 @@ describe('toScreenedJob', () => {
 
   it('records which listing a repeat repeats', () => {
     const earlier = judged({ id: 'example:first' });
-    const job = toScreenedJob({ ...plain, sameTitleAs: earlier }, { verdict: 'repeat', reason: 'Same role.' }, 'c', NOW.toISOString());
+    const job = toScreenedJob({ ...plain, sameTitleAs: earlier }, { verdict: 'repeat', reason: 'Same role.' }, { checkId: 'c', searchId: 's1' }, NOW.toISOString());
     expect(job).toMatchObject({ verdict: 'repeat', repeatOf: 'example:first', review: null });
   });
 
   it('turns a repeat with nothing to repeat into a skip', () => {
-    const job = toScreenedJob(plain, { verdict: 'repeat', reason: 'Looks familiar.' }, 'c', NOW.toISOString());
+    const job = toScreenedJob(plain, { verdict: 'repeat', reason: 'Looks familiar.' }, { checkId: 'c', searchId: 's1' }, NOW.toISOString());
     expect(job).toMatchObject({ verdict: 'skip', repeatOf: null });
   });
 });

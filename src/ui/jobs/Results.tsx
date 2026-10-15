@@ -10,12 +10,16 @@ import type {
   JudgedJob,
   RequirementStatus,
 } from '@/jobs/schema';
+import type { JobSearch } from '@/profile/schema';
+
+type SearchLabels = ReadonlyMap<string, string>;
 
 export function Results(props: {
   jobs: readonly JudgedJob[];
   checks: readonly JobCheck[];
   now: Date;
   feedback: readonly JobFeedback[];
+  searches: readonly JobSearch[];
 }) {
   const groups = useMemo(() => groupByCheck(props.jobs, props.checks), [props.jobs, props.checks]);
   const byId = useMemo(() => new Map(props.jobs.map((job) => [job.id, job])), [props.jobs]);
@@ -23,6 +27,7 @@ export function Results(props: {
     () => new Map(props.feedback.map((entry) => [entry.jobId, entry])),
     [props.feedback],
   );
+  const searchLabels = useMemo(() => labelsById(props.searches), [props.searches]);
 
   if (props.jobs.length === 0) {
     return (
@@ -46,19 +51,33 @@ export function Results(props: {
             {group.status && group.status !== 'ok' && <CheckStatusChip status={group.status} />}
           </summary>
           <div className="space-y-4 px-4 pb-4 pt-1">
-            <JobList title="Strong" jobs={withVerdict(group.jobs, 'strong')} now={props.now} feedbackById={feedbackById} />
-            <JobList title="Maybe" jobs={withVerdict(group.jobs, 'maybe')} now={props.now} feedbackById={feedbackById} />
+            <JobList
+              title="Strong"
+              jobs={withVerdict(group.jobs, 'strong')}
+              now={props.now}
+              feedbackById={feedbackById}
+              searchLabels={searchLabels}
+            />
+            <JobList
+              title="Maybe"
+              jobs={withVerdict(group.jobs, 'maybe')}
+              now={props.now}
+              feedbackById={feedbackById}
+              searchLabels={searchLabels}
+            />
             <CompactList
               title="Skipped"
               jobs={withVerdict(group.jobs, 'skip')}
               describe={(job) => job.reason}
               feedbackById={feedbackById}
+              searchLabels={searchLabels}
             />
             <CompactList
               title="Repeats"
               jobs={withVerdict(group.jobs, 'repeat')}
               describe={(job) => repeatNote(job, job.repeatOf ? byId.get(job.repeatOf) : undefined)}
               feedbackById={feedbackById}
+              searchLabels={searchLabels}
             />
           </div>
         </details>
@@ -72,6 +91,7 @@ function JobList(props: {
   jobs: JudgedJob[];
   now: Date;
   feedbackById: ReadonlyMap<string, JobFeedback>;
+  searchLabels: SearchLabels;
 }) {
   if (props.jobs.length === 0) return null;
   return (
@@ -81,50 +101,75 @@ function JobList(props: {
       </h3>
       <ul className="space-y-2">
         {props.jobs.map((job) => (
-          <li
+          <JobCard
             key={job.id}
-            className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-              <a
-                href={job.listingUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-slate-900 hover:underline dark:text-slate-100"
-              >
-                {job.title}
-              </a>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                posted {formatCheckTime(job.postedAt, props.now)}
-              </span>
-            </div>
-            <div className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
-              {jobFacts(job)}
-              {job.easyApply && (
-                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                  Easy Apply, on the job board (autofill can&apos;t help)
-                </span>
-              )}
-            </div>
-            <p className="mt-1.5 text-sm text-slate-700 dark:text-slate-200">{job.reason}</p>
-            {job.review && <ReviewDetails review={job.review} />}
-            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
-              <a href={job.listingUrl} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline dark:text-sky-400">
-                Job page
-              </a>
-              {job.applyUrl && (
-                <a href={job.applyUrl} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline dark:text-sky-400">
-                  Apply directly
-                </a>
-              )}
-              <span className="ml-auto">
-                <FeedbackControls job={job} feedback={props.feedbackById.get(job.id)} />
-              </span>
-            </div>
-          </li>
+            job={job}
+            now={props.now}
+            feedback={props.feedbackById.get(job.id)}
+            searchLabel={searchLabelOf(job, props.searchLabels)}
+          />
         ))}
       </ul>
     </div>
+  );
+}
+
+function JobCard(props: { job: JudgedJob; now: Date; feedback: JobFeedback | undefined; searchLabel: string | undefined }) {
+  const { job } = props;
+  return (
+    <li>
+      <details open className="rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+        <summary className="block cursor-pointer rounded-md px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium text-slate-900 dark:text-slate-100">{job.title}</span>
+              <SearchLabel label={props.searchLabel} />
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              posted {formatCheckTime(job.postedAt, props.now)}
+            </span>
+          </div>
+          <div className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+            {jobFacts(job)}
+            {job.easyApply && (
+              <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                Easy Apply, on the job board (autofill can&apos;t help)
+              </span>
+            )}
+          </div>
+        </summary>
+        <div className="px-3 pb-3">
+          <p className="text-sm text-slate-700 dark:text-slate-200">{job.reason}</p>
+          {job.review && <ReviewDetails review={job.review} />}
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
+            <a href={job.listingUrl} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline dark:text-sky-400">
+              Job page
+            </a>
+            {job.applyUrl && (
+              <a href={job.applyUrl} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline dark:text-sky-400">
+                Apply directly
+              </a>
+            )}
+            <span className="ml-auto">
+              <FeedbackControls job={job} feedback={props.feedback} />
+            </span>
+          </div>
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function SearchLabel({ label }: { label: string | undefined }) {
+  if (!label) return null;
+  return (
+    <span
+      title="Saved search"
+      className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600 dark:border-slate-600 dark:text-slate-300"
+    >
+      <span className="sr-only">Saved search: </span>
+      {label}
+    </span>
   );
 }
 
@@ -287,6 +332,7 @@ function CompactList(props: {
   jobs: JudgedJob[];
   describe: (job: JudgedJob) => string;
   feedbackById: ReadonlyMap<string, JobFeedback>;
+  searchLabels: SearchLabels;
 }) {
   if (props.jobs.length === 0) return null;
   return (
@@ -300,7 +346,7 @@ function CompactList(props: {
             <a href={job.listingUrl} target="_blank" rel="noreferrer" className="text-slate-800 hover:underline dark:text-slate-100">
               {job.title}
             </a>
-            , {job.company}: {props.describe(job)}{' '}
+            , {job.company}: {props.describe(job)} <SearchLabel label={searchLabelOf(job, props.searchLabels)} />{' '}
             <span className="text-xs">
               <FeedbackControls job={job} feedback={props.feedbackById.get(job.id)} agreeable={false} />
             </span>
@@ -309,6 +355,19 @@ function CompactList(props: {
       </ul>
     </details>
   );
+}
+
+function labelsById(searches: readonly JobSearch[]): SearchLabels {
+  return new Map(
+    searches.flatMap((search) => {
+      const label = search.label.trim();
+      return label ? [[search.id, label] as const] : [];
+    }),
+  );
+}
+
+function searchLabelOf(job: JudgedJob, labels: SearchLabels): string | undefined {
+  return job.searchId ? labels.get(job.searchId) : undefined;
 }
 
 function jobFacts(job: JudgedJob): string {

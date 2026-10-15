@@ -52,6 +52,7 @@ export const JudgedJobSchema = JobListingSchema.extend({
   reason: z.string(),
   repeatOf: z.string().nullable(),
   checkId: z.string(),
+  searchId: z.string().nullable().default(null),
   judgedAt: z.string(),
   review: DeepReviewSchema.nullable().default(null),
 });

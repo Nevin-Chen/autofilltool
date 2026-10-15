@@ -179,21 +179,20 @@ export function SearchSettings(props: {
               </p>
             ) : null;
           })()}
-          <button
-            type="button"
-            onClick={() =>
-              setSearches((current) => [...current, { id: crypto.randomUUID(), label: '', url: '', pagesInput: '' }])
-            }
-            className="rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Add search
-          </button>
-
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setSearches((current) => [...current, { id: crypto.randomUUID(), label: '', url: '', pagesInput: '' }])
+              }
+              className="rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Add search
+            </button>
             <button
               type="button"
               onClick={() => void onSave()}
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+              className="rounded-md border border-transparent bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
             >
               Save
             </button>
