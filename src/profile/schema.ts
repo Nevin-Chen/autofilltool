@@ -104,7 +104,6 @@ export const ProfileSchema = z.object({
   demographics: DemographicsSchema.default({}),
   experience: z.array(ExperienceSchema).default([]),
   education: z.array(EducationSchema).default([]),
-  defaultCoverLetter: z.string().default(''),
   savedAnswers: z.array(SavedAnswerSchema).default([]),
 });
 export type Profile = z.infer<typeof ProfileSchema>;
@@ -175,16 +174,19 @@ export const ResumeSettingsSchema = z.object({
 });
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
 
+export const MAX_JOB_SEARCH_PAGES = 40;
+
 export const JobSearchSchema = z.object({
   id: z.string().min(1),
   label: z.string().default(''),
   url: z.string().url(),
+  maxPages: z.number().int().min(1).max(MAX_JOB_SEARCH_PAGES).nullable().default(null),
+  active: z.boolean().default(true),
 });
 export type JobSearch = z.infer<typeof JobSearchSchema>;
 
 export const JobFeedSettingsSchema = z.object({
   searches: z.array(JobSearchSchema).default([]),
-  criteria: z.string().default(''),
 });
 export type JobFeedSettings = z.infer<typeof JobFeedSettingsSchema>;
 

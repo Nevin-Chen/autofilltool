@@ -34,6 +34,15 @@ describe('profile schema', () => {
     expect(migrated.education).toEqual([]);
   });
 
+  it('drops defaultCoverLetter from profiles stored while the field existed', () => {
+    const migrated = migrateProfile(
+      { ...emptyProfile(), firstName: 'Ada', defaultCoverLetter: '' },
+      CURRENT_SCHEMA_VERSION,
+    );
+    expect(migrated.firstName).toBe('Ada');
+    expect((migrated as unknown as Record<string, unknown>).defaultCoverLetter).toBeUndefined();
+  });
+
   it('rejects an invalid email', () => {
     const r = ProfileSchema.safeParse({ ...emptyProfile(), email: 'not-an-email' });
     expect(r.success).toBe(false);

@@ -52,16 +52,18 @@ A somewhat lazy tool to make the most out of local models and AI subscriptions f
 - By default it only touches fields the form marks required (`required`, `aria-required`, or a `*` or `✱` on the label). Optional fields show up as skipped in the review pane. Turn off **Only answer required fields** in the popup to let it fill everything
 
 #### **Job Feed**
-- Save the URL of a search you already filtered on a job board, plus a short note on what makes a job a fit. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
-- Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a dealbreaker from your note) and sends everything plausible on
-- Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé, profile, and note. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
+- Save the URL of a search you already filtered on a job board. Each saved search has a switch next to it; only searches that are on run, and flipping one saves right away. **Check now** in the popup opens each search in a background tab, reads the listings, and closes the tab
+- Only postings from today that haven't been judged yet go to Claude, through the local bridge. A quick screen drops clear non-fits (not a software role, a stack you have none of, a hard requirement like a clearance) and sends everything plausible on
+- Each job that passes the screen gets its full posting read in a background tab and reviewed on its own by Opus against your whole résumé and profile. The review lists every requirement as met, partial, or missing, with the résumé line that backs it up, plus flags like onsite outside your city or a clearance
 - Every résumé line Claude quotes is checked against your actual résumé text. A strong verdict that leans on a quote that isn't there drops to maybe, and the quote is marked on the card
 - **Agree** or **Disagree** on any verdict. Disagreements, with your note on what Claude got wrong, go into every later check
 - The same posting on another job board (identical title, company, city, and requirements summary) is dropped. When only the title and company match, Claude compares the two descriptions: a reworded copy goes under Repeats, a different role gets judged
-- Results show on the Jobs page with a **Why** list for each match, the job page and direct apply links, and how often you've agreed with Claude. The count of strong and maybe matches shows on the extension icon. Results are kept for 7 days
+- Results show on the Jobs page grouped by check, newest first: each group says when the check ran and what it found ("Today, 3:05 PM · 2 strong · 3 maybe · 18 skipped"), and older checks start collapsed. Each match has a **Why** list, the job page and direct apply links, and the page shows how often you've agreed with Claude. The count of strong and maybe matches shows on the extension icon. Results are kept for 7 days
 - Works on LinkedIn, in both of its search layouts. Paste a search URL with your filters already set (keywords, location, date posted, experience level, salary). Every result is judged, because LinkedIn's own date filter already limits them
 - For newest first, use the classic layout (`linkedin.com/jobs/search/`) with `sortBy=DD`. The newer `/jobs/search-results/` layout has no sort, so its results come in LinkedIn's relevance order
-- The check browses LinkedIn like you would, in one background tab per search: it loads a results page, reads the cards, and clicks each job worth a closer look so the detail pane loads, newest postings first. It waits 2 to 5 seconds between clicks and 3 to 8 seconds between pages. Each check also picks its own stopping point: somewhere between 7 and 12 pages, and between 45 and 75 jobs clicked. Jobs past that limit are reviewed on the next check. Claude reviews jobs while the browsing continues
+- The check browses LinkedIn like you would, in one background tab per search: it loads a results page, reads the cards, and clicks each job worth a closer look so the detail pane loads, newest postings first. It waits 2 to 5 seconds between clicks and 3 to 8 seconds between pages. Each check also picks its own stopping point: somewhere between 7 and 12 pages, and between 45 and 75 jobs clicked. Set **Pages** on a saved search (1 to 40) to choose the page count yourself. A check stops reading pages once it reaches its click limit, and the jobs it didn't get to are reviewed on the next check. Claude reviews jobs while the browsing continues
+- While a check runs, the Jobs page shows two progress bars, one for the results pages read (moving within a page as jobs are clicked) and one for Claude's reviews. The popup shows a smaller version of the first
+- **Stop**, on the Jobs page or in the popup, ends a check right away. It cancels the page load or Claude request in progress, closes the background tab, and keeps everything judged so far. The rest is picked up by the next check
 - If LinkedIn shows a security check or sign-in page, the check stops opening pages and tells you. It never touches the check itself
 - Easy Apply jobs are marked, since you apply to those on LinkedIn and autofill can't help there. Other jobs get a direct link to the employer's application
 
@@ -192,7 +194,7 @@ Then pick **Claude Code (local bridge)** in Options. The endpoint and model fill
 - Your résumé text (up to 6,000 characters)
 
 **Job feed** (always the Claude Code bridge):
-- Every request: a profile summary (the same one AI fill uses), your default résumé text (up to 6,000 characters), your "what makes a job a fit" note, and up to 10 of your recent disagreements with their notes
+- Every request: a profile summary (the same one AI fill uses), your default résumé text (up to 6,000 characters), and up to 10 of your recent disagreements with their notes
 - Screen (`sonnet`, 20 listings per request): each new listing's title, company, city, workplace type, pay, years asked, the board's requirements summary, and its tools
 - Review (`opus`, one listing per request, 3 at a time): the same fields plus the full posting text (up to 12,000 characters)
 

@@ -8,7 +8,8 @@ import {
   streamClaudeBridge,
 } from '@/ai/providers/claude-bridge';
 import { hasOriginPermission } from '@/lib/permissions';
-import { sourceForUrl, type BrowsingLimits, type JobSource, type ListingDetails, type Range } from '@/jobs/sources';
+import { sourceForUrl, type JobSource, type ListingDetails } from '@/jobs/sources';
+import { createLimiter, createPacer, pickInRange, type Pacer } from '@/jobs/pacing';
 import { localDateKey, selectNewListings, type JudgeCandidate, type SeenListing } from '@/jobs/dedupe';
 import type { CandidateContext } from '@/jobs/candidate';
 import {
@@ -32,6 +33,7 @@ import { getJobFeedback, recentDisagreements } from '@/jobs/feedback';
 import { getJobFeed, updateJobFeed } from '@/jobs/store';
 import {
   emptyJobCounts,
+  emptyJobProgress,
   type DeepReview,
   type JobCheck,
   type JobCheckCounts,
@@ -39,23 +41,18 @@ import {
   type JobListing,
   type JudgedJob,
 } from '@/jobs/schema';
+import { backgroundTabSession, type BrowsingSession } from './browsing';
 
-export const TAB_LOAD_TIMEOUT_MS = 30_000;
+export const STOP_GRACE_MS = 2_000;
 
 type Prompt = { system: string; user: string };
-
-export type BrowsingSession = {
-  open: (url: string, read: () => unknown) => Promise<unknown>;
-  run: (func: (listingId: string) => unknown, listingId: string) => Promise<unknown>;
-  close: () => Promise<void>;
-};
 
 export type JobCheckDeps = {
   sourceForUrl: (url: string) => JobSource | null;
   openSession: () => BrowsingSession;
   readListingPage: (url: string, source: JobSource) => Promise<unknown>;
-  screenBatch: (prompt: Prompt, endpoint: string) => Promise<string>;
-  reviewJob: (prompt: Prompt, endpoint: string) => Promise<string>;
+  screenBatch: (prompt: Prompt, endpoint: string, signal?: AbortSignal) => Promise<string>;
+  reviewJob: (prompt: Prompt, endpoint: string, signal?: AbortSignal) => Promise<string>;
   canReachBridge: (endpoint: string) => Promise<boolean>;
   setBadge: (fits: number) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
@@ -76,8 +73,8 @@ export const defaultJobCheckDeps: JobCheckDeps = {
       await session.close();
     }
   },
-  screenBatch: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS),
-  reviewJob: (prompt, endpoint) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS),
+  screenBatch: (prompt, endpoint, signal) => askBridge(prompt, endpoint, JOB_SCREEN_MODEL, JOB_SCREEN_MAX_TOKENS, signal),
+  reviewJob: (prompt, endpoint, signal) => askBridge(prompt, endpoint, JOB_REVIEW_MODEL, JOB_REVIEW_MAX_TOKENS, signal),
   canReachBridge: (endpoint) => hasOriginPermission(endpoint),
   setBadge: showFitsOnBadge,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -86,10 +83,41 @@ export const defaultJobCheckDeps: JobCheckDeps = {
   newId: () => crypto.randomUUID(),
 };
 
-export type Pacer = <T>(kind: 'load' | 'click', task: () => Promise<T>) => Promise<T>;
+export class CheckStopped extends Error {
+  constructor() {
+    super('The check was stopped.');
+  }
+}
 
-export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Promise<JobCheck> {
+export function untilStopped<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  promise.catch(() => {});
+  if (signal.aborted) return Promise.reject(new CheckStopped());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new CheckStopped());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+export async function runJobCheck(
+  deps: JobCheckDeps = defaultJobCheckDeps,
+  signal?: AbortSignal,
+): Promise<JobCheck> {
   const checkId = deps.newId();
+  const guard = <T>(promise: Promise<T>) => untilStopped(promise, signal);
+  const throwIfStopped = () => {
+    if (signal?.aborted) throw new CheckStopped();
+  };
   const writeFeed = serializedWriter(deps.now);
   await writeFeed((feed) => ({
     ...feed,
@@ -103,6 +131,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
         phase: 'Starting',
         error: null,
         counts: null,
+        progress: null,
       },
     ],
   }));
@@ -149,8 +178,9 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       getJobFeedback(),
       getJobFeed(),
     ]);
-    const searches = settings.jobs.searches;
-    if (searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
+    if (settings.jobs.searches.length === 0) throw new Error('Add a saved search on the Jobs page first.');
+    const searches = settings.jobs.searches.filter((search) => search.active);
+    if (searches.length === 0) throw new Error('All your saved searches are turned off. Tick at least one on the Jobs page.');
     const endpoint = bridgeEndpoint(settings);
     if (!(await deps.canReachBridge(endpoint))) {
       throw new Error(`No permission to reach the Claude bridge at ${endpoint}. Grant it in Options > AI.`);
@@ -160,28 +190,41 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
     const context: CandidateContext = {
       profileSummary: summarizeProfileForClassifier(profile),
       resumeText: resume ? await extractResumeText(resume) : '',
-      criteria: settings.jobs.criteria,
       disagreements: recentDisagreements(feedback),
     };
     const today = localDateKey(deps.now());
     const seen: SeenListing[] = [...feed.jobs];
     const detailReadsLeft = new Map<string, number>();
+    const progress = emptyJobProgress();
+    const reportProgress = () => patchCheck({ progress: { ...progress } });
+    const pageBudget = (search: JobSearch, source: JobSource) => search.maxPages ?? budgetFor(source).searchPages;
+    for (const search of searches) {
+      const source = deps.sourceForUrl(search.url);
+      if (source) progress.pagesPlanned += pageBudget(search, source);
+    }
+    await reportProgress();
     const reviewSlots = createLimiter(JOB_REVIEW_CONCURRENCY);
 
     const queueReview = (candidate: JudgeCandidate, details: ListingDetails | null) => {
+      progress.reviewsQueued++;
+      void reportProgress();
       reviews.push(
         reviewSlots(async () => {
+          if (signal?.aborted) return;
           try {
-            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps);
+            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps, signal);
             if (!job) {
               counts.unjudged++;
               return;
             }
             tally(counts, [job]);
             counts.reviewed++;
+            progress.reviewsDone++;
+            void reportProgress();
             if (job.review?.descriptionSource === 'summary') counts.summaryOnly++;
             await storeJobs([job]);
           } catch (err) {
+            if (signal?.aborted) return;
             counts.unjudged++;
             lastReviewError = err;
           }
@@ -196,8 +239,11 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       const advanced: JudgeCandidate[] = [];
       for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
         const batch = candidates.slice(start, start + JOB_SCREEN_BATCH_SIZE);
+        throwIfStopped();
         await patchCheck({ phase: `Screening ${batch.length} new listings from ${where}` });
-        const results = parseScreenResponse(await deps.screenBatch(buildScreenPrompt(batch, context), endpoint));
+        const results = parseScreenResponse(
+          await guard(deps.screenBatch(buildScreenPrompt(batch, context), endpoint, signal)),
+        );
         const judgedAt = deps.now().toISOString();
         const settled: JudgedJob[] = [];
         for (const candidate of batch) {
@@ -220,7 +266,10 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       where: string,
     ): Promise<void> => {
       const newestFirst = [...advanced].sort((a, b) => Date.parse(b.listing.postedAt) - Date.parse(a.listing.postedAt));
+      progress.pageJobsTotal = newestFirst.length;
+      progress.pageJobsDone = 0;
       for (const [index, candidate] of newestFirst.entries()) {
+        throwIfStopped();
         const left = detailReadsLeft.get(source.id) ?? budgetFor(source).detailReads;
         const needsPage = !!(source.readSelected || source.readListingPage) && !!source.toDetails;
         if (needsPage && left <= 0) {
@@ -239,6 +288,7 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
           );
         }
         queueReview(candidate, details);
+        progress.pageJobsDone++;
       }
     };
 
@@ -251,13 +301,13 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       if (!source.toDetails) return null;
       if (source.readSelected) {
         const select = source.readSelected;
-        const raw = await pace('click', () => session.run(select, listing.id).catch(() => null));
+        const raw = await guard(pace('click', () => session.run(select, listing.id).catch(() => null)));
         if (source.isBlocked(raw)) return 'blocked';
         const details = source.toDetails(raw);
         if (details) return details;
       }
       if (!source.readListingPage || !listing.listingUrl) return null;
-      const raw = await pace('load', () => deps.readListingPage(listing.listingUrl, source).catch(() => null));
+      const raw = await guard(pace('load', () => deps.readListingPage(listing.listingUrl, source).catch(() => null)));
       if (source.isBlocked(raw)) return 'blocked';
       return source.toDetails(raw);
     };
@@ -268,10 +318,15 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
       const pace = paceFor(source);
       const session = deps.openSession();
       try {
-        for (let page = 0; page < budgetFor(source).searchPages; page++) {
+        const budget = pageBudget(search, source);
+        let pagesRead = 0;
+        for (let page = 0; page < budget; page++) {
           const where = page === 0 ? searchName(search) : `${searchName(search)}, page ${page + 1}`;
+          throwIfStopped();
           await patchCheck({ phase: `Reading ${where}` });
-          const raw = await pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage));
+          const raw = await guard(
+            pace('load', () => session.open(source.searchPageUrl(search.url, page), source.readPage)),
+          );
           if (source.isBlocked(raw)) {
             throw new Error(
               `${searchName(search)} showed a security check or sign-in page. Open it in a tab yourself and deal with it there, then check again.`,
@@ -296,22 +351,44 @@ export async function runJobCheck(deps: JobCheckDeps = defaultJobCheckDeps): Pro
 
           const advanced = await screenCandidates(selection.candidates, where);
           await readDetailsInOrder(advanced, source, session, pace, where);
+          pagesRead++;
+          progress.pagesDone++;
+          progress.pageJobsDone = 0;
+          progress.pageJobsTotal = 0;
+          await reportProgress();
 
-          if (found.length === 0 || !source.hasMorePages(raw)) break;
+          const clickLimitReached = (detailReadsLeft.get(source.id) ?? 1) <= 0;
+          if (found.length === 0 || !source.hasMorePages(raw) || clickLimitReached) break;
         }
+        progress.pagesPlanned -= budget - pagesRead;
+        await reportProgress();
       } finally {
         await session.close();
       }
     }
 
+    throwIfStopped();
     if (reviews.length > 0) await patchCheck({ phase: `Claude is finishing ${reviews.length} reviews` });
-    await Promise.all(reviews);
+    await guard(Promise.all(reviews));
+    throwIfStopped();
     if (reviews.length > 0 && counts.reviewed === 0 && lastReviewError) throw lastReviewError;
 
     const done = await patchCheck({ status: 'ok', phase: '', finishedAt: deps.now().toISOString(), counts });
     await deps.setBadge(counts.strong + counts.maybe);
     return checkById(done, checkId);
   } catch (err) {
+    if (err instanceof CheckStopped || signal?.aborted) {
+      await Promise.race([Promise.all(reviews), deps.sleep(STOP_GRACE_MS)]);
+      const stopped = await patchCheck({
+        status: 'stopped',
+        phase: '',
+        finishedAt: deps.now().toISOString(),
+        error: null,
+        counts,
+      });
+      await deps.setBadge(counts.strong + counts.maybe);
+      return checkById(stopped, checkId);
+    }
     await Promise.all(reviews);
     const failed = await patchCheck({
       status: 'failed',
@@ -331,6 +408,7 @@ async function reviewCandidate(
   endpoint: string,
   checkId: string,
   deps: JobCheckDeps,
+  signal?: AbortSignal,
 ): Promise<JudgedJob | null> {
   const listing: JobListing = {
     ...candidate.listing,
@@ -344,7 +422,7 @@ async function reviewCandidate(
   if (!description) return null;
   const descriptionSource: DeepReview['descriptionSource'] = fullDescription ? 'full' : 'summary';
   const raw = parseReviewResponse(
-    await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint),
+    await deps.reviewJob(buildReviewPrompt({ listing, description, descriptionSource }, context), endpoint, signal),
   );
   if (!raw) return null;
   const { verdict, review } = finalizeReview(
@@ -388,47 +466,6 @@ function tally(counts: JobCheckCounts, judged: readonly JudgedJob[]): void {
   for (const job of judged) counts[job.verdict]++;
 }
 
-export function pickInRange(range: Range, random: () => number): number {
-  return range.min + Math.floor(random() * (range.max - range.min + 1));
-}
-
-export function createPacer(
-  limits: Pick<BrowsingLimits, 'loadGapMs' | 'clickGapMs'>,
-  sleep: (ms: number) => Promise<void>,
-  random: () => number,
-): Pacer {
-  let queue: Promise<unknown> = Promise.resolve();
-  let started = false;
-  return <T>(kind: 'load' | 'click', task: () => Promise<T>): Promise<T> => {
-    const run = queue.then(async () => {
-      if (started) {
-        const { min, max } = kind === 'click' ? limits.clickGapMs : limits.loadGapMs;
-        const gap = Math.round(min + random() * (max - min));
-        if (gap > 0) await sleep(gap);
-      }
-      started = true;
-      return task();
-    });
-    queue = run.catch(() => undefined);
-    return run;
-  };
-}
-
-export function createLimiter(limit: number) {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return async <T>(task: () => Promise<T>): Promise<T> => {
-    if (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
-    active++;
-    try {
-      return await task();
-    } finally {
-      active--;
-      waiting.shift()?.();
-    }
-  };
-}
-
 function serializedWriter(now: () => Date) {
   let queue: Promise<unknown> = Promise.resolve();
   return (change: (feed: JobFeed) => JobFeed): Promise<JobFeed> => {
@@ -454,68 +491,13 @@ function searchName(search: JobSearch): string {
   return search.label.trim() || new URL(search.url).hostname;
 }
 
-function backgroundTabSession(): BrowsingSession {
-  let tabId: number | null = null;
-  return {
-    async open(url, read) {
-      if (tabId == null) {
-        const tab = await chrome.tabs.create({ url, active: false });
-        if (tab.id == null) throw new Error('Chrome did not open a background tab.');
-        tabId = tab.id;
-        await waitForTabLoad(tabId, () => Promise.resolve(), true);
-      } else {
-        const id = tabId;
-        await waitForTabLoad(id, async () => {
-          await chrome.tabs.update(id, { url });
-        });
-      }
-      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: read });
-      return frame?.result ?? null;
-    },
-    async run(func, listingId) {
-      if (tabId == null) throw new Error('No page is open in the background tab.');
-      const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func, args: [listingId] });
-      return frame?.result ?? null;
-    },
-    async close() {
-      if (tabId != null) await chrome.tabs.remove(tabId).catch(() => {});
-      tabId = null;
-    },
-  };
-}
-
-function waitForTabLoad(tabId: number, navigate: () => Promise<void>, alreadyStarted = false): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let sawLoading = alreadyStarted;
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      reject(new Error(`The page took longer than ${TAB_LOAD_TIMEOUT_MS / 1000}s to load.`));
-    }, TAB_LOAD_TIMEOUT_MS);
-    const done = () => {
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      resolve();
-    };
-    const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
-      if (updatedId !== tabId) return;
-      if (info.status === 'loading') sawLoading = true;
-      if (info.status === 'complete' && sawLoading) done();
-    };
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    navigate()
-      .then(() => (alreadyStarted ? chrome.tabs.get(tabId) : null))
-      .then((tab) => {
-        if (tab?.status === 'complete') done();
-      })
-      .catch((err: unknown) => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      });
-  });
-}
-
-async function askBridge(prompt: Prompt, endpoint: string, model: string, maxTokens: number): Promise<string> {
+async function askBridge(
+  prompt: Prompt,
+  endpoint: string,
+  model: string,
+  maxTokens: number,
+  signal?: AbortSignal,
+): Promise<string> {
   let text = '';
   try {
     for await (const chunk of streamClaudeBridge({
@@ -526,6 +508,7 @@ async function askBridge(prompt: Prompt, endpoint: string, model: string, maxTok
       maxTokens,
       endpoint,
       raw: true,
+      ...(signal ? { signal } : {}),
     })) {
       text += chunk;
     }

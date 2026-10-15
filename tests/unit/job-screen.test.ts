@@ -7,7 +7,6 @@ import { judged, listing } from './job-fixtures';
 const context = {
   profileSummary: 'Software engineer, 2.5 years of TypeScript and Ruby.',
   resumeText: 'Built React and Rails tools for an e-commerce company.',
-  criteria: 'Skip non-software roles like QA or field engineering.',
   disagreements: [] as JobFeedback[],
 };
 
@@ -17,14 +16,14 @@ function candidate(overrides: Parameters<typeof listing>[0] = {}, sameTitleAs: R
 }
 
 describe('buildScreenPrompt', () => {
-  it('gives Claude the profile, résumé, criteria and one JSON line per listing', () => {
+  it('gives Claude the profile, résumé and one JSON line per listing, with no fit note', () => {
     const { user } = buildScreenPrompt(
       [candidate(), candidate({ id: 'example:globex-1', company: 'Globex' })],
       context,
     );
     expect(user).toContain(context.profileSummary);
     expect(user).toContain(context.resumeText);
-    expect(user).toContain(context.criteria);
+    expect(user).not.toMatch(/criteria/i);
     const lines = user.split('\n').filter((line) => line.startsWith('{'));
     expect(lines.map((line) => JSON.parse(line).id)).toEqual(['example:k2stripe0001', 'example:globex-1']);
   });
@@ -63,9 +62,8 @@ describe('buildScreenPrompt', () => {
   });
 
   it('marks missing inputs instead of leaving blank sections', () => {
-    const { user } = buildScreenPrompt([candidate()], { ...context, resumeText: '', criteria: '' });
+    const { user } = buildScreenPrompt([candidate()], { ...context, resumeText: '' });
     expect(user).toContain('(no résumé uploaded)');
-    expect(user).toContain('(none given)');
     expect(user).toContain('(none yet)');
   });
 

@@ -16,7 +16,8 @@ import {
 import { toCsv, csvFilename } from '@/lib/history-export';
 import { emptyJobFeed, getJobFeed, latestCheck, runningCheck, subscribeJobFeed } from '@/jobs/store';
 import { describeCheck, JOBS_PAGE_PATH } from '@/jobs/summary';
-import type { JobFeed } from '@/jobs/schema';
+import { progressFractions, type JobFeed } from '@/jobs/schema';
+import { ProgressBar } from '@/ui/ProgressBar';
 
 type TabInfo = {
   id: number;
@@ -82,12 +83,26 @@ export function PopupApp() {
     if (!r.ok) setJobsError(r.error);
   };
 
+  const [stoppingJobs, setStoppingJobs] = useState(false);
+
+  const onStopJobs = async () => {
+    setStoppingJobs(true);
+    const r = await sendToBackground({ type: 'STOP_JOBS' });
+    if (!r.ok) setJobsError(r.error);
+  };
+
   const onOpenJobs = () => {
     void chrome.tabs.create({ url: chrome.runtime.getURL(JOBS_PAGE_PATH) });
   };
 
   const hasJobSearches = (settings?.jobs.searches.length ?? 0) > 0;
-  const jobsRunning = runningCheck(jobFeed, new Date()) !== null;
+  const hasActiveSearches = settings?.jobs.searches.some((search) => search.active) ?? false;
+  const jobsRunningCheck = runningCheck(jobFeed, new Date());
+  const jobsRunning = jobsRunningCheck !== null;
+
+  useEffect(() => {
+    if (!jobsRunning) setStoppingJobs(false);
+  }, [jobsRunning]);
 
   const onClear = async () => {
     const r = await sendToBackground({ type: 'CLEAR_HISTORY' });
@@ -342,18 +357,37 @@ export function PopupApp() {
               {hasJobSearches ? describeCheck(latestCheck(jobFeed), new Date()) : 'No saved searches'}
             </span>
           </div>
+          {jobsRunningCheck?.progress && (
+            <div className="mt-2">
+              <ProgressBar
+                compact
+                label="Job feed progress"
+                detail={`Page ${Math.min(jobsRunningCheck.progress.pagesDone + 1, jobsRunningCheck.progress.pagesPlanned)} of ${jobsRunningCheck.progress.pagesPlanned}`}
+                fraction={progressFractions(jobsRunningCheck.progress).browsing}
+              />
+            </div>
+          )}
           {jobsError && (
             <div className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{jobsError}</div>
           )}
           <div className="mt-2 flex gap-2">
-            {hasJobSearches && (
+            {hasJobSearches && jobsRunning && (
+              <button
+                type="button"
+                onClick={() => void onStopJobs()}
+                disabled={stoppingJobs}
+                className="flex-1 rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+              >
+                {stoppingJobs ? 'Stopping…' : 'Stop'}
+              </button>
+            )}
+            {hasActiveSearches && !jobsRunning && (
               <button
                 type="button"
                 onClick={() => void onCheckJobs()}
-                disabled={jobsRunning}
-                className="flex-1 rounded-md bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-1 rounded-md bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700"
               >
-                {jobsRunning ? 'Checking…' : 'Check now'}
+                Check now
               </button>
             )}
             <button

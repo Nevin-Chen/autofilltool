@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bridgeEndpoint,
-  createLimiter,
-  pickInRange,
+  CheckStopped,
+  untilStopped,
   runJobCheck,
   toScreenedJob,
   type JobCheckDeps,
 } from '@/background/job-check';
 import { setResumeLibrary, setSettings } from '@/profile/store';
 import { bytesToBase64 } from '@/profile/resume';
-import { defaultSettings, type JobSearch } from '@/profile/schema';
+import { SettingsSchema, defaultSettings, type JobSearch } from '@/profile/schema';
 import { getJobFeed } from '@/jobs/store';
 import { JOB_FEEDBACK_KEY } from '@/jobs/feedback';
 import { listingFingerprint } from '@/jobs/dedupe';
+import { progressFractions } from '@/jobs/schema';
 import {
   NOW,
   POSTED_YESTERDAY,
@@ -68,10 +69,9 @@ beforeEach(async () => {
 });
 
 async function saveSearches(
-  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL }],
-  criteria = 'Skip QA and field engineering roles.',
+  searches: JobSearch[] = [{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true }],
 ) {
-  await setSettings({ ...defaultSettings(), jobs: { searches, criteria } });
+  await setSettings({ ...defaultSettings(), jobs: { searches } });
 }
 
 function listingIds(user: string): string[] {
@@ -170,8 +170,8 @@ describe('runJobCheck', () => {
     expect(jobs.get('example:k2stripe0001')?.review?.requirements[0]?.verified).toBe(true);
   });
 
-  it('passes the criteria and past disagreements to both passes', async () => {
-    await saveSearches(undefined, 'Remote or NYC only.');
+  it('passes past disagreements to both passes', async () => {
+    await saveSearches();
     store[JOB_FEEDBACK_KEY] = [
       {
         jobId: 'example:old',
@@ -186,7 +186,6 @@ describe('runJobCheck', () => {
     const deps = makeDeps();
     await runJobCheck(deps);
     for (const call of [deps.screenBatch.mock.calls[0], deps.reviewJob.mock.calls[0]]) {
-      expect(call?.[0].user).toContain('Remote or NYC only.');
       expect(call?.[0].user).toContain('Java-only shops are a skip.');
     }
   });
@@ -311,7 +310,7 @@ describe('runJobCheck', () => {
   });
 
   it('fails on a board without a source', async () => {
-    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software' }]);
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/?keywords=software', maxPages: null, active: true }]);
     const check = await runJobCheck(makeDeps());
     expect(check.error).toBe("LinkedIn isn't on a supported job board yet.");
   });
@@ -361,25 +360,6 @@ describe('toScreenedJob', () => {
   it('turns a repeat with nothing to repeat into a skip', () => {
     const job = toScreenedJob(plain, { verdict: 'repeat', reason: 'Looks familiar.' }, 'c', NOW.toISOString());
     expect(job).toMatchObject({ verdict: 'skip', repeatOf: null });
-  });
-});
-
-describe('createLimiter', () => {
-  it('never runs more than the limit at once', async () => {
-    const limit = createLimiter(3);
-    let inFlight = 0;
-    let peak = 0;
-    await Promise.all(
-      [1, 2, 3, 4, 5, 6, 7].map(() =>
-        limit(async () => {
-          inFlight++;
-          peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => setTimeout(resolve, 2));
-          inFlight--;
-        }),
-      ),
-    );
-    expect(peak).toBe(3);
   });
 });
 
@@ -566,8 +546,8 @@ describe('runJobCheck on a board that loads details in the page', () => {
 
   it('opens one tab per search and closes it', async () => {
     await saveSearches([
-      { id: 's1', label: 'Software engineer', url: SEARCH_URL },
-      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform' },
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true },
+      { id: 's2', label: 'Platform engineer', url: 'https://jobs.example.com/search?q=platform', maxPages: null, active: true },
     ]);
     const deps = spaDeps();
     deps.readSearchPage.mockImplementation(async (url) =>
@@ -623,12 +603,6 @@ describe('runJobCheck on a board that loads details in the page', () => {
 });
 
 describe('randomized browsing limits', () => {
-  it('picks a whole number anywhere in the range, ends included', () => {
-    expect(pickInRange({ min: 7, max: 12 }, () => 0)).toBe(7);
-    expect(pickInRange({ min: 7, max: 12 }, () => 0.9999)).toBe(12);
-    expect(pickInRange({ min: 45, max: 75 }, () => 0.5)).toBe(60);
-  });
-
   it('reads a different number of pages depending on the roll', async () => {
     await saveSearches();
     const board = makeExampleBoard({
@@ -656,5 +630,230 @@ describe('randomized browsing limits', () => {
     );
     const check = await runJobCheck(deps);
     expect(check.counts).toMatchObject({ reviewed: 1, deferred: 4 });
+  });
+});
+
+describe('page limits and progress', () => {
+  function pagedBoard(pages: number, detailReads = 40) {
+    return makeExampleBoard({
+      limits: {
+        loadGapMs: { min: 0, max: 0 },
+        clickGapMs: { min: 0, max: 0 },
+        searchPages: { min: pages, max: pages },
+        detailReads: { min: detailReads, max: detailReads },
+      },
+    });
+  }
+
+  function endlessPages(deps: ReturnType<typeof makeDeps>, perPage = 1) {
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: Array.from({ length: perPage }, (_, i) =>
+        listing({ id: `example:${encodeURIComponent(url)}-${i}`, title: `Role ${url} ${i}`, requirements: `${url} ${i}` }),
+      ),
+      hasNext: true,
+    }));
+  }
+
+  it("reads only the search's own page count when one is set", async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 2, active: true }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    endlessPages(deps);
+    await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the board's default when the search has no page count", async () => {
+    await saveSearches();
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(4)) };
+    endlessPages(deps);
+    await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(4);
+  });
+
+  it('records pages and reviews as the check goes', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 3, active: true }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    endlessPages(deps, 2);
+    const check = await runJobCheck(deps);
+    expect(check.progress).toEqual({ pagesDone: 3, pagesPlanned: 3, pageJobsDone: 0, pageJobsTotal: 0, reviewsDone: 6, reviewsQueued: 6 });
+  });
+
+  it('shrinks the planned page count when the results run out early', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 10, active: true }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5)) };
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: [listing({ id: `example:${encodeURIComponent(url)}`, title: `Role ${url}`, requirements: url })],
+      hasNext: !url.includes('page=2'),
+    }));
+    const check = await runJobCheck(deps);
+    expect(check.progress).toMatchObject({ pagesDone: 2, pagesPlanned: 2 });
+  });
+
+  it('stops reading pages once the click limit is used up', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5, active: true }]);
+    const deps = { ...makeDeps(), sourceForUrl: sourceLookup(pagedBoard(5, 3)) };
+    endlessPages(deps, 2);
+    const check = await runJobCheck(deps);
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+    expect(check.counts).toMatchObject({ reviewed: 3, deferred: 1 });
+  });
+
+  it('loads saved searches from before page counts existed', () => {
+    const parsed = SettingsSchema.parse({ jobs: { searches: [{ id: 's1', label: '', url: SEARCH_URL }] } });
+    expect(parsed.jobs.searches[0]?.maxPages).toBeNull();
+  });
+});
+
+describe('progressFractions', () => {
+  it('moves through a page as its jobs are clicked', () => {
+    const progress = { pagesDone: 1, pagesPlanned: 4, pageJobsDone: 2, pageJobsTotal: 4, reviewsDone: 3, reviewsQueued: 4 };
+    expect(progressFractions(progress)).toEqual({ browsing: 1.5 / 4, reviews: 0.75 });
+  });
+
+  it('has no review fraction before anything is queued', () => {
+    expect(progressFractions({ pagesDone: 0, pagesPlanned: 0, pageJobsDone: 0, pageJobsTotal: 0, reviewsDone: 0, reviewsQueued: 0 })).toEqual({
+      browsing: 0,
+      reviews: null,
+    });
+  });
+});
+
+describe('stopping a check', () => {
+  function rejectOnAbort(signal: AbortSignal | undefined) {
+    return new Promise<never>((_, reject) => {
+      const abort = () => reject(new DOMException('Aborted', 'AbortError'));
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  it('stops mid-browse, keeps what was judged, and closes the tab', async () => {
+    await saveSearches([{ id: 's1', label: 'LinkedIn', url: SEARCH_URL, maxPages: 5, active: true }]);
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.readSearchPage.mockImplementation(async (url) => {
+      if (url.includes('page=2')) {
+        controller.abort();
+        return new Promise(() => {});
+      }
+      return { listings: [listing()], hasNext: true };
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(check.error).toBeNull();
+    expect(deps.readSearchPage).toHaveBeenCalledTimes(2);
+    expect(deps.sessions).toEqual({ opened: 1, closed: 1 });
+    expect((await getJobFeed()).jobs.map((job) => job.id)).toEqual(['example:k2stripe0001']);
+    expect(deps.setBadge).toHaveBeenCalledWith(1);
+  });
+
+  it('cancels a screening request that is in flight', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.screenBatch.mockImplementation(async (_prompt, _endpoint, signal) => {
+      setTimeout(() => controller.abort(), 5);
+      return rejectOnAbort(signal);
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.screenBatch.mock.calls[0]?.[2]).toBe(controller.signal);
+    expect(deps.reviewJob).not.toHaveBeenCalled();
+    expect((await getJobFeed()).jobs).toEqual([]);
+  });
+
+  it('skips reviews that have not started once stopped', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.readSearchPage.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => listing({ id: `example:s-${i}`, title: `Role ${i}`, requirements: `Set ${i}.` })),
+    );
+    deps.reviewJob.mockImplementation(async (_prompt, _endpoint, signal) => {
+      controller.abort();
+      return rejectOnAbort(signal);
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.reviewJob.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(check.counts).toMatchObject({ reviewed: 0, unjudged: 0 });
+  });
+
+  it('does not wait on a review that ignores the stop', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    const deps = makeDeps();
+    deps.reviewJob.mockImplementation(async () => {
+      controller.abort();
+      return new Promise<string>(() => {});
+    });
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.sleep).toHaveBeenCalledWith(2_000);
+  });
+
+  it('reports a stop, not a failure, when stopped before anything ran', async () => {
+    await saveSearches();
+    const controller = new AbortController();
+    controller.abort();
+    const deps = makeDeps();
+    const check = await runJobCheck(deps, controller.signal);
+    expect(check.status).toBe('stopped');
+    expect(deps.readSearchPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('untilStopped', () => {
+  it('passes the result through when nothing stops it', async () => {
+    await expect(untilStopped(Promise.resolve(7), new AbortController().signal)).resolves.toBe(7);
+  });
+
+  it('rejects as soon as the signal fires, without waiting for the work', async () => {
+    const controller = new AbortController();
+    const pending = untilStopped(new Promise(() => {}), controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(CheckStopped);
+  });
+
+  it('rejects right away when already stopped', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(untilStopped(Promise.resolve(1), controller.signal)).rejects.toBeInstanceOf(CheckStopped);
+  });
+});
+
+describe('active searches', () => {
+  const second = { id: 's2', label: 'Platform', url: 'https://jobs.example.com/search?q=platform', maxPages: null, active: false };
+
+  it('only runs searches that are turned on', async () => {
+    await saveSearches([{ id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: null, active: true }, second]);
+    const deps = makeDeps();
+    await runJobCheck(deps);
+    expect(deps.readSearchPage.mock.calls.map(([url]) => url)).toEqual([SEARCH_URL]);
+  });
+
+  it('says so when every saved search is off', async () => {
+    await saveSearches([{ ...second, active: false }]);
+    const check = await runJobCheck(makeDeps());
+    expect(check.error).toMatch(/turned off/);
+  });
+
+  it('plans pages for active searches only', async () => {
+    await saveSearches([
+      { id: 's1', label: 'Software engineer', url: SEARCH_URL, maxPages: 2, active: true },
+      { ...second, maxPages: 9 },
+    ]);
+    const deps = makeDeps();
+    deps.readSearchPage.mockImplementation(async (url) => ({
+      listings: [listing({ id: `example:${encodeURIComponent(url)}`, title: `Role ${url}`, requirements: url })],
+      hasNext: true,
+    }));
+    const check = await runJobCheck(deps);
+    expect(check.progress?.pagesPlanned).toBe(2);
+  });
+
+  it('loads settings saved with the old fit note, with every search on', () => {
+    const parsed = SettingsSchema.parse({ jobs: { criteria: 'Remote only.', searches: [{ id: 's1', label: '', url: SEARCH_URL }] } });
+    expect(parsed.jobs).toEqual({ searches: [{ id: 's1', label: '', url: SEARCH_URL, maxPages: null, active: true }] });
   });
 });

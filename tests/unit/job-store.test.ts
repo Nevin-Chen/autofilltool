@@ -3,9 +3,12 @@ import {
   JOB_FEED_KEY,
   MAX_JOB_CHECKS,
   getJobFeed,
+  markRunningCheckStopped,
   runningCheck,
   setJobFeed,
 } from '@/jobs/store';
+import { describeCheck } from '@/jobs/summary';
+import { emptyJobCounts } from '@/jobs/schema';
 import type { JobCheck } from '@/jobs/schema';
 import { NOW, judged } from './job-fixtures';
 
@@ -37,6 +40,7 @@ function check(overrides: Partial<JobCheck> = {}): JobCheck {
     phase: 'Reading Software engineer',
     error: null,
     counts: null,
+    progress: null,
     ...overrides,
   };
 }
@@ -85,5 +89,21 @@ describe('runningCheck', () => {
 
   it('returns null once the latest check finished', () => {
     expect(runningCheck({ jobs: [], checks: [check(), check({ id: 'check-2', status: 'ok' })] }, NOW)).toBeNull();
+  });
+});
+
+describe('markRunningCheckStopped', () => {
+  it('turns a check left running into a stopped one', () => {
+    const feed = markRunningCheckStopped({ jobs: [], checks: [check({ id: 'old', status: 'ok' }), check()] }, NOW);
+    expect(feed.checks.map((c) => c.status)).toEqual(['ok', 'stopped']);
+    expect(feed.checks[1]?.finishedAt).toBe(NOW.toISOString());
+  });
+});
+
+describe('describeCheck', () => {
+  it('says a check was stopped and what it found first', () => {
+    const counts = { ...emptyJobCounts(), strong: 1, maybe: 2, judged: 5 };
+    const text = describeCheck(check({ status: 'stopped', finishedAt: NOW.toISOString(), counts }), NOW);
+    expect(text).toMatch(/^Stopped at .+: 1 strong, 2 maybe, 5 new$/);
   });
 });
