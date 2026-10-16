@@ -118,6 +118,7 @@ export const AdapterIdSchema = z.enum([
   'breezy',
   'smartrecruiters',
   'gem',
+  'eightfold',
   'generic',
 ]);
 export type AdapterId = z.infer<typeof AdapterIdSchema>;
@@ -201,6 +202,7 @@ export const SettingsSchema = z.object({
     'breezy',
     'smartrecruiters',
     'gem',
+    'eightfold',
     'generic',
   ]),
   forceOverwrite: z.boolean().default(false),

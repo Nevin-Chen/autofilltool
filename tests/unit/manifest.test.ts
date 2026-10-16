@@ -43,6 +43,7 @@ describe('manifest content_scripts — invariants', () => {
     expect(matches).toContain('https://*.breezy.hr/*');
     expect(matches).toContain('https://jobs.smartrecruiters.com/*');
     expect(matches).toContain('https://jobs.gem.com/*');
+    expect(matches).toContain('https://*.eightfold.ai/*');
   });
 
   it('second entry exists for parent-stub bundling (never-match)', () => {

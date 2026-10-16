@@ -26,6 +26,7 @@
     "https://*.breezy.hr/*",
     "https://jobs.smartrecruiters.com/*",
     "https://jobs.gem.com/*",
+    "https://*.eightfold.ai/*",
     "<all_urls>"
   ],
   "optional_host_permissions": [
@@ -75,7 +76,8 @@
         "https://apply.workable.com/*",
         "https://*.breezy.hr/*",
         "https://jobs.smartrecruiters.com/*",
-        "https://jobs.gem.com/*"
+        "https://jobs.gem.com/*",
+        "https://*.eightfold.ai/*"
       ],
       "js": [
         "src/content/index.ts"

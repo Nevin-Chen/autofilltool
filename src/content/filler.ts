@@ -178,6 +178,8 @@ export async function fillDetectedField(
       return fillSearchPrompt(field, value, opts);
     case 'menuButton':
       return fillMenuButton(field, value, opts);
+    case 'clickListbox':
+      return fillClickListbox(field, value, opts);
     default:
       return fillField(field, value, opts);
   }
@@ -590,6 +592,8 @@ const RADIO_SYNONYM_GROUPS: ReadonlyArray<readonly string[]> = [
     "don't want to answer",
     'do not wish to answer',
     "don't wish to answer",
+    'do not wish to provide',
+    "don't wish to provide",
     'prefer not to answer',
     'prefer not to say',
     'rather not answer',
@@ -1022,6 +1026,46 @@ export async function harvestComboboxOptions(
 
   closeCombobox(trigger, wasFocused);
   return out;
+}
+
+export async function fillClickListbox(
+  field: DetectedField,
+  rawValue: string | boolean | null | undefined,
+  opts: VirtualizedDropdownOptions = {},
+): Promise<FillAction> {
+  const { el: trigger, kind, label } = field;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { label, kind, status: 'skipped', note: 'no value in profile' };
+  }
+  if (!opts.forceOverwrite && comboboxHasValue(trigger)) {
+    return { label, kind, status: 'skipped', note: 'already filled' };
+  }
+  const want = optionTextFor(kind, String(rawValue).trim());
+  const root = opts.root ?? trigger.ownerDocument;
+  const preexisting = snapshotOpenListboxes(root);
+  openCombobox(trigger);
+  const listbox = await waitForListbox(root, trigger, opts.timeoutMs ?? 1500, preexisting);
+  if (!listbox) {
+    return { label, kind, status: 'skipped', note: 'dropdown popup did not appear' };
+  }
+  const option = pickListboxOption(listbox, want);
+  if (!option) {
+    closeCombobox(trigger, false);
+    return {
+      label,
+      kind,
+      status: 'skipped',
+      note: `no option matched "${truncate(want, 60)}"`,
+    };
+  }
+  if (option.getAttribute('aria-selected') === 'true') {
+    closeCombobox(trigger, false);
+    return { label, kind, status: 'skipped', note: 'already in desired state' };
+  }
+  selectOption(option);
+  trigger.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!opts.suppressFlash) flashFilled(trigger);
+  return { label, kind, status: 'filled', note: `selected "${textOfNode(option)}"` };
 }
 
 const MENU_SELECTOR = '[role="menu"], menu';
@@ -1704,6 +1748,8 @@ const ANSWER_ALIASES: ReadonlyArray<{ want: RegExp; option: RegExp }> = [
   { want: /^phd$/, option: /\b(ph\.?\s?d|doctor)/ },
   { want: /^american indian or alaska native$/, option: /\b(american indian|native american|alaska)/ },
   { want: /^native hawaiian or other pacific islander$/, option: /\b(hawaiian|pacific islander)/ },
+  { want: /^yes$/, option: /^hispanic\b/ },
+  { want: /^no$/, option: /^not hispanic\b/ },
 ];
 
 function waitForListbox(

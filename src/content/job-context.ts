@@ -109,6 +109,10 @@ function companyFromAtsUrl(url: URL): string | null {
     const m = url.pathname.match(/^\/([^/]+)\//);
     if (m?.[1]) return titleCase(m[1].replace(/-/g, ' '));
   }
+  if (url.hostname.endsWith('.eightfold.ai')) {
+    const sub = url.hostname.split('.')[0];
+    if (sub) return titleCase(sub.replace(/-/g, ' '));
+  }
   return null;
 }
 
@@ -118,7 +122,31 @@ function workdaySiteTenant(url: URL): string | null {
   return at === -1 ? null : (parts[at + 1] ?? null);
 }
 
+export function jobPostingDescription(doc: Document): string {
+  const description = findJobPostingLd(doc)?.description;
+  if (typeof description !== 'string') return '';
+  const parsed = new DOMParser().parseFromString(description, 'text/html');
+  return (parsed.body.textContent ?? '').trim();
+}
+
 function readJobPostingLd(doc: Document): { title?: string; company?: string } | null {
+  const job = findJobPostingLd(doc);
+  if (!job) return null;
+  const title = typeof job.title === 'string' ? job.title.trim() : undefined;
+  let company: string | undefined;
+  const hiring = job.hiringOrganization;
+  if (typeof hiring === 'string') company = hiring.trim();
+  else if (
+    hiring &&
+    typeof hiring === 'object' &&
+    typeof (hiring as { name?: unknown }).name === 'string'
+  ) {
+    company = (hiring as { name: string }).name.trim();
+  }
+  return { ...(title ? { title } : {}), ...(company ? { company } : {}) };
+}
+
+function findJobPostingLd(doc: Document): Loose | null {
   const scripts = doc.querySelectorAll<HTMLScriptElement>(
     'script[type="application/ld+json"]',
   );
@@ -132,24 +160,17 @@ function readJobPostingLd(doc: Document): { title?: string; company?: string } |
       continue;
     }
     const job = findJobPosting(parsed);
-    if (!job) continue;
-    const title = typeof job.title === 'string' ? job.title.trim() : undefined;
-    let company: string | undefined;
-    const hiring = (job as { hiringOrganization?: unknown }).hiringOrganization;
-    if (typeof hiring === 'string') company = hiring.trim();
-    else if (
-      hiring &&
-      typeof hiring === 'object' &&
-      typeof (hiring as { name?: unknown }).name === 'string'
-    ) {
-      company = (hiring as { name: string }).name.trim();
-    }
-    return { ...(title ? { title } : {}), ...(company ? { company } : {}) };
+    if (job) return job;
   }
   return null;
 }
 
-type Loose = { '@type'?: unknown; title?: unknown; hiringOrganization?: unknown };
+type Loose = {
+  '@type'?: unknown;
+  title?: unknown;
+  description?: unknown;
+  hiringOrganization?: unknown;
+};
 
 function findJobPosting(value: unknown): Loose | null {
   if (!value || typeof value !== 'object') return null;
