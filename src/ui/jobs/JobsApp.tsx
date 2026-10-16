@@ -107,7 +107,13 @@ export function JobsApp() {
         <SearchSettings initial={jobSettings} onSaved={setJobSettings} checkRunning={running !== null} />
       )}
 
-      <Results jobs={feed.jobs} checks={feed.checks} now={now} feedback={feedback} />
+      <Results
+        jobs={feed.jobs}
+        checks={feed.checks}
+        now={now}
+        feedback={feedback}
+        searches={jobSettings?.searches ?? []}
+      />
 
       {feed.jobs.length > 0 && (
         <div className="flex justify-end gap-2 text-xs">

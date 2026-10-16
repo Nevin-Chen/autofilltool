@@ -47,6 +47,8 @@ export const STOP_GRACE_MS = 2_000;
 
 type Prompt = { system: string; user: string };
 
+type JobOrigin = { checkId: string; searchId: string };
+
 export type JobCheckDeps = {
   sourceForUrl: (url: string) => JobSource | null;
   openSession: () => BrowsingSession;
@@ -205,14 +207,14 @@ export async function runJobCheck(
     await reportProgress();
     const reviewSlots = createLimiter(JOB_REVIEW_CONCURRENCY);
 
-    const queueReview = (candidate: JudgeCandidate, details: ListingDetails | null) => {
+    const queueReview = (candidate: JudgeCandidate, details: ListingDetails | null, origin: JobOrigin) => {
       progress.reviewsQueued++;
       void reportProgress();
       reviews.push(
         reviewSlots(async () => {
           if (signal?.aborted) return;
           try {
-            const job = await reviewCandidate(candidate, details, context, endpoint, checkId, deps, signal);
+            const job = await reviewCandidate(candidate, details, context, endpoint, origin, deps, signal);
             if (!job) {
               counts.unjudged++;
               return;
@@ -235,6 +237,7 @@ export async function runJobCheck(
     const screenCandidates = async (
       candidates: JudgeCandidate[],
       where: string,
+      origin: JobOrigin,
     ): Promise<JudgeCandidate[]> => {
       const advanced: JudgeCandidate[] = [];
       for (let start = 0; start < candidates.length; start += JOB_SCREEN_BATCH_SIZE) {
@@ -250,7 +253,7 @@ export async function runJobCheck(
           const result = results.get(candidate.listing.id);
           if (!result) counts.unjudged++;
           else if (result.verdict === 'review') advanced.push(candidate);
-          else settled.push(toScreenedJob(candidate, result, checkId, judgedAt));
+          else settled.push(toScreenedJob(candidate, result, origin, judgedAt));
         }
         tally(counts, settled);
         await storeJobs(settled);
@@ -264,6 +267,7 @@ export async function runJobCheck(
       session: BrowsingSession,
       pace: Pacer,
       where: string,
+      origin: JobOrigin,
     ): Promise<void> => {
       const newestFirst = [...advanced].sort((a, b) => Date.parse(b.listing.postedAt) - Date.parse(a.listing.postedAt));
       progress.pageJobsTotal = newestFirst.length;
@@ -287,7 +291,7 @@ export async function runJobCheck(
             'A job showed a security check or sign-in page, so the check stopped browsing that board. Open it in a tab yourself and deal with it there, then check again.',
           );
         }
-        queueReview(candidate, details);
+        queueReview(candidate, details, origin);
         progress.pageJobsDone++;
       }
     };
@@ -316,6 +320,7 @@ export async function runJobCheck(
       const source = deps.sourceForUrl(search.url);
       if (!source) throw new Error(`${searchName(search)} isn't on a supported job board yet.`);
       const pace = paceFor(source);
+      const origin: JobOrigin = { checkId, searchId: search.id };
       const session = deps.openSession();
       try {
         const budget = pageBudget(search, source);
@@ -349,8 +354,8 @@ export async function runJobCheck(
           counts.identicalRepeats += selection.identicalRepeats;
           seen.push(...selection.candidates.map(({ listing, fingerprint }) => ({ ...listing, fingerprint })));
 
-          const advanced = await screenCandidates(selection.candidates, where);
-          await readDetailsInOrder(advanced, source, session, pace, where);
+          const advanced = await screenCandidates(selection.candidates, where, origin);
+          await readDetailsInOrder(advanced, source, session, pace, where, origin);
           pagesRead++;
           progress.pagesDone++;
           progress.pageJobsDone = 0;
@@ -406,7 +411,7 @@ async function reviewCandidate(
   details: ListingDetails | null,
   context: CandidateContext,
   endpoint: string,
-  checkId: string,
+  origin: JobOrigin,
   deps: JobCheckDeps,
   signal?: AbortSignal,
 ): Promise<JudgedJob | null> {
@@ -436,7 +441,7 @@ async function reviewCandidate(
     verdict,
     reason: review.summary,
     repeatOf: null,
-    checkId,
+    ...origin,
     judgedAt: deps.now().toISOString(),
     review,
   };
@@ -445,7 +450,7 @@ async function reviewCandidate(
 export function toScreenedJob(
   candidate: JudgeCandidate,
   result: ScreenResult,
-  checkId: string,
+  origin: JobOrigin,
   judgedAt: string,
 ): JudgedJob {
   const repeatOf = result.verdict === 'repeat' ? (candidate.sameTitleAs?.id ?? null) : null;
@@ -455,7 +460,7 @@ export function toScreenedJob(
     verdict: repeatOf ? 'repeat' : 'skip',
     reason: result.reason,
     repeatOf,
-    checkId,
+    ...origin,
     judgedAt,
     review: null,
   };

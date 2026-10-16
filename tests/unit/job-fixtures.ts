@@ -91,6 +91,7 @@ export function judged(overrides: Partial<JudgedJob> = {}): JudgedJob {
     reason: 'TypeScript and Postgres web services at 2 years, NYC hybrid.',
     repeatOf: null,
     checkId: 'check-earlier',
+    searchId: 's1',
     judgedAt: '2026-10-13T15:00:00.000Z',
     review: null,
     ...overrides,
